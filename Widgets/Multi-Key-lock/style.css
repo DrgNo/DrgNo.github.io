@@ -1,0 +1,58 @@
+.boxs{
+  left:auto;
+	top:auto;
+	background-color: var(--gray-bg);
+	border-radius:3px;
+	padding:30px 30px;
+}
+
+.input-container{
+	position:relative;
+	margin-bottom:25px;
+}
+
+.input-container labels{
+	position:absolute;
+	top:0px;
+	left:0px;
+	font-size:16px;
+	color: var(--title-color);
+  opacity: 40%;
+  pointer-event:none;
+	transition: all 0.5s ease-in-out;
+}
+
+.input-container input{ 
+  border:0;
+  border-bottom:1px solid var(--title-color);  
+  background:transparent;
+  width:100%;
+  padding:8px 0 5px 0;
+  font-size:16px;
+  color: var(--title-color);
+}
+
+.input-container input:focus{ 
+  border:none;	
+  outline:none;
+  border-bottom:1px solid var(--button-bg);	
+}
+
+.btns{
+  background-color: var(--button-bg);
+  outline: none;
+  border: 0;
+  color: #fff;
+	padding:10px 20px;
+	text-transform:uppercase;
+	margin-top:20px;
+	border-radius:2px;
+	cursor:pointer;
+	position:relative;
+}
+
+.input-container input:focus ~ labels,
+.input-container input:valid ~ labels{
+	top:-12px;
+	font-size:12px;
+}
