@@ -1,9 +1,10 @@
 /*To add more passkeys simply duplicate the below format*/
 
 const passwords = [
-    { pass: '54' },
-    { pass: '34' },
-    { pass: '54' },
+    { pass: 'password01' },
+    { pass: 'password02' },
+    { pass: 'password03' },
+    { pass: 'MasterKey'}, /*create a masterkey just for yourself*/
 ];
 
 function myFunction() {
