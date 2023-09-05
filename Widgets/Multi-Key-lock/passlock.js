@@ -7,7 +7,7 @@ const passwords = [
 ];
 
 function myFunction() {
-  var y = document.getElementById('demo');
+  var y = document.getElementById('protected');
   var z = document.getElementById('error');
   
   const passInput = document.getElementById('myInput').value;
