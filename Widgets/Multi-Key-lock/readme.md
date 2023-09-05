@@ -1,10 +1,10 @@
 ## About the widget
 
-Anyone with a nut head can understand what this widget is for. If not, this is the basic version of multi password lock protection. Meaning, you can lock a page with multiple password to unlock it. (cool aaai)
+Anyone with a nut head can understand what this widget is for. If not, this is the basic version of multi password lock protection. Meaning, you can lock a page with multiple passwords to unlock it. (cool aaaye)
 
 Reason to create this:
 * I don't like complex protection methods.
-* I don't know how to create complexe protection method with php and server side.
+* I don't know how to create complexe protection method with php and withing server sides.
 * I don't have anything to protect that hard.
 * I like to stay on frontend developing.
 
@@ -18,8 +18,8 @@ So that's why I created the `Multi-Key-Lock` widget in the first place.
 
 ### Installation
 
-1. First add or link the `Style.css` into your website head. (`<head></head>`)
-2. Next add the error message in `Protected.html` at the top of the page.
+1. First add or link the `Style.css` into your website head. (`<head></head>`) **Make sure to do the obvious changes**
+2. Next add the error message code in `Protected.html`, at the top of the page.
 3. Then add the authentication portal in `Authentication.html`
 4. After that you can add the content you want to lock. Template with id is in the `Protected.html`.
 5. Finally add the `Passlock.js` to the website or webpage, where you can easily access it or change it. (I prefer not to change `Master-Key`, and don't publish it.)
