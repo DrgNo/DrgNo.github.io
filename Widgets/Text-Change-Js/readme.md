@@ -7,3 +7,7 @@
 5. And you are good to go!
 
 ### Credits
+
+- Tamasha Nihari for the idea and based knowledge.
+
+_This widget may update over the time._
