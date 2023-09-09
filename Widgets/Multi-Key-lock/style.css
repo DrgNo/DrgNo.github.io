@@ -56,3 +56,31 @@
 	top:-12px;
 	font-size:12px;
 }
+
+.fadeout {
+   height : 0;
+   opacity:0;
+   -webkit-transition: opacity 1s;
+   -moz-transition: opacity 1s;
+   -o-transition: opacity 1s;
+   transition: opacity 1s;n
+}
+
+.hide {
+   height: 0;
+   opacity: 0;
+   visibility: hidden;
+}
+
+.tgs {
+    margin-top: -10px;
+    margin-bottom: -345px;
+    width: 150px;
+}
+  
+.fadein {
+   opacity: 1;
+   height: auto;
+   transition: ease-in 2s;
+   transition-delay: 1s;
+}
