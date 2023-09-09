@@ -1,10 +1,20 @@
-<div class="boxs">
-  <form>
-    <div class="input-container">
-		  <input type="text" required="" value='' id='myInput'/>
-		  <labels>Password</labels>		
-    </div>
+<div id="boxs" class="boxs">
 
-    <button onclick='myFunction()' type="button" class="btns">Reveal</button>
-  </form>	
+<!--animated tgs-->
+  <tgs-player class="tgs" autoplay loop count="2" hover="true" mode="normal" src="https://DrgNo.github.io/Animated%20Stickers/Service/PasscodeTyping.tgs"></tgs-player>
+  
+<form>
+
+<!--Input Area-->
+  <div class="input-container">
+     <input type="text" required="" value='' id='myInput'/>
+	  <labels>Password</labels>
+	  <sub hidden style='display:none;' id='error'>Wrong password</sub>
+  </div>
+
+<!--Button with function-->
+   <button onclick='myFunction()' type="button" class="btns">Reveal</button>
+  
+</form>	
+
 </div>
