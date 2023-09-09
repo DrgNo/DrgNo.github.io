@@ -15,8 +15,10 @@ function myFunction() {
   const passMatch = passwords.find(o => o.pass === passInput);
   
   if (passMatch ) {
-    y.style.display = 'block';
+    y.classList.add('fadein');
+    y.classList.remove('hide');
     z.style.display = 'none';
+    b.className = 'fadeout';
       } 
   else {
     y.style.display = 'none';
