@@ -22,7 +22,8 @@ function myFunction() {
     b.className = 'fadeout';
       } 
   else {
-    y.style.display = 'none';
     z.style.display = 'block';
+    t.style.display = 'none';
+    e.style.display = 'block';
       }
 }
