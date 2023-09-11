@@ -8,7 +8,9 @@ function myFunction() {
   var y = document.getElementById('protected');
   var z = document.getElementById('error');
   var b = document.getElementById('boxs');
-  
+  var t = document.getElementById('tgscode');
+  var e = document.getElementById('tgserror');
+
   const passId = document.getElementById('myId').value;
   const passPw = document.getElementById('myPw').value;
   const passMatch = passwords.find(o => o.id === passId && o.pass === passPw );
