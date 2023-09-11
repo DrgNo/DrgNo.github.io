@@ -7,13 +7,18 @@
 
 <!--Input Area-->
   <div class="input-container">
-     <input type="text" required="" value='' id='myInput'/>
+     <input type="text" required="" value='' id='myId'/>
+	  <labels>User Name</labels>
+	  <sub hidden style='display:none;' id=''>Wrong password</sub>
+  </div>
+  <div class="input-container">
+     <input type="password" required="" value='' id='myPw'/>
 	  <labels>Password</labels>
-	  <sub hidden style='display:none;' id='error'>Wrong password</sub>
+	  <sub hidden style='display:none;' id='error'>Wrong username or password</sub>
   </div>
 
 <!--Button with function-->
-   <button onclick='myFunction()' type="button" class="btns">Reveal</button>
+   <button onclick='myFunction()' type="button" class="btns">Log</button>
   
 </form>	
 
