@@ -1,86 +1,86 @@
 .boxs{
   left:auto;
-	top:auto;
-	background-color: var(--gray-bg);
-	border-radius:3px;
-	padding:30px 30px;
+  top:auto;
+  background-color: rgba(155,155,155,0.05);
+  border-radius:3px;
+  padding:30px 30px;
 }
 
 .input-container{
-	position:relative;
-	margin-bottom:25px;
+  position:relative;
+  margin-bottom:25px;
 }
 
 .input-container labels{
-	position:absolute;
-	top:0px;
-	left:0px;
-	font-size:16px;
-	color: var(--title-color);
+  position:absolute;
+  top:0px;
+  left:0px;
+  font-size:16px;
+  color: black;
   opacity: 40%;
   pointer-event:none;
-	transition: all 0.5s ease-in-out;
+  transition: all 0.5s ease-in-out;
 }
 
 .input-container input{ 
   border:0;
-  border-bottom:1px solid var(--title-color);  
+  border-bottom:1px solid black;  
   background:transparent;
   width:100%;
   padding:8px 0 5px 0;
   font-size:16px;
-  color: var(--title-color);
+  color: gray;
 }
 
 .input-container input:focus{ 
   border:none;	
   outline:none;
-  border-bottom:1px solid var(--button-bg);	
+  border-bottom:1px solid pink;	
 }
 
 .btns{
-  background-color: var(--button-bg);
+  background-color: red;
   outline: none;
   border: 0;
   color: #fff;
-	padding:10px 20px;
-	text-transform:uppercase;
-	margin-top:20px;
-	border-radius:2px;
-	cursor:pointer;
-	position:relative;
+  padding: 10px 20px;
+  text-transform: uppercase;
+  margin-top: 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  position: relative;
 }
 
 .input-container input:focus ~ labels,
 .input-container input:valid ~ labels{
-	top:-12px;
-	font-size:12px;
+  top:-12px;
+  font-size:12px;
 }
 
 .fadeout {
-   height : 0;
-   opacity:0;
-   -webkit-transition: opacity 1s;
-   -moz-transition: opacity 1s;
-   -o-transition: opacity 1s;
-   transition: opacity 1s;n
+  height: 0;
+  opacity: 0;
+  -webkit-transition: opacity 1s;
+  -moz-transition: opacity 1s;
+  -o-transition: opacity 1s;
+  transition: opacity 1s;n
 }
 
 .hide {
-   height: 0;
-   opacity: 0;
-   visibility: hidden;
+  height: 0;
+  opacity: 0;
+  visibility: hidden;
 }
 
 .tgs {
-    margin-top: -10px;
-    margin-bottom: -345px;
-    width: 150px;
+  margin-top: -10px;
+  margin-bottom: -345px;
+  width: 150px;
 }
   
 .fadein {
-   opacity: 1;
-   height: auto;
-   transition: ease-in 2s;
-   transition-delay: 1s;
+  opacity: 1;
+  height: auto;
+  transition: ease-in 2s;
+  transition-delay: 1s;
 }
