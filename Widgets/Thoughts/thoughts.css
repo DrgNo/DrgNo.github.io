@@ -17,15 +17,13 @@ ul{
   flex-wrap: wrap;
   list-style-type: none;
   margin: 0;
-  padding: 0;
-  
+  padding: 0;  
 }
 
 .cards_item {
   display: flex;
   padding: 1rem;
-  list-style-type: none;
-  
+  list-style-type: none;  
 }
 
 .card_image {
@@ -55,15 +53,12 @@ ul{
   color: var(--title-color);
 }
 
-
-
 .note {
   position: absolute;
   top: 8px;
   left: 8px;
   padding: 4px 8px;
   border-radius: 0.25rem;
-  
   font-size: 14px;
   font-weight: 700;
 }
