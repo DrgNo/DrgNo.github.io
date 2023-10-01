@@ -39,7 +39,7 @@ ul{
   object-fit: cover;
 }
 
-.card_price {
+.card_tag {
   position: absolute;
   bottom: 14px;
   right: 6px;
