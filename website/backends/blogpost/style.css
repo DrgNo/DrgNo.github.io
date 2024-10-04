@@ -4,7 +4,7 @@
 body {
   margin: 0 0 60px 0;
   box-sizing: border-box;
-  font-family: "Roboto", sans-serif;
+  font-family: system,-apple-system,".SFNSText-Regular","San Francisco",Roboto,"Segoe UI","Helvetica Neue","Lucida Grande",sans-serif;
 }
 
 footer#codepen {
