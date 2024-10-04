@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" >
 <head>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta property="al:android:app_name" content="Medium" />
@@ -12,7 +13,30 @@
   <meta name="telegram:channel" content="@drgno_s" />
   <title>Blog Post Title</title>
 <link rel="stylesheet" href="https://DrgNo.github.io/website/backends/blogpost/style.css">
+<script>
+  const tg = Telegram.WebApp.MainButton;
 
+// Properties
+tg.text; // You can change the value
+tg.color; // You can change the value
+tg.textColor; // You can change the value
+tg.isVisible;
+tg.isActive;
+tg.isProgressVisible;
+
+// Events
+tg.onClick(callback);
+tg.offClick(callback);
+
+// Methods
+tg.setText("buy");
+tg.show();
+tg.hide();
+tg.enable(); // Default
+tg.disable(); // If the button is disabled, then it will not work when clicked
+tg.showProgress(true); // Shows a spinning icon; if you passed into it `false`, then it will disable the button when loading
+tg.hideProgress();
+</script>
 </head>
 <body>
 <!-- partial:index.partial.html -->
