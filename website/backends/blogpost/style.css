@@ -4,7 +4,7 @@
 body {
   margin: 0 0 60px 0;
   box-sizing: border-box;
-  font-family: system,-apple-system,".SFNSText-Regular","San Francisco",Roboto,"Segoe UI","Helvetica Neue","Lucida Grande",sans-serif;
+  font-family: "Roboto", sans-serif;
 }
 
 footer#codepen {
@@ -83,7 +83,7 @@ article img {
   }
 }
 article .post {
-  font-family: system,-apple-system,".SFNSText-Regular","San Francisco",Roboto,"Segoe UI","Helvetica Neue","Lucida Grande",sans-serif;
+  font-family: "PT Serif", "Roboto", sans-serif;
   padding-bottom: 50px;
   padding: 5px;
 }
@@ -124,4 +124,13 @@ article .post .author ul.socials li a:hover {
 }
 article .post .author ul.socials li:last-child {
   margin-right: 0px;
+}
+article .post > p {
+  max-width: 740px;
+  box-sizing: border-box;
+  color: #444;
+  margin: 30px 0;
+  letter-spacing: 0.2px;
+  word-wrap: initial;
+  line-height: 1.7em;
 }
