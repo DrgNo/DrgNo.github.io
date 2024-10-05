@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en" >
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta property="al:android:app_name" content="Medium" />
+<meta property="article:published_time" content="2024-10-05T00:00:00.000Z" />
+<meta property="og:site_name" content="DrgNo Blog" />
+<meta property="og:description" content="With the support of website"  />
+<meta property="og:image" content="" />
+<meta name="author" content="DrgNo" />
+<meta name="telegram:channel" content="@drgnoblog" />
+<title>Add a image to telegra.ph</title>
+<link rel="stylesheet" href="https://DrgNo.github.io/website/backends/blogpost/style.css">
+</head>
+<body>
+<!-- partial:index.partial.html -->
+<div class="container">
+<article>
+<header>
+<h1>Let's add a image to telegraph</h1>
+<p class="graf-dropCap">05th Oct 2024</p>
+</header>
+
+<!--<img src="http://cdn7.dissolve.com/p/D18_12_235/D18_12_235_0004_600.jpg"/>-->
+
+<div class="post">
+
+<p>
+So here is a rough workaround for adding an image to Telegraph, using a website as an image hoster.
+<br><br>
+This is the website link that is in the middle of this whole case. Sign up if you want. It's not mandatory.
+<br><br>
+Now then, let's do it step-by-step.
+</p>
+<ul>
+<li>Upload your image to the website. I'm not going to fucking tell you how to do it. Just basic shit.</li>
+
+<li>Then, you'll get a section filled with various types of links. You only need the link under the title of Direct Link:
+<br>
+Example :
+<pre>https://i.postimg.cc/SsYLVgfW/IMG-20240912-014229-401.jpg</pre></li>
+
+<li>Now copy the link, go to your telegraph page, hit the edit button and set the coordinations, tap the <> icon, paste your link, and hit enter. (or ⤶ icon in phone keyboard)</li>
+
+<li>If you didn't press the enter key after pasting the link, it won't do shit. Just hit the enter button.</li>
+
+<p>And that's pretty much it. Adios...</p>
+
+<related><h2>More post to read</h2><a href="https://drgno.github.io/b/start"</a></related>
+
+<div class="author js-postMetaLockup">
+<p>by <b>Drg No</b></p>
+<ul class="socials">
+<li><a href="https://t.me/drgno"><i class="fab fa-telegram-plane"></i></a></li>
+<li><a href="https://www.drgno.eu.org"><i class="fab fa-blogger-b"></i></a></li>
+</ul>
+</div>
+</div>
+</article>
+</div>
+  
+</body>
+</html>
