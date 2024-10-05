@@ -139,6 +139,10 @@ article .post > p {
 ul {
   line-height: 1.8;
   margin-left: -20px;
+  color: #444;
+  letter-spacing: 0.2px;
+  word-wrap: initial;
+  line-height: 1.7em;
   /* list-style-position: inside; */
 }
 
