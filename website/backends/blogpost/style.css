@@ -134,3 +134,15 @@ article .post > p {
   word-wrap: initial;
   line-height: 1.7em;
 }
+
+        
+ul {
+  line-height: 1.8;
+  margin-left: -20px;
+  /* list-style-position: inside; */
+}
+
+ul li:not(:last-child) {
+  margin-bottom: 20px;
+  list-style-type: circle;
+}
