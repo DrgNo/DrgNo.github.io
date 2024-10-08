@@ -52,6 +52,7 @@
     font-size: var(--font-size-body);
     line-height: var(--line-height-body);
     min-block-size: 100dvb;
+    min-height: 100%;
   }
 }
 
