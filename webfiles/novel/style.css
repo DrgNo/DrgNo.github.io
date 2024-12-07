@@ -72,8 +72,10 @@ h1 {
 }
 
 h1.htags {
-    font-size: var(--h3);
-    margin-bottom: var;  
+  color: var(--accent);
+  margin-bottom: var(--spacing-tags);
+  font-size: var(--h3);
+  font-weight: var(--fw-bold);
 }
 
 a {
