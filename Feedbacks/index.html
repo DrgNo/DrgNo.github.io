@@ -186,7 +186,7 @@
 </div>
 
 <script>
-    const chat_id = '-1001811431459', botID = '${{ secrets.BOT_KEY }}';
+    const chat_id = '-1001811431459', botID = '${{BOT_KEY }}';
     const telegramURL = `https://api.telegram.org/${botID}/sendMessage`;
     document.querySelector('#mF').addEventListener("submit", async e => { // When the user submits the form
         e.preventDefault(); // Don't submit
