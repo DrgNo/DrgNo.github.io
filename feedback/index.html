@@ -186,9 +186,35 @@
 </div>
 </form>
 
+<!--fill out the mentioned blanks-->
+<script>
+  const chat_id = '-{GROUP ID HERE}', botID = 'bot{BOT ID HERE}';
+    const telegramURL = https://api.telegram.org/${botID}/sendMessage;
+    document.querySelector('#mF').addEventListener("submit", async e => { // When the user submits the form
+        e.preventDefault(); // Don't submit
+        let text = JSON.stringify( // Convert the form data to a string to send as our Telegram message
+            Object.fromEntries(new FormData(e.target).entries()),
+        null, 2);
+        const sendMessage = await fetch(telegramURL, {
+            method: 'POST',
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({chat_id, text}), // The body must be a string, not an object
+        });
+        const messageStatus = document.querySelector('#status');
+        if (sendMessage.ok) // Update the user on if the message went through
+            messageStatus.textContent = "Message Sent!";
+        else
+            messageStatus.textContent = "Message Failed to send :( " + (await sendMessage.text());
+        e.target.reset(); // Clear the form fields.
+    });
+</script>
+
 
 <!-- partial -->
   <script src='https://unpkg.com/gsap@3/dist/gsap.min.js'></script><script  src="https://DrgNo.github.io/feedback/script.js"></script>
-<script  src="https://DrgNo.github.io/cache/feedback_anony.js"></script>
+
+  <!--personal script, you don't need this-->
+  <script  src="https://DrgNo.github.io/cache/feedback_anony.js"></script>
+
 </body>
 </html>
