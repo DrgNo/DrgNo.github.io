@@ -1,177 +1,131 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>My Novels Showcase</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Theme Styles will be injected here -->
-  <style id="theme-style">
-    body {
-  margin: 0;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-#app {
-  padding: 16px;
-}
-
-#search {
-  width: 100%;
-  padding: 12px;
-  margin-bottom: 20px;
-  font-size: 16px;
-  border: none;
-  border-radius: 8px;
-  outline: none;
-}
-
-.novel-item {
-  display: flex;
-  align-items: flex-start;
-  margin-bottom: 20px;
-}
-
-.novel-item img {
-  width: 80px;
-  height: 120px;
-  object-fit: cover;
-  border-radius: 4px;
-  margin-right: 16px;
-}
-
-.novel-item h3 {
-  margin: 0;
-  font-size: 20px;
-}
-
-.novel-item p {
-  margin: 8px 0 0;
-  font-size: 14px;
-  color: #555;
-}
-@media (max-width: 600px) {
-  .novel-item {
-    flex-direction: column;
-    align-items: center;
-  }
-
-  .novel-item img {
-    margin-bottom: 12px;
-  }
-}
-
-  </style>
-  <!-- Link to your CSS file -->
-  <link rel="stylesheet" href="styles.css">
-  <!-- Telegram Web Apps JavaScript -->
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <meta charset="UTF-8">
+    <title>Book Showcase</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        /* Embedded CSS */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .book {
+            display: flex;
+            align-items: flex-start;
+            background-color: var(--tg-theme-secondary-bg-color, #f9f9f9);
+            border-radius: 10px;
+            margin-bottom: 20px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .book img {
+            width: 100px;
+            height: auto;
+            object-fit: cover;
+        }
+        .book-details {
+            padding: 15px;
+            flex: 1;
+        }
+        .book-title {
+            font-size: 1.2em;
+            margin: 0 0 10px;
+        }
+        .book-description {
+            font-size: 0.95em;
+            line-height: 1.4;
+        }
+        @media (max-width: 600px) {
+            .book {
+                flex-direction: column;
+                align-items: center;
+            }
+            .book img {
+                width: 100%;
+            }
+            .book-details {
+                padding: 15px 10px;
+                text-align: center;
+            }
+        }
+    </style>
 </head>
 <body>
-  <div id="app">
-    <input type="text" id="search" placeholder="Search novels..." />
-    <div id="novel-list"></div>
-  </div>
-  <!-- Your JavaScript file -->
-  <script src="app.js">
-    // Initialize the Telegram Web App
-const tg = window.Telegram.WebApp;
+    <div class="container">
+        <h1>My Book Collection</h1>
+        <div id="books">
+            <!-- Books will be loaded here -->
+        </div>
+    </div>
+    <script>
+        // Embedded JavaScript
+        const books = [
+            {
+                image: 'https://via.placeholder.com/100x150?text=Book+1',
+                title: 'The Journey Begins',
+                description: 'An epic tale of adventure and self-discovery that spans across uncharted lands.'
+            },
+            {
+                image: 'https://via.placeholder.com/100x150?text=Book+2',
+                title: 'Mysteries of the Deep',
+                description: 'Dive into the unknown depths of the ocean where secrets and treasures await.'
+            },
+            {
+                image: 'https://via.placeholder.com/100x150?text=Book+3',
+                title: 'Stars Above Us',
+                description: 'Explore the cosmos and unravel the mysteries of the universe in this captivating read.'
+            }
+        ];
 
-// Function to apply the Telegram theme to the app
-function applyTheme() {
-  const themeParams = tg.themeParams || {};
-  const css = `
-    body {
-      background-color: ${themeParams.bg_color || '#ffffff'};
-      color: ${themeParams.text_color || '#000000'};
-    }
-    #search {
-      background-color: ${themeParams.secondary_bg_color || '#f0f0f0'};
-      color: ${themeParams.text_color || '#000000'};
-    }
-    .novel-item h3 {
-      color: ${themeParams.text_color || '#000000'};
-    }
-    .novel-item p {
-      color: ${themeParams.hint_color || '#555555'};
-    }
-  `;
-  document.getElementById('theme-style').innerHTML = css;
-}
+        function displayBooks() {
+            const booksContainer = document.getElementById('books');
+            books.forEach(book => {
+                const bookElement = document.createElement('div');
+                bookElement.classList.add('book');
+                bookElement.innerHTML = `
+                    <img src="${book.image}" alt="${book.title}">
+                    <div class="book-details">
+                        <h2 class="book-title">${book.title}</h2>
+                        <p class="book-description">${book.description}</p>
+                    </div>
+                `;
+                booksContainer.appendChild(bookElement);
+            });
+        }
 
-// Apply the theme when the app is ready
-tg.ready().then(() => {
-  applyTheme();
-});
+        // Adapt theme to Telegram user's theme
+        function adaptTelegramTheme() {
+            if (typeof Telegram !== 'undefined' && Telegram.WebApp && Telegram.WebApp.themeParams) {
+                const theme = Telegram.WebApp.themeParams;
+                document.body.style.backgroundColor = theme.bg_color || '#ffffff';
+                document.body.style.color = theme.text_color || '#000000';
+                const elements = document.querySelectorAll('.book');
+                elements.forEach(el => {
+                    el.style.backgroundColor = theme.secondary_bg_color || '#f9f9f9';
+                });
+            }
+        }
 
-// Sample data: Replace with your actual novels
-const novels = [
-  {
-    title: 'Echoes of Eternity',
-    description: 'Whispers of love across time and space.',
-    image: 'https://via.placeholder.com/80x120',
-  },
-  {
-    title: 'Shadows of the Past',
-    description: 'Secrets hidden in the corridors of time.',
-    image: 'https://via.placeholder.com/80x120',
-  },
-  {
-    title: 'Wings of Destiny',
-    description: 'Flight towards an unknown future.',
-    image: 'https://via.placeholder.com/80x120',
-  },
-  // Add more novels as needed
-];
+        // Initialize app
+        function init() {
+            adaptTelegramTheme();
+            displayBooks();
+        }
 
-// Function to display the list of novels
-function displayNovels(filter = '') {
-  const list = document.getElementById('novel-list');
-  list.innerHTML = '';
-
-  const filteredNovels = novels.filter(novel =>
-    novel.title.toLowerCase().includes(filter.toLowerCase())
-  );
-
-  if (filteredNovels.length === 0) {
-    list.innerHTML = '<p>No novels found.</p>';
-    return;
-  }
-
-  filteredNovels.forEach(novel => {
-    const item = document.createElement('div');
-    item.className = 'novel-item';
-
-    const img = document.createElement('img');
-    img.src = novel.image;
-    img.alt = novel.title;
-
-    const info = document.createElement('div');
-
-    const title = document.createElement('h3');
-    title.textContent = novel.title;
-
-    const desc = document.createElement('p');
-    desc.textContent = novel.description;
-
-    info.appendChild(title);
-    info.appendChild(desc);
-
-    item.appendChild(img);
-    item.appendChild(info);
-
-    list.appendChild(item);
-  });
-}
-
-// Initial display of novels
-displayNovels();
-
-// Event listener for the search input
-document.getElementById('search').addEventListener('input', (event) => {
-  const searchTerm = event.target.value;
-  displayNovels(searchTerm);
-});
-
-  </script>
+        init();
+    </script>
 </body>
 </html>
