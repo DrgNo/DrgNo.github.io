@@ -4,15 +4,15 @@
   <meta charset="UTF-8">
   <title>My Novels Showcase</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Theme Styles will be injected here -->
   <style id="theme-style">
     body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   margin: 0;
-  padding: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 #app {
-  padding: 20px;
+  padding: 16px;
 }
 
 #search {
@@ -20,31 +20,60 @@
   padding: 12px;
   margin-bottom: 20px;
   font-size: 16px;
-  box-sizing: border-box;
+  border: none;
   border-radius: 8px;
-  border: 1px solid #ccc;
+  outline: none;
 }
 
 .novel-item {
+  display: flex;
+  align-items: flex-start;
   margin-bottom: 20px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #eee;
+}
+
+.novel-item img {
+  width: 80px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 4px;
+  margin-right: 16px;
 }
 
 .novel-item h3 {
-  margin: 0 0 5px 0;
-  font-size: 24px;
+  margin: 0;
+  font-size: 20px;
 }
 
 .novel-item p {
-  margin: 0;
-  font-size: 16px;
+  margin: 8px 0 0;
+  font-size: 14px;
   color: #555;
+}
+@media (max-width: 600px) {
+  .novel-item {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .novel-item img {
+    margin-bottom: 12px;
+  }
 }
 
   </style>
-<script>
-// Initialize the Telegram Web App
+  <!-- Link to your CSS file -->
+  <link rel="stylesheet" href="styles.css">
+  <!-- Telegram Web Apps JavaScript -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <div id="app">
+    <input type="text" id="search" placeholder="Search novels..." />
+    <div id="novel-list"></div>
+  </div>
+  <!-- Your JavaScript file -->
+  <script src="app.js">
+    // Initialize the Telegram Web App
 const tg = window.Telegram.WebApp;
 
 // Function to apply the Telegram theme to the app
@@ -56,9 +85,8 @@ function applyTheme() {
       color: ${themeParams.text_color || '#000000'};
     }
     #search {
-      background-color: ${themeParams.secondary_bg_color || '#ffffff'};
+      background-color: ${themeParams.secondary_bg_color || '#f0f0f0'};
       color: ${themeParams.text_color || '#000000'};
-      border: 1px solid ${themeParams.hint_color || '#cccccc'};
     }
     .novel-item h3 {
       color: ${themeParams.text_color || '#000000'};
@@ -70,16 +98,28 @@ function applyTheme() {
   document.getElementById('theme-style').innerHTML = css;
 }
 
-// Apply the theme upon loading
-applyTheme();
+// Apply the theme when the app is ready
+tg.ready().then(() => {
+  applyTheme();
+});
 
-// Sample data: Replace this with your actual novels
+// Sample data: Replace with your actual novels
 const novels = [
-  { title: 'The Whispering Shadows', description: 'A tale of mystery and magic that unveils the secrets of an ancient world.' },
-  { title: 'Echoes of Eternity', description: 'An epic journey through time, love, and destiny.' },
-  { title: 'Silent Wings', description: 'A story of love and loss that soars across the skies.' },
-  { title: 'Threads of Fate', description: 'Interwoven stories that explore the intricate tapestry of human connections.' },
-  { title: 'Beyond the Horizon', description: 'An adventure that challenges the boundaries of the known world.' },
+  {
+    title: 'Echoes of Eternity',
+    description: 'Whispers of love across time and space.',
+    image: 'https://via.placeholder.com/80x120',
+  },
+  {
+    title: 'Shadows of the Past',
+    description: 'Secrets hidden in the corridors of time.',
+    image: 'https://via.placeholder.com/80x120',
+  },
+  {
+    title: 'Wings of Destiny',
+    description: 'Flight towards an unknown future.',
+    image: 'https://via.placeholder.com/80x120',
+  },
   // Add more novels as needed
 ];
 
@@ -87,21 +127,39 @@ const novels = [
 function displayNovels(filter = '') {
   const list = document.getElementById('novel-list');
   list.innerHTML = '';
+
   const filteredNovels = novels.filter(novel =>
     novel.title.toLowerCase().includes(filter.toLowerCase())
   );
+
   if (filteredNovels.length === 0) {
     list.innerHTML = '<p>No novels found.</p>';
     return;
   }
+
   filteredNovels.forEach(novel => {
-    const novelDiv = document.createElement('div');
-    novelDiv.className = 'novel-item';
-    novelDiv.innerHTML = `
-      <h3>${novel.title}</h3>
-      <p>${novel.description}</p>
-    `;
-    list.appendChild(novelDiv);
+    const item = document.createElement('div');
+    item.className = 'novel-item';
+
+    const img = document.createElement('img');
+    img.src = novel.image;
+    img.alt = novel.title;
+
+    const info = document.createElement('div');
+
+    const title = document.createElement('h3');
+    title.textContent = novel.title;
+
+    const desc = document.createElement('p');
+    desc.textContent = novel.description;
+
+    info.appendChild(title);
+    info.appendChild(desc);
+
+    item.appendChild(img);
+    item.appendChild(info);
+
+    list.appendChild(item);
   });
 }
 
@@ -113,16 +171,7 @@ document.getElementById('search').addEventListener('input', (event) => {
   const searchTerm = event.target.value;
   displayNovels(searchTerm);
 });
-</script>
-  <link rel="stylesheet" href="styles.css">
-</head>
-<body>
-  <div id="app">
-    <input type="text" id="search" placeholder="Search novels..." />
-    <div id="novel-list"></div>
-  </div>
-  <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script src="app.js"></script>
 
+  </script>
 </body>
 </html>
