@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>My Novels Showcase</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style id="theme-style">
+    body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+#app {
+  padding: 20px;
+}
+
+#search {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 20px;
+  font-size: 16px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  border: 1px solid #ccc;
+}
+
+.novel-item {
+  margin-bottom: 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eee;
+}
+
+.novel-item h3 {
+  margin: 0 0 5px 0;
+  font-size: 24px;
+}
+
+.novel-item p {
+  margin: 0;
+  font-size: 16px;
+  color: #555;
+}
+
+  </style>
+<script>
+// Initialize the Telegram Web App
+const tg = window.Telegram.WebApp;
+
+// Function to apply the Telegram theme to the app
+function applyTheme() {
+  const themeParams = tg.themeParams || {};
+  const css = `
+    body {
+      background-color: ${themeParams.bg_color || '#ffffff'};
+      color: ${themeParams.text_color || '#000000'};
+    }
+    #search {
+      background-color: ${themeParams.secondary_bg_color || '#ffffff'};
+      color: ${themeParams.text_color || '#000000'};
+      border: 1px solid ${themeParams.hint_color || '#cccccc'};
+    }
+    .novel-item h3 {
+      color: ${themeParams.text_color || '#000000'};
+    }
+    .novel-item p {
+      color: ${themeParams.hint_color || '#555555'};
+    }
+  `;
+  document.getElementById('theme-style').innerHTML = css;
+}
+
+// Apply the theme upon loading
+applyTheme();
+
+// Sample data: Replace this with your actual novels
+const novels = [
+  { title: 'The Whispering Shadows', description: 'A tale of mystery and magic that unveils the secrets of an ancient world.' },
+  { title: 'Echoes of Eternity', description: 'An epic journey through time, love, and destiny.' },
+  { title: 'Silent Wings', description: 'A story of love and loss that soars across the skies.' },
+  { title: 'Threads of Fate', description: 'Interwoven stories that explore the intricate tapestry of human connections.' },
+  { title: 'Beyond the Horizon', description: 'An adventure that challenges the boundaries of the known world.' },
+  // Add more novels as needed
+];
+
+// Function to display the list of novels
+function displayNovels(filter = '') {
+  const list = document.getElementById('novel-list');
+  list.innerHTML = '';
+  const filteredNovels = novels.filter(novel =>
+    novel.title.toLowerCase().includes(filter.toLowerCase())
+  );
+  if (filteredNovels.length === 0) {
+    list.innerHTML = '<p>No novels found.</p>';
+    return;
+  }
+  filteredNovels.forEach(novel => {
+    const novelDiv = document.createElement('div');
+    novelDiv.className = 'novel-item';
+    novelDiv.innerHTML = `
+      <h3>${novel.title}</h3>
+      <p>${novel.description}</p>
+    `;
+    list.appendChild(novelDiv);
+  });
+}
+
+// Initial display of novels
+displayNovels();
+
+// Event listener for the search input
+document.getElementById('search').addEventListener('input', (event) => {
+  const searchTerm = event.target.value;
+  displayNovels(searchTerm);
+});
+</script>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <input type="text" id="search" placeholder="Search novels..." />
+    <div id="novel-list"></div>
+  </div>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="app.js"></script>
+
+</body>
+</html>
