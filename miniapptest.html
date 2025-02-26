@@ -1,131 +1,29 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Book Showcase</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        /* Embedded CSS */
+    <title>Telegram Mini Web App</title>
+    <style id="dynamic-style">
         body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--tg-theme-bg-color, #ffffff);
-            color: var(--tg-theme-text-color, #000000);
-        }
-        .container {
-            max-width: 600px;
-            margin: auto;
-            padding: 20px;
-        }
-        h1 {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .book {
-            display: flex;
-            align-items: flex-start;
-            background-color: var(--tg-theme-secondary-bg-color, #f9f9f9);
-            border-radius: 10px;
-            margin-bottom: 20px;
-            overflow: hidden;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        }
-        .book img {
-            width: 100px;
-            height: auto;
-            object-fit: cover;
-        }
-        .book-details {
-            padding: 15px;
-            flex: 1;
-        }
-        .book-title {
-            font-size: 1.2em;
-            margin: 0 0 10px;
-        }
-        .book-description {
-            font-size: 0.95em;
-            line-height: 1.4;
-        }
-        @media (max-width: 600px) {
-            .book {
-                flex-direction: column;
-                align-items: center;
-            }
-            .book img {
-                width: 100%;
-            }
-            .book-details {
-                padding: 15px 10px;
-                text-align: center;
-            }
+            transition: background-color 0.5s ease;
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>My Book Collection</h1>
-        <div id="books">
-            <!-- Books will be loaded here -->
-        </div>
-    </div>
+    <h1>Welcome to the Telegram Mini Web App</h1>
+    <p>The background color changes based on your Telegram app theme.</p>
+    
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
-        // Embedded JavaScript
-        const books = [
-            {
-                image: 'https://via.placeholder.com/100x150?text=Book+1',
-                title: 'The Journey Begins',
-                description: 'An epic tale of adventure and self-discovery that spans across uncharted lands.'
-            },
-            {
-                image: 'https://via.placeholder.com/100x150?text=Book+2',
-                title: 'Mysteries of the Deep',
-                description: 'Dive into the unknown depths of the ocean where secrets and treasures await.'
-            },
-            {
-                image: 'https://via.placeholder.com/100x150?text=Book+3',
-                title: 'Stars Above Us',
-                description: 'Explore the cosmos and unravel the mysteries of the universe in this captivating read.'
-            }
-        ];
-
-        function displayBooks() {
-            const booksContainer = document.getElementById('books');
-            books.forEach(book => {
-                const bookElement = document.createElement('div');
-                bookElement.classList.add('book');
-                bookElement.innerHTML = `
-                    <img src="${book.image}" alt="${book.title}">
-                    <div class="book-details">
-                        <h2 class="book-title">${book.title}</h2>
-                        <p class="book-description">${book.description}</p>
-                    </div>
-                `;
-                booksContainer.appendChild(bookElement);
-            });
+        function updateBackgroundColor() {
+            const themeParams = Telegram.WebApp.themeParams;
+            const bgColor = themeParams.bg_color || '#ffffff'; // Default to white if no theme color is available
+            document.body.style.backgroundColor = `#${bgColor}`;
         }
 
-        // Adapt theme to Telegram user's theme
-        function adaptTelegramTheme() {
-            if (typeof Telegram !== 'undefined' && Telegram.WebApp && Telegram.WebApp.themeParams) {
-                const theme = Telegram.WebApp.themeParams;
-                document.body.style.backgroundColor = theme.bg_color || '#ffffff';
-                document.body.style.color = theme.text_color || '#000000';
-                const elements = document.querySelectorAll('.book');
-                elements.forEach(el => {
-                    el.style.backgroundColor = theme.secondary_bg_color || '#f9f9f9';
-                });
-            }
-        }
-
-        // Initialize app
-        function init() {
-            adaptTelegramTheme();
-            displayBooks();
-        }
-
-        init();
+        Telegram.WebApp.onEvent('themeChanged', updateBackgroundColor);
+        updateBackgroundColor(); // Set initial background color
     </script>
 </body>
 </html>
