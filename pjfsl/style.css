@@ -4,21 +4,7 @@
 
 /* Telegram Theme Parameter List */
 
---tg-theme-bg-color: #FFFFFF;
---tg-theme-text-color: #222222;
---tg-theme-hint-color: #A8A8A8;
---tg-theme-link-color: #2778B7;
---tg-theme-button-color: #50A7EA;
---tg-theme-button-text-color: #FFFFFF;
---tg-theme-secondary-bg-color: #F0F0F0;
---tg-theme-header-bg-color: #517DA2;
---tg-theme-bottom-bar-bg-color: #F0F0F0;
---tg-theme-accent-text-color: #1C93E3;
---tg-theme-subtitle-text-color: #82858A;
---tg-theme-section-bg-color: #FFFFFF;
---tg-theme-section-header-text-color: #3995D4;
---tg-theme-section-separator-color: red;
---tg-theme-destructive-text-color: #CC2A28;
+
 
 
 --bg-gradient-onyx: var(--tg-theme-secondary-bg-color);
