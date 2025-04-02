@@ -2,11 +2,6 @@
 
 :root {
 
-/* Telegram Theme Parameter List */
-
-
-
-
 --bg-gradient-onyx: var(--tg-theme-secondary-bg-color);
 --bg-gradient-jet: var(--tg-theme-secondary-bg-color);
 --bg-gradient-yellow1: var(--tg-theme-section-header-text-color);
@@ -89,7 +84,7 @@ input, textarea {
 
 html { font-family: var(--ff-poppins); }
 
-body { background: var(--smoky-black); }
+body { background: var(--tg-theme-secondary-bg-color); }
 
 main {
     margin: 15px 12px;
