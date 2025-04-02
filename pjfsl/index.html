@@ -1,0 +1,511 @@
+<!-- partial:index.partial.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PJFSL - Telegram</title>
+<link rel="stylesheet" href="style.css">
+<link rel="shortcut icon" href="pjfslfavicon.png" type="image/x-icon">
+<script src="https://kit.fontawesome.com/fb6f73a6da.js" crossorigin="anonymous"></script>
+<script src="https://telegram.org/js/telegram-web-app.js?56"></script>
+<script src="https://unpkg.com/@lottiefiles/lottie-player@0.2.0/dist/tgs-player.js"></script>
+</head>
+
+<body>
+
+<main>
+<aside class="sidebar " data-sidebar>
+
+<div class="sidebar-info">
+<figure class="avatar-box">
+<tgs-player autoplay loop mode="normal" src="./TgsAnimations/WelcomeAnimation.tgs" style="width: 60px; margin-bottom: -438px; margin-top: 5px; margin-right:10px; margin-left: 10px;"></tgs-player>
+</figure>
+<div class="info-content">
+<h1 class="name" title="Richard Hanrick">Hello, <user id="userName"></user>!</h1>
+<p class="title">Welcome to PJFSL</p>
+</div>
+<button class="info-more-btn" data-sidebar-btn>
+<span>Show Contacts</span>
+<i class="fa-solid fa-chevron-down"></i>
+</button>
+</div>
+
+<div class="sidebar-info-more">
+
+<div class="separator"></div>
+
+<!-- Main info section -->
+<ul class="contacts-list">
+
+<li class="contact-item">
+<div class="icon-box">
+<i class="fa-solid fa-bullhorn"></i>
+</div>
+<div class="contact-info">
+<p class="contact-title">Main Channel</p>
+<a href="https://t.me/percy_jackson_fan_Sl_PJFSL" class="contact-link">PJFSL Channel</a>
+</div>
+</li>
+
+<li class="contact-item">
+<div class="icon-box">
+<i class="fa-solid fa-comments"></i>
+</div>
+<div class="contact-info">
+<p class="contact-title">Chat Group</p>
+<a href="https://t.me/PERCY_JACKSON_FAN_SL" class="contact-link">PJFSL Group</a>
+</div>
+</li>
+
+<li class="contact-item">
+<div class="icon-box">
+<i class="fa-solid fa-robot"></i>
+</div>
+<div class="contact-info">
+<p class="contact-title">Official Bot</p>
+<a href="https://t.me/RickRiodanBooks_all_bot" class="contact-link">RR Books</a>
+</div>
+</li>
+
+<li class="contact-item">
+<div class="icon-box">
+<i class="fa-solid fa-user-tie"></i>
+</div>
+<div class="contact-info">
+<p class="contact-title">Main Admin</p>
+<a href="https://t.me/i_am_ys" class="contact-link">Chad Yahath</a>
+</div>
+</li>
+</ul>
+
+<div class="separator"></div>
+
+<!-- Social Media Icons -->
+<ul class="social-list">    
+<li class="social-item"><a href="#" class="social-link"><i class="fa-solid fa-paper-plane fa-xs"></i></a></li>
+<li class="social-item"><a href="#" class="social-link"><i class="fa-brands fa-youtube"></i></a></li>
+<li class="social-item"><a href="#" class="social-link"><ion-icon name="logo-instagram"></ion-icon></a></li>
+</ul>
+
+</div>
+</aside>
+
+
+<!-- Main Body -->
+<div class="main-content">
+
+<!-- Navigation Bar -->
+<nav class="navbar">
+<ul class="navbar-list">
+<li class="navbar-item"><button class="navbar-link active" data-nav-link>About</button></li>
+<li class="navbar-item"><button class="navbar-link" data-nav-link>History</button></li>
+<li class="navbar-item"><button class="navbar-link" data-nav-link>Docs</button></li>
+ <li class="navbar-item"><button class="navbar-link" data-nav-link>Blog</button></li>
+<li class="navbar-item"><button class="navbar-link" data-nav-link>Contact</button></li>
+</ul>
+</nav>
+
+
+<!-- MainSection : About | till : 209 -->
+<article class="about active" data-page="about">
+<header><h2 class="h2 article-title">About us</h2></header>
+<section class="about-text">
+<p>We are the Percy Jackson Fan Club, the largest and most vibrant community of demigods in sri lanka, exclusively on Telegram platform! Our positive and engaging user base is bound by a shared love for Rick Riordan's world of mythology and adventure.</p>
+<p>Whether you're here to discuss the latest book theories, share fan art, or dive into all things related to Camp Half-Blood or greek mythology, you'll find like-minded fans who are as passionate as you are. Join us to celebrate the magic of Percy Jackson and create lasting memories with fellow fans!</p>
+</section>
+
+
+<section class="service">
+<h3 class="h3 service-title">Our core values</h3>
+
+<ul class="service-list">
+
+<li class="service-item">
+<div class="service-icon-box">
+<tgs-player hover loop mode="normal" src="./TgsAnimations/SafeEnvironmentAnimation.tgs"></tgs-player>
+</div>
+<div class="service-content-box">
+<h4 class="h4 service-item-title">Safe Environment</h4>
+<p class="service-item-text">Respectful community, free from negativity, where all fans feel welcome.</p>
+</div>
+</li>
+
+<li class="service-item">
+<div class="service-icon-box">
+<tgs-player hover loop mode="normal" src="./TgsAnimations/JoyfulCommunityAnimation.tgs"></tgs-player>
+</div>
+<div class="service-content-box">
+<h4 class="h4 service-item-title">Joyful Userbase</h4>
+<p class="service-item-text">Enthusiastic members sharing excitement, laughter, and a passion for the fandom.</p>
+</div>
+</li>
+
+<li class="service-item">
+<div class="service-icon-box">
+<tgs-player hover loop mode="normal" src="./TgsAnimations/InformativeArticleAnimation.tgs"></tgs-player>
+</div>
+<div class="service-content-box">
+<h4 class="h4 service-item-title">Informative Posts</h4>
+<p class="service-item-text">Up-to-date articles, theories, and discussions to deepen your fandom knowledge.</p>
+</div>
+</li>
+
+<li class="service-item">
+<div class="service-icon-box">
+<tgs-player hover loop mode="normal" src="./TgsAnimations/CreativityPlaceAnimation.tgs"></tgs-player>
+</div>
+<div class="service-content-box">
+<h4 class="h4 service-item-title">Place for Creativity</h4>
+<p class="service-item-text">Share fan art, stories, and ideas; a hub for fan expression.</p>
+</div>
+</li>
+
+</ul>
+</section>
+
+
+<section class="testimonials">
+<h3 class="h3 testimonials-title">What we have!</h3>
+
+<ul class="testimonials-list has-scrollbar">
+
+<li class="testimonials-item">
+<div class="content-card" data-testimonials-item>
+<figure class="testimonials-avatar-box">
+<img src="./images/articles.png" alt="avatar" data-testimonials-avatar width="60">
+</figure>
+<h4 class="h4 testimonials-item-title" data-testimonials-title>Article Series</h4>
+<p class="quote" hidden data-testimonials-quote>From our writer panel</p>
+<div class="testimonials-text" data-testimonials-text>
+<p>Dive into the depths of Percy Jackson lore with meticulously researched articles, exploring mythological connections, character backstories, original greek mythological tales and hidden details that enrich your understanding of the beloved series.</p>
+</div>
+</div>
+</li>
+
+<li class="testimonials-item">
+<div class="content-card" data-testimonials-item>
+<figure class="testimonials-avatar-box">
+<img src="./images/fanfictions.png" alt="avatar" data-testimonials-avatar width="60">
+</figure>
+<h4 class="h4 testimonials-item-title" data-testimonials-title>Fan Fictional Stories</h4>
+<p class="quote" hidden data-testimonials-quote>On house authors</p>
+<div class="testimonials-text" data-testimonials-text>
+<p>Embark on thrilling adventures crafted by fellow demigods, where alternate timelines, character-driven narratives, and imaginative twists expand the Percy Jackson universe and greek mythological era in unexpected and captivating ways.</p>
+</div>
+</div>
+</li>
+
+<li class="testimonials-item">
+<div class="content-card" data-testimonials-item>
+<figure class="testimonials-avatar-box">
+<img src="./images/pjbooks.png" alt="avatar" data-testimonials-avatar width="60">
+</figure>
+<h4 class="h4 testimonials-item-title" data-testimonials-title>Original PJ Books</h4>
+<p class="quote" hidden data-testimonials-quote>Totally not pirating!</p>
+<div class="testimonials-text" data-testimonials-text>
+<p>Relive the magic of Percy's journey through immersive chapter-by-chapter discussions, dissecting themes, analyzing character development, and sharing personal reflections on the series that ignited our passion.</p>
+</div>
+</div>
+</li>
+
+<li class="testimonials-item">
+<div class="content-card" data-testimonials-item>
+<figure class="testimonials-avatar-box">
+<img src="./images/poems.png" alt="avatar" data-testimonials-avatar width="60">
+</figure>
+<h4 class="h4 testimonials-item-title" data-testimonials-title>Poems and songs</h4>
+<p class="quote" hidden data-testimonials-quote>Feel the words</p>
+<div class="testimonials-text" data-testimonials-text>
+<p>Express your profound connection to the Percy Jackson saga through the art of verse, crafting evocative poems and songs that capture the essence of characters, explore pivotal moments, and celebrate the enduring spirit of the demigod world.</p>
+</div>
+</div>
+</li>
+
+<li class="testimonials-item">
+<div class="content-card" data-testimonials-item>
+<figure class="testimonials-avatar-box">
+<img src="./images/games.png" alt="avatar" data-testimonials-avatar width="60">
+</figure>
+<h4 class="h4 testimonials-item-title" data-testimonials-title>Fun Cabin Games</h4>
+<p class="quote" hidden data-testimonials-quote>Custom happy zone</p>
+<div class="testimonials-text" data-testimonials-text>
+<p>Unleash your inner demigod with interactive quizzes, collaborative group challenges, and immersive win-or-lose scenarios, forging bonds with fellow fans and embarking on unforgettable virtual adventures within the Percy Jackson universe.</p>
+</div>
+</div>
+</li>
+
+<li class="testimonials-item">
+<div class="content-card" data-testimonials-item>
+<figure class="testimonials-avatar-box">
+<img src="./images/artworks.png" alt="avatar" data-testimonials-avatar width="60">
+</figure>
+<h4 class="h4 testimonials-item-title" data-testimonials-title>Artworks</h4>
+<p class="quote" hidden data-testimonials-quote>Not by that austrian painter!</p>
+<div class="testimonials-text" data-testimonials-text>
+<p>Celebrate the diverse artistic talents of our community, showcasing stunning visual interpretations of Percy Jackson characters, scenes, and concepts, providing a platform for creators to share their inspired visions and connect with fellow art enthusiasts.</p>
+</div>
+</div>
+</li>
+
+</ul>
+</section>
+
+<div class="modal-container " data-modal-container>
+<div class="overlay" data-overlay></div>
+
+<section class="testimonials-modal">
+<button class="modal-close-btn" data-modal-close-btn><i class="fa-solid fa-xmark"></i></button>
+<div class="modal-img-wrapper">
+<figure class="modal-avatar-box">
+<img src="https://i.postimg.cc/zGDHfn3G/avatar-1.png" alt="Daniel Lewis" width="80" data-modal-img>
+</figure>
+<img src="https://i.postimg.cc/mZ00RwX7/icon-quote.png" alt="quote icon">
+</div>
+<div class="modal-content">
+<h4 class="h3 modal-title" data-modal-title>Daniel Lewis</h4>
+<p class="quote" data-modal-quote>hii</p>
+<div class="modal-text" data-modal-text>
+<p>Richarad was hired to create a corporate identity. It's modern, clean and with a beautiful design that got a lot of praises from colleagues and visitors. We were very pleased with the work done. He has a lot of experience and is very concerned about the needs of client.</p>
+</div>
+</div>
+</section>
+</div>
+
+<!-- Legacy Code for further modifications
+<section class="clients">
+<h3 class="h3 clients-title">Clients</h3>
+
+<ul class="clients-list has-scrollbar">
+
+<li class="clients-item">
+<img src="https://i.postimg.cc/YqfKyG66/logo-1-color.png" alt="logo">
+</li>
+
+</ul>
+</section> -->
+
+</article>
+
+
+<!-- MainSection : Resume | till : 279 -->
+<article class="resume " data-page="history">
+<header>
+<h2 class="h2 article-title">Channel History</h2>
+</header>
+
+<section class="timeline">
+
+<div class="title-wrapper">
+<div class="icon-box"><i class="fa-solid fa-bookmark"></i></div>
+<h3 class="h3">Community Insight</h3>
+</div>
+
+<ol class="timeline-list">
+
+<li class="timeline-item">
+<h4 class="h4 timeline-item-title">Poseidon into race</h4>
+<span>27th of Jan, 2024</span>
+<p class="timeline-text">Cabin Poseidon launched their first weekly game, diving into interactive adventures and setting the stage for weekly community fun.".</p>
+</li>
+
+<li class="timeline-item">
+<h4 class="h4 timeline-item-title">Weekly cabin games</h4>
+<span>21st of Sep, 2023</span>
+<p class="timeline-text">Weekly Cabin Games commenced, bringing interactive Percy Jackson adventures, fostering camaraderie and unleashing our inner demigods in thrilling community challenges.</p>
+</li>
+
+<li class="timeline-item">
+<h4 class="h4 timeline-item-title">Thousand yard completed</h4>
+<span>20th of Mar, 2023</span>
+<p class="timeline-text">Reaching 1,000 subscribers marked a milestone, a testament to our growing community's passion and dedication to the Percy Jackson universe, fueling our journey onward.</p>
+</li>
+
+<li class="timeline-item">
+<h4 class="h4 timeline-item-title">Channel Re-Roling</h4>
+<span>2nd of Feb, 2022</span>
+<p class="timeline-text">Faced with unavoidable technical hurdles, this channel emerged as a renewed sanctuary, dedicated to providing a seamless and enriched Percy Jackson experience for our devoted community.</p>
+</li>
+
+<li class="timeline-item">
+<h4 class="h4 timeline-item-title">Start of the great adventure</h4>
+<span>9th of Jul, 2021 </span>
+<p class="timeline-text">The channel's inception marked the beginning of our shared demigod journey. From its very first day, we began building our Percy Jackson community. The channel's creation ignited a spark, uniting fans of the PJO universe.</p>
+</li>
+
+</ol>
+</section>
+
+
+<section class="timeline">
+
+<div class="title-wrapper">
+<div class="icon-box"><i class="fa-solid fa-trophy"></i></div>
+<h3 class="h3">Cabin Games History</h3>
+</div>
+
+<ol class="timeline-list">
+
+<li class="timeline-item">
+<h4 class="h4 timeline-item-title">2024 Winners</h4>
+<span>Cabin Hades won!</span>
+<p class="timeline-text">Our 2024 Cabin Games concluded with Cabin Hades claiming victory, followed by Zeus in second, and Athena securing a well-earned third place in the thrilling competition.</p>
+</li>
+
+</ol>
+</section>
+
+<!-- Legacy Code for further modifications
+<section class="skill">
+
+<h3 class="h3 skills-title">My Skills</h3>
+<ul class="skills-list content-card">
+
+<li class="skills-item">
+<div class="title-wrapper">
+<h5 class="h5">Web Design</h5>
+<data value="80">80%</data>
+</div>
+<div class="skills-progress-bg">
+<div class="skills-progress-fill" style="width: 80%;"></div>
+</div>
+</li>
+
+</ul>
+</section> -->
+</article>
+
+
+<!-- MainSection : Portfolio | Till : 348-->
+<article class="portfolio " data-page="docs">
+<header>
+<h2 class="h2 article-title">Documentations</h2>
+</header>
+
+<section class="projects">
+
+<!-- Filter Box UX-->
+<ul class="filter-list">
+<li class="filter-item"><button class="active" data-filter-btn>All</button></li>
+<li class="filter-item"><button data-filter-btn>General</button></li>
+<li class="filter-item"><button data-filter-btn>Guides</button></li>
+<li class="filter-item"><button data-filter-btn>Insight</button></li>
+</ul>
+
+<!-- Filter Box Mechanical -->
+<div class="filter-select-box">
+
+<button class="filter-select " data-select>
+<div class="select-value" data-select-value>Select Category</div>
+<div class="select-icon">
+<i class="fa-solid fa-chevron-down"></i>
+</div>
+</button>
+
+<ul class="select-list">
+<li class="select-item"><button data-select-item>All</button></li>
+<li class="select-item"><button data-select-item>General</button></li>
+<li class="select-item"><button data-select-item>Guides</button></li>
+<li class="select-item"><button data-select-item>Insight</button></li>
+</ul>
+</div>
+
+
+<!-- List of projects -->
+<ul class="project-list">
+
+<li class="project-item active" data-filter-item data-category="general">
+<a href="#">
+<figure class="project-img">
+<div class="project-item-icon-box">
+<i class="fa-solid fa-book-open fa-fade"></i>
+</div>
+<img src="https://i.postimg.cc/jSJVqYsq/project-3.jpg" alt="fundo" loading="lazy">
+</figure>
+<h3 class="project-title">Fundo</h3>
+<p class="project-category">General</p>
+</a>
+</li>
+
+</ul>
+</section>
+</article>
+
+
+
+<!-- MainSection : Blog | Till : 382-->
+<article class="blog " data-page="blog">
+<header>
+<h2 class="h2 article-title">Community Blog</h2>
+</header>
+
+<section class="blog-posts">
+
+<ul class="blog-posts-list">
+
+<li class="blog-post-item">
+<a href="#">
+<figure class="blog-banner-box">
+<img src="https://i.postimg.cc/DysCZrWs/blog-1.jpg" alt="Design conferences in 2024" loading="lazy">
+</figure>
+<div class="blog-content">
+<div class="blog-meta">
+<p class="blog-category">Component</p>
+<span class="dot"></span>
+<time datetime="2024-02-23">Apr 03, 2025</time>
+</div>
+<h3 class="h3 blog-item-title">Full functional WebApp</h3>
+<p class="blog-text">Today, we are launching the first telegram WebApp for our community. This web-app is mainly focued on helping the user on navigations and informations about our fan club.</p>
+</div>
+</a>
+</li>
+
+</ul>
+
+</section>
+</article>
+
+
+
+<!-- MainSection : Contact |  -->
+<article class="contact " data-page="contact">
+<header>
+<h2 class="h2 article-title">Contact</h2>
+</header>
+
+<section class="contact-form">
+
+<h3 class="h3 form-title">Contact Form</h3>
+<form action="#" class="form" data-form>
+<div class="input-wrapper">
+<input type="text" name="fullname" class="form-input" placeholder="Full name" required data-form-input>
+<input type="text" name="email" class="form-input" placeholder="Email" required data-form-input>
+</div>
+
+ <textarea name="message" class="form-input" placeholder="Your message" required data-form-input=""></textarea>
+
+<button class="form-btn" type="submit" disabled data-form-btn>
+
+<ion-icon name="paper-plane"></ion-icon>
+
+<span>Send Message</span>
+</button>
+</form>
+</section>
+</article>
+        
+</div>
+</main>
+
+<script src="main.js"></script>
+
+<script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+<script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+
+<!-- partial -->
+
+<script  src="./script.js"></script>
+<script  src="./miniapp.js"></script>
+
+</body>
+</html>
