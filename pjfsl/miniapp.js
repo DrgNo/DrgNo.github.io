@@ -92,7 +92,7 @@ if (window.Telegram.WebApp) {
     };
 
     // Replace with your Telegram bot's API and group ID
-    const botToken = "8117634016:AAHiTESVkyjKD9_JAZ5qu74_yY4ClAEggS8";
+    const botToken = "";
     const chatId = "-1002306893527";
     const apiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
