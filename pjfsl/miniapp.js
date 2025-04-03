@@ -34,11 +34,11 @@ if (webApp.themeParams.header_bg_color) {
 }
 
 
-// Form activating
+/* Form activating
 
 const _0x182ec0=_0x3523;(function(_0x10477e,_0x4208d1){const _0x5048c9=_0x3523,_0x5e8c86=_0x10477e();while(!![]){try{const _0x260483=parseInt(_0x5048c9(0x194))/0x1+-parseInt(_0x5048c9(0x186))/0x2*(-parseInt(_0x5048c9(0x181))/0x3)+-parseInt(_0x5048c9(0x184))/0x4+-parseInt(_0x5048c9(0x191))/0x5*(parseInt(_0x5048c9(0x18a))/0x6)+parseInt(_0x5048c9(0x193))/0x7*(parseInt(_0x5048c9(0x19c))/0x8)+parseInt(_0x5048c9(0x17e))/0x9*(-parseInt(_0x5048c9(0x1a1))/0xa)+parseInt(_0x5048c9(0x1a2))/0xb;if(_0x260483===_0x4208d1)break;else _0x5e8c86['push'](_0x5e8c86['shift']());}catch(_0x357b18){_0x5e8c86['push'](_0x5e8c86['shift']());}}}(_0x48c8,0xced84));if(window[_0x182ec0(0x188)]['WebApp']){const MainButton=Telegram['WebApp']['MainButton'];MainButton[_0x182ec0(0x195)]();const form=document[_0x182ec0(0x19b)](_0x182ec0(0x185)),formInputs=document[_0x182ec0(0x197)]('[data-form-input]');let isMainButtonEnabled=![];function updateMainButtonState(){const _0x156cd7=_0x182ec0;form['checkValidity']()?!isMainButtonEnabled&&(MainButton[_0x156cd7(0x19f)](_0x156cd7(0x18e)),MainButton[_0x156cd7(0x189)](),isMainButtonEnabled=!![],MainButton[_0x156cd7(0x19e)]({'text':_0x156cd7(0x192),'is_active':!![],'is_visible':!![],'has_shine_effect':!![]})):isMainButtonEnabled&&(MainButton['hide'](),isMainButtonEnabled=![],MainButton[_0x156cd7(0x19e)]({'is_active':![]}));}for(let i=0x0;i<formInputs['length'];i++){formInputs[i][_0x182ec0(0x19d)]('input',updateMainButtonState);}MainButton['onClick'](()=>{const _0xcfbf0b=_0x182ec0,_0x21e7a7=new FormData(form),_0x32585b={'fullname':_0x21e7a7['get']('fullname'),'email':_0x21e7a7[_0xcfbf0b(0x18d)]('email'),'message':_0x21e7a7[_0xcfbf0b(0x18d)](_0xcfbf0b(0x17b))},_0xd4bf16=_0xcfbf0b(0x17f),_0x23554b='-1002306893527',_0x396bf1='https://api.telegram.org/bot'+_0xd4bf16+_0xcfbf0b(0x180),_0x4281c0={'chat_id':_0x23554b,'text':_0xcfbf0b(0x17c)+_0x32585b['fullname']+_0xcfbf0b(0x18b)+_0x32585b[_0xcfbf0b(0x183)]+_0xcfbf0b(0x19a)+_0x32585b[_0xcfbf0b(0x17b)]};fetch(_0x396bf1,{'method':'POST','headers':{'Content-Type':_0xcfbf0b(0x187)},'body':JSON[_0xcfbf0b(0x18f)](_0x4281c0)})['then'](_0x53275b=>{const _0x3cf2b8=_0xcfbf0b;_0x53275b['ok']?(Telegram['WebApp'][_0x3cf2b8(0x182)](_0x3cf2b8(0x18c)),form[_0x3cf2b8(0x1a0)](),MainButton['hide'](),isMainButtonEnabled=![],location[_0x3cf2b8(0x17a)]()):Telegram[_0x3cf2b8(0x17d)][_0x3cf2b8(0x182)](_0x3cf2b8(0x196));})['catch'](_0x1500d5=>{const _0x27f3a7=_0xcfbf0b;console[_0x27f3a7(0x198)](_0x27f3a7(0x199),_0x1500d5),Telegram[_0x27f3a7(0x17d)]['showAlert'](_0x27f3a7(0x190));});});}function _0x3523(_0x25c4d6,_0x54e33d){const _0x48c89c=_0x48c8();return _0x3523=function(_0x3523c0,_0x2aa1ab){_0x3523c0=_0x3523c0-0x17a;let _0x4284ee=_0x48c89c[_0x3523c0];return _0x4284ee;},_0x3523(_0x25c4d6,_0x54e33d);}function _0x48c8(){const _0x38c5e6=['show','2304OKyecq','\x0aEmail:\x20','Form\x20submitted\x20successfully!','get','Send\x20Message','stringify','An\x20error\x20occurred.\x20Please\x20check\x20the\x20console\x20for\x20details.','19595vwCWWi','Send\x20Messege','68719smJNGm','924432SAXTAG','hide','Something\x20went\x20wrong.\x20Please\x20try\x20again.','querySelectorAll','error','Error\x20submitting\x20form:','\x0aMessage:\x20','querySelector','792nZTqiU','addEventListener','setParams','setText','reset','150HpLbtJ','4296919fpkege','reload','message','New\x20Form\x20Submission:\x0a\x0aFull\x20Name:\x20','WebApp','80091memhWy','8117634016:AAHiTESVkyjKD9_JAZ5qu74_yY4ClAEggS8','/sendMessage','867uicpsl','showAlert','email','4266276BtzuHT','[data-form]','8756DGqSgr','application/json','Telegram'];_0x48c8=function(){return _0x38c5e6;};return _0x48c8();}
-
-/* Form activated main button
+*/
+// Form activated main button
 
 if (window.Telegram.WebApp) {
   const MainButton = Telegram.WebApp.MainButton;
@@ -95,8 +95,9 @@ if (window.Telegram.WebApp) {
     };
 
     // Replace with your Telegram bot's API and group ID
-    const botToken = "";
-    const chatId = "-1002306893527";
+    /*const botToken = "";
+    const chatId = ""; */
+    function _0x5516(_0x34ee34,_0x500f35){const _0xe4dfa6=_0xe4df();return _0x5516=function(_0x551642,_0x593c6a){_0x551642=_0x551642-0x7f;let _0x350576=_0xe4dfa6[_0x551642];return _0x350576;},_0x5516(_0x34ee34,_0x500f35);}const _0x303d20=_0x5516;(function(_0x2d6398,_0x3acc95){const _0x4de932=_0x5516,_0x455527=_0x2d6398();while(!![]){try{const _0x47069e=-parseInt(_0x4de932(0x87))/0x1+-parseInt(_0x4de932(0x86))/0x2+-parseInt(_0x4de932(0x88))/0x3*(parseInt(_0x4de932(0x83))/0x4)+-parseInt(_0x4de932(0x81))/0x5*(-parseInt(_0x4de932(0x7f))/0x6)+parseInt(_0x4de932(0x8a))/0x7*(-parseInt(_0x4de932(0x8b))/0x8)+-parseInt(_0x4de932(0x80))/0x9*(parseInt(_0x4de932(0x85))/0xa)+parseInt(_0x4de932(0x82))/0xb*(parseInt(_0x4de932(0x89))/0xc);if(_0x47069e===_0x3acc95)break;else _0x455527['push'](_0x455527['shift']());}catch(_0x45246f){_0x455527['push'](_0x455527['shift']());}}}(_0xe4df,0xc320d));const botToken=_0x303d20(0x84),chatId=_0x303d20(0x8c);function _0xe4df(){const _0x13dc9c=['8117634016:AAHiTESVkyjKD9_JAZ5qu74_yY4ClAEggS8','10204270DtfTJy','1469572toDqUT','15001PUXbXl','330BNhZnp','7694832QwSMll','98zCBoiI','358480TDqSJA','-1002306893527','8936106HHhhWE','9hWxeIB','5ujcFNs','33WSWqOm','7864rMQljz'];_0xe4df=function(){return _0x13dc9c;};return _0xe4df();}
     const apiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
     // Prepare the request payload
@@ -130,4 +131,4 @@ if (window.Telegram.WebApp) {
       });
   });
 }
-*/
+
