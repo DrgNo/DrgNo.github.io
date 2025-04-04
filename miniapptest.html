@@ -1,29 +1,190 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telegram Mini Web App</title>
-    <style id="dynamic-style">
-        body {
-            transition: background-color 0.5s ease;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quiz</title>
+  <style>
+    /* Default styles */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      text-align: center;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    h1 {
+      font-size: 1.8em;
+      margin-bottom: 20px;
+    }
+
+    .options-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      justify-items: center;
+    }
+
+    .option {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      border: 1px solid #ccc;
+      border-radius: 10px;
+      padding: 10px;
+      cursor: pointer;
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+
+    .option:hover {
+      transform: scale(1.05);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    .option img {
+      width: 100px;
+      height: 100px;
+      border-radius: 5px;
+      margin-bottom: 10px;
+    }
+
+    .option label {
+      font-size: 1em;
+    }
+  </style>
 </head>
 <body>
-    <h1>Welcome to the Telegram Mini Web App</h1>
-    <p>The background color changes based on your Telegram app theme.</p>
-    
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script>
-        function updateBackgroundColor() {
-            const themeParams = Telegram.WebApp.themeParams;
-            const bgColor = themeParams.bg_color || '#ffffff'; // Default to white if no theme color is available
-            document.body.style.backgroundColor = `#${bgColor}`;
-        }
+  <div id="quiz-container">
+    <!-- Dynamic quiz content will load here -->
+  </div>
+  <script>
+      // Initialize Telegram WebApp
+Telegram.WebApp.ready();
 
-        Telegram.WebApp.onEvent('themeChanged', updateBackgroundColor);
-        updateBackgroundColor(); // Set initial background color
-    </script>
+// Apply dynamic Telegram theming
+document.body.style.backgroundColor = Telegram.WebApp.themeParams.bg_color || '#ffffff';
+document.body.style.color = Telegram.WebApp.themeParams.text_color || '#000000';
+
+// Quiz Data: Questions and Choices
+const quizData = [
+  {
+    question: "What is your favorite fruit?",
+    options: [
+      { label: "Apple", img: "apple.jpg" },
+      { label: "Banana", img: "banana.jpg" },
+      { label: "Orange", img: "orange.jpg" },
+      { label: "Grape", img: "grape.jpg" }
+    ]
+  },
+  {
+    question: "What is your favorite season?",
+    options: [
+      { label: "Spring", img: "spring.jpg" },
+      { label: "Summer", img: "summer.jpg" },
+      { label: "Autumn", img: "autumn.jpg" },
+      { label: "Winter", img: "winter.jpg" }
+    ]
+  },
+  {
+    question: "What type of music do you like?",
+    options: [
+      { label: "Rock", img: "rock.jpg" },
+      { label: "Pop", img: "pop.jpg" },
+      { label: "Jazz", img: "jazz.jpg" },
+      { label: "Classical", img: "classical.jpg" }
+    ]
+  },
+  {
+    question: "What is your ideal vacation?",
+    options: [
+      { label: "Beach", img: "beach.jpg" },
+      { label: "Mountains", img: "mountains.jpg" },
+      { label: "City", img: "city.jpg" },
+      { label: "Countryside", img: "countryside.jpg" }
+    ]
+  }
+];
+
+// Variables to track the current question and user answers
+let currentQuestionIndex = 0;
+const userChoices = [];
+
+// Function to render a question
+function renderQuestion() {
+  const quizContainer = document.getElementById("quiz-container");
+  const currentQuestion = quizData[currentQuestionIndex];
+
+  quizContainer.innerHTML = `
+    <h1>${currentQuestion.question}</h1>
+    <div class="options-container">
+      ${currentQuestion.options
+        .map(
+          (option, index) => `
+        <div class="option">
+          <img src="${option.img}" alt="${option.label}">
+          <label>
+            <input type="radio" name="choice" value="${index}"> ${option.label}
+          </label>
+        </div>
+      `
+        )
+        .join("")}
+    </div>
+  `;
+
+  // Hide the MainButton initially
+  Telegram.WebApp.MainButton.hide();
+
+  // Enable MainButton when a choice is selected
+  const options = document.querySelectorAll('input[name="choice"]');
+  options.forEach(option => {
+    option.addEventListener("change", () => {
+      Telegram.WebApp.MainButton.show();
+    });
+  });
+}
+
+// MainButton Click Handler
+Telegram.WebApp.MainButton.onClick(() => {
+  const selectedChoice = document.querySelector('input[name="choice"]:checked');
+  if (selectedChoice) {
+    userChoices.push(parseInt(selectedChoice.value, 10)); // Store the user's choice
+
+    currentQuestionIndex++;
+    if (currentQuestionIndex < quizData.length) {
+      // Render the next question
+      renderQuestion();
+    } else {
+      // All questions answered - calculate category
+      calculateCategory();
+    }
+  } else {
+    alert("Please select an option before proceeding!");
+  }
+});
+
+// Function to calculate and display category
+function calculateCategory() {
+  // Placeholder logic to calculate category based on user choices
+  const categoryIndex = userChoices.reduce((sum, value) => sum + value, 0) % 12;
+  const categories = [
+    "Category 1", "Category 2", "Category 3", "Category 4",
+    "Category 5", "Category 6", "Category 7", "Category 8",
+    "Category 9", "Category 10", "Category 11", "Category 12"
+  ];
+  const assignedCategory = categories[categoryIndex];
+
+  // Show the result
+  const quizContainer = document.getElementById("quiz-container");
+  quizContainer.innerHTML = `<h1>You belong to ${assignedCategory}!</h1>`;
+
+  // Hide the MainButton
+  Telegram.WebApp.MainButton.hide();
+}
+
+// Render the first question initially
+renderQuestion();
+  </script>
 </body>
 </html>
