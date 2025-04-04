@@ -1,11 +1,201 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quiz</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Percy Jackson Cabin Sorting</title>
+  <script>
+    /*
+Percy Jackson Fan Club Cabin Sorting Mini App
+*/
+
+// Initialize Telegram WebApp
+Telegram.WebApp.ready();
+
+// Apply Telegram dynamic theming
+document.body.style.backgroundColor = Telegram.WebApp.themeParams.bg_color || '#ffffff';
+document.body.style.color = Telegram.WebApp.themeParams.text_color || '#000000';
+
+// Global state variables
+let currentStage = "welcome"; // stages: "welcome", "quiz", "result"
+let currentQuestionIndex = 0;
+const userAnswers = [];
+
+// Array of cabin names (12 cabins based on the Olympians)
+const cabins = [
+  "Zeus", "Hera", "Poseidon", "Demeter", "Ares",
+  "Athena", "Apollo", "Artemis", "Hephaestus", "Aphrodite",
+  "Hermes", "Dionysus"
+];
+
+// Quiz Data: 6 questions, each with 4 options. (Replace image file names as needed)
+const quizData = [
+  {
+    question: "Which divine symbol calls to you?",
+    options: [
+      { label: "Thunderbolt", img: "thunderbolt.jpg" },
+      { label: "Trident", img: "trident.jpg" },
+      { label: "Olive Branch", img: "olive.jpg" },
+      { label: "Laurel Wreath", img: "laurel.jpg" }
+    ]
+  },
+  {
+    question: "Pick your favorite mythological creature:",
+    options: [
+      { label: "Griffin", img: "griffin.jpg" },
+      { label: "Pegasus", img: "pegasus.jpg" },
+      { label: "Hydra", img: "hydra.jpg" },
+      { label: "Sphinx", img: "sphinx.jpg" }
+    ]
+  },
+  {
+    question: "Which element resonates with you?",
+    options: [
+      { label: "Fire", img: "fire.jpg" },
+      { label: "Water", img: "water.jpg" },
+      { label: "Earth", img: "earth.jpg" },
+      { label: "Air", img: "air.jpg" }
+    ]
+  },
+  {
+    question: "Your ideal camp activity:",
+    options: [
+      { label: "Archery", img: "archery.jpg" },
+      { label: "Sword Fighting", img: "sword.jpg" },
+      { label: "Chariot Racing", img: "chariot.jpg" },
+      { label: "Prophecy Lessons", img: "prophecy.jpg" }
+    ]
+  },
+  {
+    question: "Choose a divine mentor:",
+    options: [
+      { label: "Zeus", img: "zeus.jpg" },
+      { label: "Poseidon", img: "poseidon.jpg" },
+      { label: "Athena", img: "athena.jpg" },
+      { label: "Apollo", img: "apollo.jpg" }
+    ]
+  },
+  {
+    question: "Select a celestial phenomenon:",
+    options: [
+      { label: "Aurora", img: "aurora.jpg" },
+      { label: "Meteor Shower", img: "meteor.jpg" },
+      { label: "Lunar Eclipse", img: "lunar.jpg" },
+      { label: "Solar Flare", img: "solar.jpg" }
+    ]
+  }
+];
+
+// Global variable to hold the current action callback for the MainButton
+let currentAction = () => {};
+
+// Set the MainButton onClick event; it will call the currentAction callback.
+Telegram.WebApp.MainButton.onClick(() => {
+  currentAction();
+});
+
+// ------------------
+// Page Render Functions
+// ------------------
+
+// 1. Render the Welcome Page.
+function renderWelcome() {
+  currentStage = "welcome";
+  const container = document.getElementById("quiz-container");
+  // Fetch user's first name from Telegram (using initDataUnsafe); fallback to "Guest"
+  let userName = Telegram.WebApp.initDataUnsafe?.user?.first_name || "Guest";
+  container.innerHTML = `
+    <h1>Welcome, ${userName}!</h1>
+    <p>Welcome to the Percy Jackson Fan Club Cabin Sorting!</p>
+    <p>Answer a series of questions to discover which of the twelve cabins you belong to.</p>
+  `;
+  Telegram.WebApp.MainButton.setText("Start Sorting");
+  Telegram.WebApp.MainButton.show();
+
+  // Set the action callback to move on to the first quiz question.
+  currentAction = () => {
+    // Reset quiz state in case this is a replay.
+    currentQuestionIndex = 0;
+    userAnswers.length = 0;
+    renderQuestion();
+  };
+}
+
+// 2. Render a Quiz Question Page.
+function renderQuestion() {
+  currentStage = "quiz";
+  const container = document.getElementById("quiz-container");
+  const currentQuestion = quizData[currentQuestionIndex];
+  container.innerHTML = `
+    <h1>${currentQuestion.question}</h1>
+    <div class="options-container">
+      ${currentQuestion.options.map((option, index) => {
+        // Wrapping the whole option in a clickable div that will trigger the radio button.
+        return `
+          <div class="option" onclick="document.getElementById('option-${index}').click()">
+            <img src="${option.img}" alt="${option.label}">
+            <label>
+              <input type="radio" id="option-${index}" name="choice" value="${index}">
+              ${option.label}
+            </label>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+  
+  // Hide the MainButton until an option is selected.
+  Telegram.WebApp.MainButton.hide();
+
+  // Add event listeners on radio buttons so that when a selection is made the MainButton is shown.
+  const radioButtons = document.querySelectorAll('input[name="choice"]');
+  radioButtons.forEach(radio => {
+    radio.addEventListener("change", () => {
+      Telegram.WebApp.MainButton.show();
+    });
+  });
+
+  // When the MainButton is pressed, record the selected answer and progress.
+  currentAction = () => {
+    const selected = document.querySelector('input[name="choice"]:checked');
+    if (!selected) {
+      alert("Please select an option before proceeding!");
+      return;
+    }
+    // Store the answer (using the index as the weight).
+    userAnswers.push(parseInt(selected.value, 10));
+    currentQuestionIndex++;
+    if (currentQuestionIndex < quizData.length) {
+      renderQuestion();
+    } else {
+      renderResult();
+    }
+  };
+}
+
+// 3. Render the Result Page (Sort the user into a cabin).
+function renderResult() {
+  currentStage = "result";
+  // Compute the total score from the user's answers.
+  const totalScore = userAnswers.reduce((acc, val) => acc + val, 0);
+  // Use totalScore modulo 12 to get an index into the cabins list.
+  const cabinIndex = totalScore % cabins.length;
+  const assignedCabin = cabins[cabinIndex];
+  let userName = Telegram.WebApp.initDataUnsafe?.user?.first_name || "Guest";
+  const container = document.getElementById("quiz-container");
+  container.innerHTML = `
+    <h1>Congratulations, ${userName}!</h1>
+    <p>You have been sorted into the <strong>${assignedCabin}</strong> Cabin!</p>
+  `;
+  Telegram.WebApp.MainButton.hide();
+}
+
+// ------------------
+// Kick Off the app by rendering the Welcome page.
+renderWelcome();
+  </script>
   <style>
-    /* Default styles */
+    /* Global styling with transition for dynamic theme changes */
     body {
       font-family: Arial, sans-serif;
       margin: 0;
@@ -13,19 +203,27 @@
       text-align: center;
       transition: background-color 0.3s, color 0.3s;
     }
-
     h1 {
-      font-size: 1.8em;
+      font-size: 2em;
       margin-bottom: 20px;
     }
-
+    p {
+      font-size: 1.2em;
+      margin-bottom: 20px;
+    }
+    /* Container for any content (welcome, questions or result) */
+    #quiz-container {
+      max-width: 600px;
+      margin: 0 auto;
+    }
+    /* Grid layout for options */
     .options-container {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 20px;
       justify-items: center;
+      margin-bottom: 20px;
     }
-
     .option {
       display: flex;
       flex-direction: column;
@@ -35,156 +233,28 @@
       padding: 10px;
       cursor: pointer;
       transition: transform 0.3s, box-shadow 0.3s;
+      max-width: 150px;
     }
-
     .option:hover {
       transform: scale(1.05);
       box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
     }
-
     .option img {
       width: 100px;
       height: 100px;
       border-radius: 5px;
       margin-bottom: 10px;
     }
-
     .option label {
       font-size: 1em;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
   <div id="quiz-container">
-    <!-- Dynamic quiz content will load here -->
+    <!-- Dynamic content (welcome, questions, result) will be injected here -->
   </div>
-  <script>
-      // Initialize Telegram WebApp
-Telegram.WebApp.ready();
-
-// Apply dynamic Telegram theming
-document.body.style.backgroundColor = Telegram.WebApp.themeParams.bg_color || '#ffffff';
-document.body.style.color = Telegram.WebApp.themeParams.text_color || '#000000';
-
-// Quiz Data: Questions and Choices
-const quizData = [
-  {
-    question: "What is your favorite fruit?",
-    options: [
-      { label: "Apple", img: "apple.jpg" },
-      { label: "Banana", img: "banana.jpg" },
-      { label: "Orange", img: "orange.jpg" },
-      { label: "Grape", img: "grape.jpg" }
-    ]
-  },
-  {
-    question: "What is your favorite season?",
-    options: [
-      { label: "Spring", img: "spring.jpg" },
-      { label: "Summer", img: "summer.jpg" },
-      { label: "Autumn", img: "autumn.jpg" },
-      { label: "Winter", img: "winter.jpg" }
-    ]
-  },
-  {
-    question: "What type of music do you like?",
-    options: [
-      { label: "Rock", img: "rock.jpg" },
-      { label: "Pop", img: "pop.jpg" },
-      { label: "Jazz", img: "jazz.jpg" },
-      { label: "Classical", img: "classical.jpg" }
-    ]
-  },
-  {
-    question: "What is your ideal vacation?",
-    options: [
-      { label: "Beach", img: "beach.jpg" },
-      { label: "Mountains", img: "mountains.jpg" },
-      { label: "City", img: "city.jpg" },
-      { label: "Countryside", img: "countryside.jpg" }
-    ]
-  }
-];
-
-// Variables to track the current question and user answers
-let currentQuestionIndex = 0;
-const userChoices = [];
-
-// Function to render a question
-function renderQuestion() {
-  const quizContainer = document.getElementById("quiz-container");
-  const currentQuestion = quizData[currentQuestionIndex];
-
-  quizContainer.innerHTML = `
-    <h1>${currentQuestion.question}</h1>
-    <div class="options-container">
-      ${currentQuestion.options
-        .map(
-          (option, index) => `
-        <div class="option">
-          <img src="${option.img}" alt="${option.label}">
-          <label>
-            <input type="radio" name="choice" value="${index}"> ${option.label}
-          </label>
-        </div>
-      `
-        )
-        .join("")}
-    </div>
-  `;
-
-  // Hide the MainButton initially
-  Telegram.WebApp.MainButton.hide();
-
-  // Enable MainButton when a choice is selected
-  const options = document.querySelectorAll('input[name="choice"]');
-  options.forEach(option => {
-    option.addEventListener("change", () => {
-      Telegram.WebApp.MainButton.show();
-    });
-  });
-}
-
-// MainButton Click Handler
-Telegram.WebApp.MainButton.onClick(() => {
-  const selectedChoice = document.querySelector('input[name="choice"]:checked');
-  if (selectedChoice) {
-    userChoices.push(parseInt(selectedChoice.value, 10)); // Store the user's choice
-
-    currentQuestionIndex++;
-    if (currentQuestionIndex < quizData.length) {
-      // Render the next question
-      renderQuestion();
-    } else {
-      // All questions answered - calculate category
-      calculateCategory();
-    }
-  } else {
-    alert("Please select an option before proceeding!");
-  }
-});
-
-// Function to calculate and display category
-function calculateCategory() {
-  // Placeholder logic to calculate category based on user choices
-  const categoryIndex = userChoices.reduce((sum, value) => sum + value, 0) % 12;
-  const categories = [
-    "Category 1", "Category 2", "Category 3", "Category 4",
-    "Category 5", "Category 6", "Category 7", "Category 8",
-    "Category 9", "Category 10", "Category 11", "Category 12"
-  ];
-  const assignedCategory = categories[categoryIndex];
-
-  // Show the result
-  const quizContainer = document.getElementById("quiz-container");
-  quizContainer.innerHTML = `<h1>You belong to ${assignedCategory}!</h1>`;
-
-  // Hide the MainButton
-  Telegram.WebApp.MainButton.hide();
-}
-
-// Render the first question initially
-renderQuestion();
-  </script>
+  
 </body>
 </html>
