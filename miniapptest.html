@@ -3,260 +3,418 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <script src="https://telegram.org/js/telegram-web-app.js?56"></script>
-
-  <title>Percy Jackson Cabin Sorting</title>
-  <script>
-    /*
-Percy Jackson Fan Club Cabin Sorting Mini App
-*/
-
-// Initialize Telegram WebApp
-Telegram.WebApp.ready();
-
-// Apply Telegram dynamic theming
-document.body.style.backgroundColor = Telegram.WebApp.themeParams.bg_color || '#ffffff';
-document.body.style.color = Telegram.WebApp.themeParams.text_color || '#000000';
-
-// Global state variables
-let currentStage = "welcome"; // stages: "welcome", "quiz", "result"
-let currentQuestionIndex = 0;
-const userAnswers = [];
-
-// Array of cabin names (12 cabins based on the Olympians)
-const cabins = [
-  "Zeus", "Hera", "Poseidon", "Demeter", "Ares",
-  "Athena", "Apollo", "Artemis", "Hephaestus", "Aphrodite",
-  "Hermes", "Dionysus"
-];
-
-// Quiz Data: 6 questions, each with 4 options. (Replace image file names as needed)
-const quizData = [
-  {
-    question: "Which divine symbol calls to you?",
-    options: [
-      { label: "Thunderbolt", img: "thunderbolt.jpg" },
-      { label: "Trident", img: "trident.jpg" },
-      { label: "Olive Branch", img: "olive.jpg" },
-      { label: "Laurel Wreath", img: "laurel.jpg" }
-    ]
-  },
-  {
-    question: "Pick your favorite mythological creature:",
-    options: [
-      { label: "Griffin", img: "griffin.jpg" },
-      { label: "Pegasus", img: "pegasus.jpg" },
-      { label: "Hydra", img: "hydra.jpg" },
-      { label: "Sphinx", img: "sphinx.jpg" }
-    ]
-  },
-  {
-    question: "Which element resonates with you?",
-    options: [
-      { label: "Fire", img: "fire.jpg" },
-      { label: "Water", img: "water.jpg" },
-      { label: "Earth", img: "earth.jpg" },
-      { label: "Air", img: "air.jpg" }
-    ]
-  },
-  {
-    question: "Your ideal camp activity:",
-    options: [
-      { label: "Archery", img: "archery.jpg" },
-      { label: "Sword Fighting", img: "sword.jpg" },
-      { label: "Chariot Racing", img: "chariot.jpg" },
-      { label: "Prophecy Lessons", img: "prophecy.jpg" }
-    ]
-  },
-  {
-    question: "Choose a divine mentor:",
-    options: [
-      { label: "Zeus", img: "zeus.jpg" },
-      { label: "Poseidon", img: "poseidon.jpg" },
-      { label: "Athena", img: "athena.jpg" },
-      { label: "Apollo", img: "apollo.jpg" }
-    ]
-  },
-  {
-    question: "Select a celestial phenomenon:",
-    options: [
-      { label: "Aurora", img: "aurora.jpg" },
-      { label: "Meteor Shower", img: "meteor.jpg" },
-      { label: "Lunar Eclipse", img: "lunar.jpg" },
-      { label: "Solar Flare", img: "solar.jpg" }
-    ]
-  }
-];
-
-// Global variable to hold the current action callback for the MainButton
-let currentAction = () => {};
-
-// Set the MainButton onClick event; it will call the currentAction callback.
-Telegram.WebApp.MainButton.onClick(() => {
-  currentAction();
-});
-
-// ------------------
-// Page Render Functions
-// ------------------
-
-// 1. Render the Welcome Page.
-function renderWelcome() {
-  currentStage = "welcome";
-  const container = document.getElementById("quiz-container");
-  // Fetch user's first name from Telegram (using initDataUnsafe); fallback to "Guest"
-  let userName = Telegram.WebApp.initDataUnsafe?.user?.first_name || "Guest";
-  container.innerHTML = `
-    <h1>Welcome, ${userName}!</h1>
-    <p>Welcome to the Percy Jackson Fan Club Cabin Sorting!</p>
-    <p>Answer a series of questions to discover which of the twelve cabins you belong to.</p>
-  `;
-  Telegram.WebApp.MainButton.setText("Start Sorting");
-  Telegram.WebApp.MainButton.show();
-
-  // Set the action callback to move on to the first quiz question.
-  currentAction = () => {
-    // Reset quiz state in case this is a replay.
-    currentQuestionIndex = 0;
-    userAnswers.length = 0;
-    renderQuestion();
-  };
-}
-
-// 2. Render a Quiz Question Page.
-function renderQuestion() {
-  currentStage = "quiz";
-  const container = document.getElementById("quiz-container");
-  const currentQuestion = quizData[currentQuestionIndex];
-  container.innerHTML = `
-    <h1>${currentQuestion.question}</h1>
-    <div class="options-container">
-      ${currentQuestion.options.map((option, index) => {
-        // Wrapping the whole option in a clickable div that will trigger the radio button.
-        return `
-          <div class="option" onclick="document.getElementById('option-${index}').click()">
-            <img src="${option.img}" alt="${option.label}">
-            <label>
-              <input type="radio" id="option-${index}" name="choice" value="${index}">
-              ${option.label}
-            </label>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  `;
-  
-  // Hide the MainButton until an option is selected.
-  Telegram.WebApp.MainButton.hide();
-
-  // Add event listeners on radio buttons so that when a selection is made the MainButton is shown.
-  const radioButtons = document.querySelectorAll('input[name="choice"]');
-  radioButtons.forEach(radio => {
-    radio.addEventListener("change", () => {
-      Telegram.WebApp.MainButton.show();
-    });
-  });
-
-  // When the MainButton is pressed, record the selected answer and progress.
-  currentAction = () => {
-    const selected = document.querySelector('input[name="choice"]:checked');
-    if (!selected) {
-      alert("Please select an option before proceeding!");
-      return;
-    }
-    // Store the answer (using the index as the weight).
-    userAnswers.push(parseInt(selected.value, 10));
-    currentQuestionIndex++;
-    if (currentQuestionIndex < quizData.length) {
-      renderQuestion();
-    } else {
-      renderResult();
-    }
-  };
-}
-
-// 3. Render the Result Page (Sort the user into a cabin).
-function renderResult() {
-  currentStage = "result";
-  // Compute the total score from the user's answers.
-  const totalScore = userAnswers.reduce((acc, val) => acc + val, 0);
-  // Use totalScore modulo 12 to get an index into the cabins list.
-  const cabinIndex = totalScore % cabins.length;
-  const assignedCabin = cabins[cabinIndex];
-  let userName = Telegram.WebApp.initDataUnsafe?.user?.first_name || "Guest";
-  const container = document.getElementById("quiz-container");
-  container.innerHTML = `
-    <h1>Congratulations, ${userName}!</h1>
-    <p>You have been sorted into the <strong>${assignedCabin}</strong> Cabin!</p>
-  `;
-  Telegram.WebApp.MainButton.hide();
-}
-
-// ------------------
-// Kick Off the app by rendering the Welcome page.
-renderWelcome();
-  </script>
+  <title>Cabin Assignment Mini App</title>
   <style>
-    /* Global styling with transition for dynamic theme changes */
-    body {
-      font-family: Arial, sans-serif;
-      margin: 0;
-      padding: 20px;
-      text-align: center;
-      transition: background-color 0.3s, color 0.3s;
-    }
-    h1 {
-      font-size: 2em;
-      margin-bottom: 20px;
-    }
-    p {
-      font-size: 1.2em;
-      margin-bottom: 20px;
-    }
-    /* Container for any content (welcome, questions or result) */
-    #quiz-container {
-      max-width: 600px;
-      margin: 0 auto;
-    }
-    /* Grid layout for options */
-    .options-container {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      justify-items: center;
-      margin-bottom: 20px;
-    }
-    .option {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      border: 1px solid #ccc;
-      border-radius: 10px;
-      padding: 10px;
-      cursor: pointer;
-      transition: transform 0.3s, box-shadow 0.3s;
-      max-width: 150px;
-    }
-    .option:hover {
-      transform: scale(1.05);
-      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
-    }
-    .option img {
-      width: 100px;
-      height: 100px;
-      border-radius: 5px;
-      margin-bottom: 10px;
-    }
-    .option label {
-      font-size: 1em;
-      cursor: pointer;
-    }
+  /* Styling for Main Page */
+.user-info {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.profile-image {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    object-fit: cover; /* Ensures the image fits inside the circle */
+    margin-bottom: 10px;
+}
+
+#greetingMessage {
+    font-size: 24px;
+    margin-bottom: 10px;
+}
+
+.username {
+    font-size: 16px;
+    background-color: #f0f0f0;
+    padding: 5px 10px;
+    border-radius: 15px;
+    display: inline-block;
+}
+
+.description {
+    font-size: 16px;
+    margin-bottom: 20px;
+}
+
+.native-start {
+    padding: 10px 20px;
+    font-size: 18px;
+    color: white;
+    background-color: #007bff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.native-start:hover {
+    background-color: #0056b3;
+}
+
+   .container {
+    margin: 0;
+    padding: 0; /* Removed padding */
+    max-width: 100%; /* Allow full page width */
+    height: 100vh; /* Full viewport height */
+    display: flex;
+    justify-content: center; /* Center horizontally */
+    align-items: center; /* Center vertically */
+    text-align: center;
+}
+
+.step {
+    display: none;
+}
+
+.step.active {
+    display: block;
+}
+
+h2 {
+    margin-bottom: 20px;
+}
+
+.options {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center; /* Center buttons horizontally */
+    gap: 10px; /* Space between buttons */
+}
+
+.options button {
+    flex: 0 0 calc(50% - 10px); /* Ensure two buttons per row */
+    padding: 10px;
+    border: none;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+    border-radius: 5px;
+    text-align: center;
+    margin-bottom: 10px;
+}
+
+.options button:hover {
+    background-color: #0056b3;
+}
+
+.back {
+    flex: 0 0 100%; /* Full width for Back button */
+    background-color: #6c757d;
+}
+
+.back:hover {
+    background-color: #5a6268;
+}
   </style>
 </head>
 <body>
-  <div id="quiz-container">
-    <!-- Dynamic content (welcome, questions, result) will be injected here -->
+ <!-- Main Page -->
+<div id="mainPage" class="step active">
+    <div class="user-info">
+        <!-- User's profile picture -->
+        <img id="userImage" src="" alt="User Image" class="profile-image" />
+
+        <!-- Greeting message -->
+        <h2 id="greetingMessage">Hello, [First Name] [Last Name]!</h2>
+
+        <!-- User's username -->
+        <p id="username" class="username">@[Username]</p>
+    </div>
+
+    <!-- Description about the mini app -->
+    <p class="description">
+        Welcome to the Cabin Assignment Quiz! Discover which cabin best suits you by answering a few fun and engaging questions. Tap the Start button below to begin your journey.
+    </p>
+
+    <!-- Start button -->
+    <button class="native-start" onclick="startQuiz()">Start Quiz</button>
+</div>
+
+  <div class="container">
+    <!-- Step 1: Ask for Zodiac Sign (Consolation Sign) -->
+    <div id="step1" class="step active">
+      <h2>What is your zodiac sign?</h2>
+      <div class="options">
+        <button onclick="nextStep('step1', 'step2', 'Aries')">Aries</button>
+        <button onclick="nextStep('step1', 'step2', 'Taurus')">Taurus</button>
+        <button onclick="nextStep('step1', 'step2', 'Gemini')">Gemini</button>
+        <button onclick="nextStep('step1', 'step2', 'Cancer')">Cancer</button>
+        <button onclick="nextStep('step1', 'step2', 'Leo')">Leo</button>
+        <button onclick="nextStep('step1', 'step2', 'Virgo')">Virgo</button>
+        <button onclick="nextStep('step1', 'step2', 'Libra')">Libra</button>
+        <button onclick="nextStep('step1', 'step2', 'Scorpio')">Scorpio</button>
+        <button onclick="nextStep('step1', 'step2', 'Sagittarius')">Sagittarius</button>
+        <button onclick="nextStep('step1', 'step2', 'Capricorn')">Capricorn</button>
+        <button onclick="nextStep('step1', 'step2', 'Aquarius')">Aquarius</button>
+        <button onclick="nextStep('step1', 'step2', 'Pisces')">Pisces</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Ask for Dominant Trait -->
+    <div id="step2" class="step">
+      <h2>What is your dominant trait?</h2>
+      <div class="options">
+        <button onclick="nextStep('step2', 'step3', 'Courageous')">Courageous</button>
+        <button onclick="nextStep('step2', 'step3', 'Compassionate')">Compassionate</button>
+        <button onclick="nextStep('step2', 'step3', 'Intelligent')">Intelligent</button>
+        <button onclick="nextStep('step2', 'step3', 'Adventurous')">Adventurous</button>
+        <button class="back" onclick="goBack('step2', 'step1')">Back</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Ask for Preferred Environment -->
+    <div id="step3" class="step">
+      <h2>Which environment resonates with you the most?</h2>
+      <div class="options">
+        <button onclick="nextStep('step3', 'step4', 'Ocean')">Ocean</button>
+        <button onclick="nextStep('step3', 'step4', 'Mountains')">Mountains</button>
+        <button onclick="nextStep('step3', 'step4', 'Forest')">Forest</button>
+        <button onclick="nextStep('step3', 'step4', 'City')">City</button>
+        <button class="back" onclick="goBack('step3', 'step2')">Back</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Ask for Mythical Aspect Connection -->
+    <div id="step4" class="step">
+      <h2>Which aspect resonates with you most?</h2>
+      <div class="options">
+        <button onclick="nextStep('step4', 'result', 'Divine Order')">Divine Order</button>
+        <button onclick="nextStep('step4', 'result', 'Ocean Deep')">Ocean Deep</button>
+        <button onclick="nextStep('step4', 'result', 'Wisdom & Strategy')">Wisdom & Strategy</button>
+        <button onclick="nextStep('step4', 'result', 'Light & Arts')">Light & Arts</button>
+        <button onclick="nextStep('step4', 'result', 'War & Passion')">War & Passion</button>
+        <button onclick="nextStep('step4', 'result', 'Beauty & Love')">Beauty & Love</button>
+        <button onclick="nextStep('step4', 'result', 'Nature\'s Bounty')">Nature's Bounty</button>
+        <button onclick="nextStep('step4', 'result', 'Craftsmanship & Innovation')">Craftsmanship & Innovation</button>
+        <button onclick="nextStep('step4', 'result', 'Joy & Revelry')">Joy & Revelry</button>
+        <button onclick="nextStep('step4', 'result', 'Mystery & Underworld')">Mystery & Underworld</button>
+        <button class="back" onclick="goBack('step4', 'step3')">Back</button>
+      </div>
+    </div>
+
+    <!-- Result Step: Display the Assigned Cabin -->
+    <div id="result" class="step">
+      <h2>Congratulations! Your cabin is...</h2>
+      <p id="cabinResult"></p>
+      <button onclick="location.reload();">Restart</button>
+    </div>
   </div>
-  
+
+  <script>
+// Fetch user data from Telegram Mini App API and update the main page
+function fetchUserData() {
+    // Retrieve user data via Telegram API
+    const userData = Telegram.WebApp.initDataUnsafe?.user || {};
+
+    if (userData) {
+        // Dynamically update main page with user details
+        document.getElementById("userImage").src = userData.photo_url || "https://via.placeholder.com/100"; // Fallback image
+        document.getElementById("greetingMessage").textContent = `Hello, ${userData.first_name} ${userData.last_name || ''}!`;
+        document.getElementById("username").textContent = `@${userData.username || 'unknown'}`;
+    } else {
+        console.error("User data could not be retrieved.");
+    }
+}
+
+// Start the quiz: Transition from the main page to the first quiz step
+function startQuiz() {
+    // Hide the main page
+    document.getElementById("mainPage").classList.remove("active");
+    document.getElementById("mainPage").style.display = "none";
+
+    // Show the first step of the quiz
+    document.getElementById("step1").classList.add("active");
+    document.getElementById("step1").style.display = "block";
+
+    // Hide the Telegram MainButton after starting the quiz
+    Telegram.WebApp.MainButton.hide();
+}
+
+// Event listener for DOMContentLoaded: Ensure everything is set up at the start
+document.addEventListener("DOMContentLoaded", () => {
+    fetchUserData(); // Fetch user data and update UI
+
+    // Initially hide all quiz steps and show only the main page
+    const steps = document.querySelectorAll(".step");
+    steps.forEach(step => {
+        step.classList.remove("active");
+        step.style.display = "none"; // Hide all steps
+    });
+
+    document.getElementById("mainPage").classList.add("active");
+    document.getElementById("mainPage").style.display = "block"; // Show main page only
+
+    // Configure Telegram's native MainButton
+    Telegram.WebApp.MainButton.text = "Start Quiz";
+    Telegram.WebApp.MainButton.show(); // Show the button on the main page
+    Telegram.WebApp.MainButton.onClick(startQuiz); // Attach the startQuiz action
+});
+
+    // Create a score object for all 12 cabins (Greek gods/goddesses)
+    let scores = {
+      Zeus: 0,
+      Poseidon: 0,
+      Athena: 0,
+      Apollo: 0,
+      Ares: 0,
+      Aphrodite: 0,
+      Demeter: 0,
+      Hermes: 0,
+      Artemis: 0,
+      Hephaestus: 0,
+      Dionysus: 0,
+      Hades: 0
+    };
+
+    function nextStep(currentStepId, nextStepId, answer) {
+      // Process this answer based on the current step
+      if (currentStepId === 'step1') {
+        // Map zodiac signs to cabins.
+        switch(answer) {
+          case 'Aries': scores.Ares += 2; break;
+          case 'Taurus': scores.Demeter += 2; break;
+          case 'Gemini': scores.Hermes += 2; break;
+          case 'Cancer': scores.Poseidon += 2; break;
+          case 'Leo': scores.Apollo += 2; break;
+          case 'Virgo': scores.Athena += 2; break;
+          case 'Libra': scores.Aphrodite += 2; break;
+          case 'Scorpio': scores.Hades += 2; break;
+          case 'Sagittarius': scores.Zeus += 2; break;
+          case 'Capricorn': scores.Hephaestus += 2; break;
+          case 'Aquarius': scores.Dionysus += 2; break;
+          case 'Pisces': scores.Artemis += 2; break;
+        }
+      } else if (currentStepId === 'step2') {
+        // Dominant trait mapping.
+        if (answer === 'Courageous') {
+          scores.Ares += 1;
+          scores.Zeus += 1;
+        } else if (answer === 'Compassionate') {
+          scores.Demeter += 1;
+          scores.Aphrodite += 1;
+        } else if (answer === 'Intelligent') {
+          scores.Athena += 1;
+          scores.Hermes += 1;
+        } else if (answer === 'Adventurous') {
+          scores.Apollo += 1;
+          scores.Dionysus += 1;
+        }
+      } else if (currentStepId === 'step3') {
+        // Environment mapping.
+        if (answer === 'Ocean') {
+          scores.Poseidon += 1;
+        } else if (answer === 'Mountains') {
+          scores.Zeus += 1;
+        } else if (answer === 'Forest') {
+          scores.Artemis += 1;
+        } else if (answer === 'City') {
+          scores.Hermes += 1;
+        }
+      } else if (currentStepId === 'step4') {
+        // Mythical aspect mapping.
+        if (answer === 'Divine Order') {
+          scores.Zeus += 1;
+        } else if (answer === 'Ocean Deep') {
+          scores.Poseidon += 1;
+        } else if (answer === 'Wisdom & Strategy') {
+          scores.Athena += 1;
+        } else if (answer === 'Light & Arts') {
+          scores.Apollo += 1;
+        } else if (answer === 'War & Passion') {
+          scores.Ares += 1;
+        } else if (answer === 'Beauty & Love') {
+          scores.Aphrodite += 1;
+        } else if (answer === "Nature's Bounty") {
+          scores.Demeter += 1;
+        } else if (answer === 'Craftsmanship & Innovation') {
+          scores.Hephaestus += 1;
+        } else if (answer === 'Joy & Revelry') {
+          scores.Dionysus += 1;
+        } else if (answer === 'Mystery & Underworld') {
+          scores.Hades += 1;
+        }
+      }
+
+      // Transition from the current step to the next
+      document.getElementById(currentStepId).classList.remove('active');
+      document.getElementById(nextStepId).classList.add('active');
+
+      // If we've reached the result step, calculate the cabin
+      if (nextStepId === 'result') {
+        calculateCabin();
+      }
+    }
+
+    function goBack(currentStepId, previousStepId) {
+      document.getElementById(currentStepId).classList.remove('active');
+      document.getElementById(previousStepId).classList.add('active');
+    }
+
+    function calculateCabin() {
+      let maxScore = -Infinity;
+      let cabin = "";
+      // Find the key with the highest score.
+      for (let key in scores) {
+        if (scores[key] > maxScore) {
+          maxScore = scores[key];
+          cabin = key;
+        }
+      }
+      document.getElementById('cabinResult').textContent = cabin;
+    }
+    
+  function sendResultToTelegram(cabin) {
+    const botToken = "8122888379:AAFdtgiVfFeVYE97KMd3TLAu5qfZ14ansiU"; // Replace with your bot's API token
+    const chatId = "-1002341259768";    // Replace with your group chat ID
+    const message = `Congratulations! The user has been assigned to Cabin ${cabin}.`;
+
+    // Telegram Bot API URL
+    const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
+
+    // HTTPS Request
+    fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            chat_id: chatId,
+            text: message
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.ok) {
+            console.log("Message sent successfully!");
+        } else {
+            console.error("Error sending message:", data);
+        }
+    })
+    .catch(error => console.error("Fetch error:", error));
+}
+
+function calculateCabin() {
+    let maxScore = -Infinity;
+    let cabin = "";
+
+    // Determine the cabin with the highest score
+    for (let key in scores) {
+        if (scores[key] > maxScore) {
+            maxScore = scores[key];
+            cabin = key;
+        }
+    }
+
+    // Display the result on the page
+    document.getElementById('cabinResult').textContent = cabin;
+
+    // Send the result to your Telegram group
+    sendResultToTelegram(cabin);
+}
+
+
+  </script>
 </body>
 </html>
