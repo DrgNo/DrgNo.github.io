@@ -14,12 +14,12 @@ webApp.setHeaderColor(webApp.themeParams.header_bg_color);
 }
 
 
-/* User Data Here
+// User Data Here
 const userData = Telegram.WebApp.initDataUnsafe.user;
 const userId = userData.id;
 const firstName = userData.first_name || '';
 const lastName = userData.last_name || '';
-const username = userData.username || 'not set'; */
+const username = userData.username || 'not set'; 
 
 // Essential Components Here
 const mainB = Telegram.WebApp.MainButton;
