@@ -371,11 +371,9 @@ const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
         Telegram.WebApp.showAlert('Error sending your details.');
       });
 
-// Transition from step4 to finish
-setTimeout(() => {
+// Transition from confirm to finish
 document.getElementById('confirm').classList.remove('active');
 document.getElementById('finish').classList.add('active');
-}, 300);
     secB.hide();
     mainB.setParams({
       text: "Finish",
