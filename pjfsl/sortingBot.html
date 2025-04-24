@@ -10,6 +10,77 @@
 <script src="https://kit.fontawesome.com/fb6f73a6da.js" crossorigin="anonymous"></script>
 <script src="https://telegram.org/js/telegram-web-app.js?56"></script>
 <script src="https://unpkg.com/@lottiefiles/lottie-player@0.2.0/dist/tgs-player.js"></script>
+<style>
+  .questions {
+      text-align: center;
+}
+
+.options {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 30px;
+    }
+
+.options button {
+      flex: 0 0 calc(50% - 10px);
+      padding: 10px;
+      border: none;
+      background-color: var(--tg-theme-button-color);
+      color: #ffffff;
+      cursor: pointer;
+      border-radius: 4px;
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+.options button:hover {
+      background-color: var(--tg-theme-link-color);
+    }
+        
+.optionsL {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 30px;
+    }
+
+.optionsL button {
+      flex: 0 0 calc(100% - 10px);
+      padding: 10px;
+      border: none;
+      background-color: var(--tg-theme-button-color);
+      color: #ffffff;
+      cursor: pointer;
+      border-radius: 4px;
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+.optionsL button:hover {
+      background-color: var(--tg-theme-link-color);
+    }
+
+button {
+    font: inherit;
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+}
+
+.step {
+    display: none;
+}
+
+.step.active {
+    display: block;
+}
+</style>
 </head>
 
 <body>
