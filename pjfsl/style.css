@@ -77,6 +77,67 @@ a {text-decoration: none; }
 li {list-style: none; }
 
 img, ion-icon, a, button, time, span { display: block; }
+.questions {
+      text-align: center;
+}
+
+.options {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 30px;
+    }
+
+.options button {
+      flex: 0 0 calc(50% - 10px);
+      padding: 10px;
+      border: none;
+      background-color: var(--tg-theme-button-color);
+      color: #ffffff;
+      cursor: pointer;
+      border-radius: 4px;
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+.options button:hover {
+      background-color: var(--tg-theme-link-color);
+    }
+        
+.optionsL {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 30px;
+    }
+
+.optionsL button {
+      flex: 0 0 calc(100% - 10px);
+      padding: 10px;
+      border: none;
+      background-color: var(--tg-theme-button-color);
+      color: #ffffff;
+      cursor: pointer;
+      border-radius: 4px;
+      text-align: center;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+.optionsL button:hover {
+      background-color: var(--tg-theme-link-color);
+    }
+
+.step {
+    display: none;
+}
+
+.step.active {
+    display: block;
+}
 
 button {
     font: inherit;
