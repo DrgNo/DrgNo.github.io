@@ -72,7 +72,10 @@
     box-sizing: border-box;
 }
 
-a {text-decoration: none; }
+a {
+ text-decoration: none;
+ color: var(--tg-theme-link-color);
+  }
 
 li {list-style: none; }
 
