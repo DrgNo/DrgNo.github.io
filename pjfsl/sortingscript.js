@@ -377,7 +377,7 @@ document.getElementById('finish').classList.add('active');
 }, 300);
     secB.hide();
     mainB.setParams({
-      text: "Finish",
+      text: "FInish",
       is_active: true,
       is_visible: true,
       has_shine_effect: false,
@@ -385,7 +385,7 @@ document.getElementById('finish').classList.add('active');
   } 
   
   
-  else if (mainB.text === 'Finish') {
+  else if (mainB.text === 'FInish') {
     Telegram.WebApp.close();
   }
 });
