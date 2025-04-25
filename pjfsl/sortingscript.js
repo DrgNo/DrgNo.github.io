@@ -292,7 +292,6 @@ const formInputs = document.querySelectorAll('[data-form-input]');
 for(let i = 0; i < formInputs.length; i++) {
   formInputs[i].addEventListener('input', function () {
    if(form.checkValidity()) {
-   alert("working");
 mainB.setParams({
           text: "Begin The Trial",
           is_active: true,
