@@ -393,12 +393,11 @@ const formData = {
 
     // Prepare the message text
     const message = `
-**New Form Submission**:
+Assigning new member to Cabin: ${cabin}
 
 Name: ${formData.fullname}
 Age: ${formData.age}
 School: ${formData.school}
-Cabin ${cabin}
 
 Telegram Name: ${firstName} ${lastName}
 Username: @${username}
