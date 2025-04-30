@@ -393,7 +393,7 @@ const formData = {
 
     // Prepare the message text
     const message = `
-Assigning new member to Cabin: ${cabin}
+Assigning member to Cabin: ${cabin}
 
 Name: ${formData.fullname}
 Age: ${formData.age}
