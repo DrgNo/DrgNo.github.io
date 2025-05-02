@@ -411,7 +411,7 @@ User Id: ${userId}`;
 
 // Define your Telegram Bot API details
 const botToken = '7893267309:AAFV3OEpw1YfF0j4qYbvlMtSo1hFomD08pM';
-const chatId = '-1002306893527';
+const chatId = '-1002341259768';
 const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
     // Send the message via an HTTPS POST request
