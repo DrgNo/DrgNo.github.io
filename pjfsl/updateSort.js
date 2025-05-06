@@ -21,9 +21,6 @@ const firstName = userData.first_name || '';
 const lastName = userData.last_name || '';
 const username = userData.username || 'not set';
 
-if (userId = '1884479205') {
-  scores.Hades += 20;
-}
 // Essential Components Here
 const mainB = Telegram.WebApp.MainButton;
 const secB = Telegram.WebApp.SecondaryButton;
