@@ -54,25 +54,25 @@ if (currentStepId === 'step1') {
   
 else if (currentStepId === 'step2') {
         if (answer === 's2a1') {
-          scores.Athena += 6;
+          scores.Athena += 5;
         } else if (answer === 's2a2') {
-          scores.Poseidon += 6;
+          scores.Poseidon += 2;
         } else if (answer === 's2a3') {
-          scores.Zeus += 6;
+          scores.Zeus += 3;
         } else if (answer === 's2a4') {
-          scores.Ares += 6;
+          scores.Ares += 3;
         } else if (answer === 's2a5') {
-          scores.Apollo += 6;
+          scores.Apollo += 5;
         } else if (answer === 's2a6') {
-          scores.Hades += 6;
+          scores.Hades += 2;
         } else if (answer === 's2a7') {
-          scores.Hephasutus += 6;
+          scores.Hephasutus += 2;
         } else if (answer === 's2a8') {
-          scores.Aphrodite += 6;
+          scores.Aphrodite += 2;
         } else if (answer === 's2a9') {
-          scores.Hermes += 6;
+          scores.Hermes += 3;
         } else if (answer === 's2a10') {
-          scores.Dionysus += 6;
+          scores.Dionysus += 4;
         }
       }
       
