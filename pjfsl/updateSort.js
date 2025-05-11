@@ -317,6 +317,7 @@ const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
       .then((response) => {
         if (response.ok) {
           console.log('Message sent successfully');
+          Telegram.WebApp.showAlert('send!');
         } else {
           console.error('Failed to send message', response);
           Telegram.WebApp.showAlert('Failed to submit form. Please try again.');
