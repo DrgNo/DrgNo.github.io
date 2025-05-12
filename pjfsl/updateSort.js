@@ -341,6 +341,7 @@ setTimeout(() => {
 document.getElementById('confirm').classList.remove('active');
 document.getElementById('finish').classList.add('active');
 }, 300);
+document.getElementById('bgm').play();
     secB.hide();
     mainB.setParams({
       text: "Finish",
