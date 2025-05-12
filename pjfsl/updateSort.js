@@ -265,10 +265,8 @@ mainB.onClick(() => {
   
   if (mainB.text === 'Begin The Trial') {
 document.getElementById('start').classList.remove('active');
-document.getElementById('step1').classList.add('active');
-alert('new1');
-    
-    mainB.setParams({
+document.getElementById('step1').classList.add('active');  
+mainB.setParams({
       text: "Confirm",
       is_active: true,
       is_visible: false,      
@@ -281,7 +279,6 @@ alert('new1');
 
 //if submit before
 if (submitState === "yes") {
- alert('You already have submitted once');
 document.getElementById('notSubmit').classList.remove('active');
 document.getElementById('yesSubmit').classList.add('active');
 }
@@ -339,6 +336,7 @@ const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
         Telegram.WebApp.showAlert('Error sending your details.');
       });
   }
+
 // Transition from step4 to finish
 setTimeout(() => {
 document.getElementById('confirm').classList.remove('active');
