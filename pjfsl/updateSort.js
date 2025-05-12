@@ -266,7 +266,7 @@ mainB.onClick(() => {
   if (mainB.text === 'Begin The Trial') {
 document.getElementById('start').classList.remove('active');
 document.getElementById('step1').classList.add('active');
-    
+alert('done');  
     mainB.setParams({
       text: "Confirm",
       is_active: true,
