@@ -38,7 +38,7 @@
 <div class="step active" id="start">
 <header><h2 class="h2 article-title">The Trial Chamber</h2></header>
 <section class="about-text">
-<p>Step into the Chamber of Blood Trial, where your true lineage shall be revealed. Within the trial, you will face twelve questions about yourself. Answer them with honesty, and the Fates shall assign you to the cabin that matches to your bloodline.
+<p>Step into the Chamber of Blood Trial, where your true lineage shall be revealed. Within the trial, you will face eight questions about yourself. Answer them with honesty, and the Fates shall assign you to the cabin that matches to your bloodline.
 <br><br>
 Enter your details into the form, and once done, a button will appear before you. Click the button to begin the trial. May fortune guide you, brave soul. Camp Half-Blood eagerly awaits your return!</p>
 </section>
@@ -67,180 +67,92 @@ Enter your details into the form, and once done, a button will appear before you
 
 <!-- Question 02 -->
 <div id="step2" class="step">
-<h2 class="h2 questions">What is your favourite cabin?</h2>
+<h2 class="h2 questions">What is your favourite element?</h2>
 <div class="options">
-<button onclick="nextStep('step2', 'step3', 's2a1')">Athena</button>
-<button onclick="nextStep('step2', 'step3', 's2a2')">Poseidon</button>
-<button onclick="nextStep('step2', 'step3', 's2a4')">Zeus</button>
-<button onclick="nextStep('step2', 'step3', 's2a5')">Ares</button>
-<button onclick="nextStep('step2', 'step3', 's2a6')">Apollo</button>
-<button onclick="nextStep('step2', 'step3', 's2a7')">Hades</button>
-<button onclick="nextStep('step2', 'step3', 's2a3')">Hephasutus</button>
-<button onclick="nextStep('step2', 'step3', 's2a8')">Aphrodite</button>
-<button onclick="nextStep('step2', 'step3', 's2a9')">Hermes</button>
-<button onclick="nextStep('step2', 'step3', 's2a10')">Dionysus</button>
+<button onclick="nextStep('step2', 'step3', 's2a1')">Earth</button>
+<button onclick="nextStep('step2', 'step3', 's2a2')">Water</button>
+<button onclick="nextStep('step2', 'step3', 's2a3')">Air</button>
+<button onclick="nextStep('step2', 'step3', 's2a4')">Fire</button>
+<button onclick="nextStep('step2', 'step3', 's2a5')">Darkness</button>
+<button onclick="nextStep('step2', 'step3', 's2a6')">Light</button>
 </div>
 </div>
 
 <!-- Question 03 -->
 <div id="step3" class="step">
-<h2 class="h2 questions">How do your friends describe you?</h2>
+<h2 class="h2 questions">Which environment do you like most?</h2>
 <div class="options">
-<button onclick="nextStep('step3', 'step4', 's3a1')">Wise</button>
-<button onclick="nextStep('step3', 'step4', 's3a2')">Bold</button>
-<button onclick="nextStep('step3', 'step4', 's3a3')">Confident</button>
-<button onclick="nextStep('step3', 'step4', 's3a4')">Brave</button>
-<button onclick="nextStep('step3', 'step4', 's3a5')">Creative</button>
-<button onclick="nextStep('step3', 'step4', 's3a6')">Mysterious</button>
-<button onclick="nextStep('step3', 'step4', 's3a7')">Hardworking</button>
-<button onclick="nextStep('step3', 'step4', 's3a8')">Charming</button>
-<button onclick="nextStep('step3', 'step4', 's3a9')">Quick-witted</button>
-<button onclick="nextStep('step3', 'step4', 's3a10')">Fun/Loving</button>
+<button onclick="nextStep('step3', 'step4', 's3a1')">Forest</button>
+<button onclick="nextStep('step3', 'step4', 's3a2')">Ocean</button>
+<button onclick="nextStep('step3', 'step4', 's3a3')">Crowd City</button>
+<button onclick="nextStep('step3', 'step4', 's3a4')">Mountains</button>
+<button onclick="nextStep('step3', 'step4', 's3a5')">Underworld</button>
+<button onclick="nextStep('step3', 'step4', 's3a6')">Flower Garden</button>
 </div>
 </div>
 
-<!-- question 04 -->
+<!-- Question 04 -->
 <div id="step4" class="step">
-<h2 class="h2 questions">What’s your ideal adventure?</h2>
+<h2 class="h2 questions">What type of person are you?</h2>
 <div class="options">
-<button onclick="nextStep('step4', 'step5', 's4a1')">Exploring ruins</button>
-<button onclick="nextStep('step4', 'step5', 's4a2')">Sailing oceans</button>
-<button onclick="nextStep('step4', 'step5', 's4a3')">Climbing mountains</button>
-<button onclick="nextStep('step4', 'step5', 's4a4')">Competing</button>
-<button onclick="nextStep('step4', 'step5', 's4a5')">Performing art</button>
-<button onclick="nextStep('step4', 'step5', 's4a7')">Building projects</button>
-<button onclick="nextStep('step4', 'step5', 's4a8')">Socializing</button>
-<button onclick="nextStep('step4', 'step5', 's4a9')">Traveling</button>
-<button onclick="nextStep('step4', 'step5', 's4a10')">Partying</button>
-<button onclick="nextStep('step4', 'step5', 's4a6')">Searching relics</button>
+<button onclick="nextStep('step4', 'step5', 's4a1')">Leader</button>
+<button onclick="nextStep('step4', 'step5', 's4a2')">Thinker</button>
+<button onclick="nextStep('step4', 'step5', 's4a3')">Inventor</button>
+<button onclick="nextStep('step4', 'step5', 's4a4')">Rebel</button>
+<button onclick="nextStep('step4', 'step5', 's4a5')">Lover</button>
+<button onclick="nextStep('step4', 'step5', 's4a6')">Chatter</button>
 </div>
 </div>
 
+<!-- Question 05 -->
 <div id="step5" class="step">
-<h2 class="h2 questions">How do you approach challenges?</h2>
+<h2 class="h2 questions">Your greatest weakness?</h2>
 <div class="options">
-<button onclick="nextStep('step5', 'step6', 's5a1')">Strategically</button>
-<button onclick="nextStep('step5', 'step6', 's5a2')">Head-on</button>
-<button onclick="nextStep('step5', 'step6', 's5a3')">Leading the way</button>
-<button onclick="nextStep('step5', 'step6', 's5a4')">With determination</button>
-<button onclick="nextStep('step5', 'step6', 's5a5')">Creatively</button>
-<button onclick="nextStep('step5', 'step6', 's5a6')">Patiently</button>
-<button onclick="nextStep('step5', 'step6', 's5a7')">With tools</button>
-<button onclick="nextStep('step5', 'step6', 's5a8')">Persuading others</button>
-<button onclick="nextStep('step5', 'step6', 's5a9')">Thinking fast</button>
-<button onclick="nextStep('step5', 'step6', 's5a10')">Turning it into fun</button>
+<button onclick="nextStep('step5', 'step6', 's5a1')">Pride</button>
+<button onclick="nextStep('step5', 'step6', 's5a2')">Anger</button>
+<button onclick="nextStep('step5', 'step6', 's5a3')">Isolation</button>
+<button onclick="nextStep('step5', 'step6', 's5a4')">Indecision</button>
+<button onclick="nextStep('step5', 'step6', 's5a5')">Vanity</button>
+<button onclick="nextStep('step5', 'step6', 's5a6')">Ruthlessness</button>
 </div>
 </div>
 
+<!-- Question 06 -->
 <div id="step6" class="step">
-<h2 class="h2 questions">What profession do you like most?</h2>
+<h2 class="h2 questions">How others describe you?</h2>
 <div class="options">
-<button onclick="nextStep('step6', 'step7', 's6a1')">Professor</button>
-<button onclick="nextStep('step6', 'step7', 's6a2')">Sailor</button>
-<button onclick="nextStep('step6', 'step7', 's6a3')">CEO</button>
-<button onclick="nextStep('step6', 'step7', 's6a4')">Athlete</button>
-<button onclick="nextStep('step6', 'step7', 's6a5')">Artist</button>
-<button onclick="nextStep('step6', 'step7', 's6a6')">Detective</button>
-<button onclick="nextStep('step6', 'step7', 's6a7')">Engineer</button>
-<button onclick="nextStep('step6', 'step7', 's6a8')">Matchmaker</button>
-<button onclick="nextStep('step6', 'step7', 's6a9')">Courier</button>
-<button onclick="nextStep('step6', 'step7', 's6a10')">Event planner</button>
+<button onclick="nextStep('step6', 'step7', 's6a1')">Wise</button>
+<button onclick="nextStep('step6', 'step7', 's6a2')">Brave</button>
+<button onclick="nextStep('step6', 'step7', 's6a3')">Charming</button>
+<button onclick="nextStep('step6', 'step7', 's6a4')">Skilled</button>
+<button onclick="nextStep('step6', 'step7', 's6a5')">Tough</button>
+<button onclick="nextStep('step6', 'step7', 's6a6')">Lovely</button>
 </div>
 </div>
 
+<!-- Question 07 -->
 <div id="step7" class="step">
-<h2 class="h2 questions">What pet would you want?</h2>
+<h2 class="h2 questions">Which skill do you have from the list?</h2>
 <div class="options">
-<button onclick="nextStep('step7', 'step8', 's7a1')">Owl</button>
-<button onclick="nextStep('step7', 'step8', 's7a2')">Fish</button>
-<button onclick="nextStep('step7', 'step8', 's7a3')">Eagle</button>
-<button onclick="nextStep('step7', 'step8', 's7a4')">Dog</button>
-<button onclick="nextStep('step7', 'step8', 's7a5')">Dolphin</button>
-<button onclick="nextStep('step7', 'step8', 's7a6')">Snake</button>
-<button onclick="nextStep('step7', 'step8', 's7a7')">Donkey</button>
-<button onclick="nextStep('step7', 'step8', 's7a8')">Dove</button>
-<button onclick="nextStep('step7', 'step8', 's7a9')">Fox</button>
-<button onclick="nextStep('step7', 'step8', 's7a10')">Tiger cub</button>
+<button onclick="nextStep('step7', 'step8', 's7a1')">Smart</button>
+<button onclick="nextStep('step7', 'step8', 's7a2')">Strong</button>
+<button onclick="nextStep('step7', 'step8', 's7a3')">Quick</button>
+<button onclick="nextStep('step7', 'step8', 's7a4')">Creative</button>
+<button onclick="nextStep('step7', 'step8', 's7a5')">Patience</button>
+<button onclick="nextStep('step7', 'step8', 's7a6')">Strategic</button>
 </div>
 </div>
 
+<!-- Question 08 -->
 <div id="step8" class="step">
-<h2 class="h2 questions">How do you celebrate?</h2>
+<h2 class="h2 questions">What is your favourite colour from the list?</h2>
 <div class="options">
-<button onclick="nextStep('step8', 'step9', 's8a1')">Reflecting</button>
-<button onclick="nextStep('step8', 'step9', 's8a2')">Hosting gatherings</button>
-<button onclick="nextStep('step8', 'step9', 's8a3')">Feasting</button>
-<button onclick="nextStep('step8', 'step9', 's8a4')">Competing in games</button>
-<button onclick="nextStep('step8', 'step9', 's8a5')">Sharing art</button>
-<button onclick="nextStep('step8', 'step9', 's8a6')">Quiet appreciation</button>
-<button onclick="nextStep('step8', 'step9', 's8a7')">Creating crafts</button>
-<button onclick="nextStep('step8', 'step9', 's8a8')">Dressing up</button>
-<button onclick="nextStep('step8', 'step9', 's8a9')">Exchanging gifts</button>
-<button onclick="nextStep('step8', 'step9', 's8a10')">Dancing</button>
-</div>
-</div>
-
-<div id="step9" class="step">
-<h2 class="h2 questions">What’s your favorite pastime?</h2>
-<div class="options">
-<button onclick="nextStep('step9', 'step10', 's9a1')">Solving puzzles</button>
-<button onclick="nextStep('step9', 'step10', 's9a2')">Swimming</button>
-<button onclick="nextStep('step9', 'step10', 's9a3')">Planning</button>
-<button onclick="nextStep('step9', 'step10', 's9a4')">Exercising</button>
-<button onclick="nextStep('step9', 'step10', 's9a5')">Writing songs</button>
-<button onclick="nextStep('step9', 'step10', 's9a6')">Exploring</button>
-<button onclick="nextStep('step9', 'step10', 's9a7')">Fixing things</button>
-<button onclick="nextStep('step9', 'step10', 's9a8')">Watching movies</button>
-<button onclick="nextStep('step9', 'step10', 's9a9')">Chatting</button>
-<button onclick="nextStep('step9', 'step10', 's9a10')">Playing games</button>
-</div>
-</div>
-
-<div id="step10" class="step">
-<h2 class="h2 questions">What’s your favorite color?</h2>
-<div class="options">
-<button onclick="nextStep('step10', 'step11', 's10a1')">White</button>
-<button onclick="nextStep('step10', 'step11', 's10a2')">Blue</button>
-<button onclick="nextStep('step10', 'step11', 's10a3')">Gold</button>
-<button onclick="nextStep('step10', 'step11', 's10a4')">Red</button>
-<button onclick="nextStep('step10', 'step11', 's10a5')">Yellow</button>
-<button onclick="nextStep('step10', 'step11', 's10a6')">Black</button>
-<button onclick="nextStep('step10', 'step11', 's10a7')">Brown</button>
-<button onclick="nextStep('step10', 'step11', 's10a8')">Pink</button>
-<button onclick="nextStep('step10', 'step11', 's10a9')">Silver</button>
-<button onclick="nextStep('step10', 'step11', 's10a10')">Purple</button>
-</div>
-</div>
-
-<div id="step11" class="step">
-<h2 class="h2 questions">What’s your dream vacation?</h2>
-<div class="options">
-<button onclick="nextStep('step11', 'step12', 's11a1')">Exploring landmarks</button>
-<button onclick="nextStep('step11', 'step12', 's11a2')">Relaxing on islands</button>
-<button onclick="nextStep('step11', 'step12', 's11a3')">Mountain resorts</button>
-<button onclick="nextStep('step11', 'step12', 's11a4')">Thrilling adventures</button>
-<button onclick="nextStep('step11', 'step12', 's11a5')">Music festivals</button>
-<button onclick="nextStep('step11', 'step12', 's11a6')">Mysterious caves</button>
-<button onclick="nextStep('step11', 'step12', 's11a7')">Craft fairs</button>
-<button onclick="nextStep('step11', 'step12', 's11a8')">Luxurious retreats</button>
-<button onclick="nextStep('step11', 'step12', 's11a9')">City tours</button>
-<button onclick="nextStep('step11', 'step12', 's11a10')">Carnival celebrations</button>
-</div>
-</div>
-
-<div id="step12" class="step">
-<h2 class="h2 questions">What’s your greatest strength?</h2>
-<div class="options">
-<button onclick="nextStep('step12', 'confirm', 's12a1')">Wisdom</button>
-<button onclick="nextStep('step12', 'confirm', 's12a2')">Adaptability</button>
-<button onclick="nextStep('step12', 'confirm', 's12a3')">Leadership</button>
-<button onclick="nextStep('step12', 'confirm', 's12a4')">Courage</button>
-<button onclick="nextStep('step12', 'confirm', 's12a5')">Creativity</button>
-<button onclick="nextStep('step12', 'confirm', 's12a6')">Resilience</button>
-<button onclick="nextStep('step12', 'confirm', 's12a7')">Craftsmanship</button>
-<button onclick="nextStep('step12', 'confirm', 's12a8')">Charm</button>
-<button onclick="nextStep('step12', 'confirm', 's12a9')">Speed</button>
-<button onclick="nextStep('step12', 'confirm', 's12a10')">Joyfulness</button>
+<button onclick="nextStep('step8', 'confirm', 's8a1')">Blue</button>
+<button onclick="nextStep('step8', 'confirm', 's8a2')">Red</button>
+<button onclick="nextStep('step8', 'confirm', 's8a3')">Green</button>
+<button onclick="nextStep('step8', 'confirm', 's8a4')">Gold</button>
+<button onclick="nextStep('step8', 'confirm', 's8a5')">Black</button>
+<button onclick="nextStep('step8', 'confirm', 's8a6')">Purple</button>
 </div>
 </div>
 
@@ -261,17 +173,23 @@ Please note that even if you take the trial multiple times and confirm each atte
 <h2 class="h2 article-title">Congratulations!</h2>
 <tgs-player autoplay loop mode="normal" src="./TgsAnimations/sortingResults.tgs" style="max-width: 100px; margin-bottom: -380px; margin-top: 5px; margin-right:auto; margin-left: auto;"></tgs-player>
 <h3 class="h3">Your cabin - <u><cabinName id="cabinName"></cabinName></u> !</h3>
-<div class="about-text">
+
+<div class="about-text step active" id="notSubmit">
 <p><br>Congratulations on discovering your true bloodline, mortal! You are now an integral part of our community.
 <br><br>
 Your details and assigned cabin have already been sent to our management team. You can join to your cabin by clicking the link below. If you have any questions about our community, please refer to our official <a href="http://t.me/pjfsl_bot/PJFSL_MiniApp" style="display: inline; color: var(--tg-theme-link-color);">Companion App</a>.
 </p>
-</div>
 <a id="cabinLink" href="https://t.me/drgno">
 <div class="optionsL">
 <button>Request to join the cabin</button>
 </div>
 </a>
+</div>
+
+<div class="about-text step" id="yesSubmit">
+<p><br>You've already submitted once, therefore no details have been sent to our admin panel. If you think there's been a mistake, please contact our official support bot.</p>
+</div>
+
 </div>
 
 
@@ -282,7 +200,7 @@ Your details and assigned cabin have already been sent to our management team. Y
 </main>
 
 
-<script  src="./sortingscript.js"></script>
+<script  src="sortingscript.js"></script>
 
 </body>
 </html>
