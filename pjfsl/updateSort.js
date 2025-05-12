@@ -24,7 +24,7 @@ const username = userData.username || 'not set';
 // Essential Components Here
 const mainB = Telegram.WebApp.MainButton;
 const secB = Telegram.WebApp.SecondaryButton;
-const isSubmit = localStorage.getItem('submitRep') || 'notSub';
+
 
 let cabin = "";
 let gender = "";
@@ -266,7 +266,7 @@ mainB.onClick(() => {
   if (mainB.text === 'Begin The Trial') {
 document.getElementById('start').classList.remove('active');
 document.getElementById('step1').classList.add('active');
-alert('done');  
+alert('done 3');  
     mainB.setParams({
       text: "Confirm",
       is_active: true,
@@ -277,14 +277,9 @@ alert('done');
   
  
   else if (mainB.text === 'Confirm') {
-if (isSubmit === 'yesSub') {
-Telegram.WebApp.showAlert('You have already submitted once!');
-document.getElementById('yesSubmit').classList.add('active');
-document.getElementById('noSubmit').classList.remove('active');
-}
 
-else if (isSubmit === 'noSub') {
-localStorage.setItem("submitRep", "yesSub");
+
+
 const form = document.querySelector('[data-form]');
 const formData = {
    fullname: form.querySelector('[name="fullname"]').value,
@@ -333,7 +328,7 @@ const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
         console.error('Error:', error);
         Telegram.WebApp.showAlert('Error sending your details.');
       });
-}
+
 
 // Transition from step4 to finish
 setTimeout(() => {
