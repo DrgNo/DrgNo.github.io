@@ -239,7 +239,6 @@ document.getElementById('cabinLink').href = 'https://t.me/+xybZT7TslEE5YmY1';
 
 
 
-
 // Enabling Contact Form
 const form = document.querySelector('[data-form]');
 const formInputs = document.querySelectorAll('[data-form-input]');
@@ -257,6 +256,9 @@ mainB.setParams({
     })
 } // Contact form ends here
 
+
+
+const submitState = localStorage.getItem("isSubmit") || 'no';
 
 // Main Button Section
 mainB.onClick(() => {
@@ -276,7 +278,18 @@ alert('new1');
   
  
   else if (mainB.text === 'Confirm') {
-  
+
+//if submit before
+if (submitState === "yes") {
+ alert('You already have submitted once');
+document.getElementById('notSubmit').classList.remove('active');
+document.getElementById('yesSubmit').classList.add('active');
+}
+
+//else not submit before
+else if (submitState === 'no') {
+    localStorage.setItem("isSubmit", "yes");
+   
 const form = document.querySelector('[data-form]');
 const formData = {
    fullname: form.querySelector('[name="fullname"]').value,
@@ -325,7 +338,7 @@ const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
         console.error('Error:', error);
         Telegram.WebApp.showAlert('Error sending your details.');
       });
-
+  }
 // Transition from step4 to finish
 setTimeout(() => {
 document.getElementById('confirm').classList.remove('active');
