@@ -24,6 +24,7 @@ const username = userData.username || 'not set';
 // Essential Components Here
 const mainB = Telegram.WebApp.MainButton;
 const secB = Telegram.WebApp.SecondaryButton;
+const submitState = localStorage.getItem("isSubmit") || 'no';
 let cabin = "";
 let gender = "";
 let scores = {
@@ -54,243 +55,130 @@ if (currentStepId === 'step1') {
   
 else if (currentStepId === 'step2') {
         if (answer === 's2a1') {
-          scores.Athena += 5;
+          scores.Dionysus += 2;
+          scores.Athena += 1;
         } else if (answer === 's2a2') {
-          scores.Poseidon += 2;
+          scores.Poseidon += 0;
         } else if (answer === 's2a3') {
-          scores.Zeus += 3;
+          scores.Zeus += 1;
+          scores.Hermes += 2;
         } else if (answer === 's2a4') {
-          scores.Ares += 3;
+          scores.Hephasutus += 1;
+          scores.Ares += 1;
         } else if (answer === 's2a5') {
-          scores.Apollo += 5;
+          scores.Hades += 1;
         } else if (answer === 's2a6') {
-          scores.Hades += 2;
-        } else if (answer === 's2a7') {
-          scores.Hephasutus += 2;
-        } else if (answer === 's2a8') {
+          scores.Apollo += 1;
           scores.Aphrodite += 2;
-        } else if (answer === 's2a9') {
-          scores.Hermes += 3;
-        } else if (answer === 's2a10') {
-          scores.Dionysus += 4;
         }
       }
-      
+  
+else if (currentStepId === 'step3') {
+        if (answer === 's3a1') {
+          scores.Dionysus += 1;
+          scores.Ares += 1;
+        } else if (answer === 's3a2') {
+          scores.Aphrodite += 1;
+        } else if (answer === 's3a3') {
+          scores.Athena += 1;
+          scores.Hermes += 1;
+        } else if (answer === 's3a4') {
+          scores.Zeus += 1;
+          scores.Apollo += 1;
+        } else if (answer === 's3a5') {
+          scores.Hades += 1;
+          scores.Hephasutus += 1;
+        } else if (answer === 's3a6') {
+          scores.Dionysus += 1;
+          scores.Aphrodite += 1;
+        }
+      }
+
 else if (currentStepId === 'step4') {
-    if (answer === 's4a1') {
-        scores.Athena += 1;
-    } else if (answer === 's4a2') {
-        scores.Poseidon += 1;
-    } else if (answer === 's4a3') {
-        scores.Zeus += 1;
-    } else if (answer === 's4a4') {
-        scores.Ares += 1;
-    } else if (answer === 's4a5') {
-        scores.Apollo += 1;
-    } else if (answer === 's4a6') {
-        scores.Hades += 1;
-    } else if (answer === 's4a7') {
-        scores.Hephaestus += 1;
-    } else if (answer === 's4a8') {
-        scores.Aphrodite += 1;
-    } else if (answer === 's4a9') {
-        scores.Hermes += 1;
-    } else if (answer === 's4a10') {
-        scores.Dionysus += 1;
-    }
-} 
+        if (answer === 's4a1') {
+          scores.Zeus += 1;
+          scores.Athena += 1;
+        } else if (answer === 's4a2') {
+          scores.Apollo += 1;
+        } else if (answer === 's4a3') {
+          scores.Hephasutus += 1;
+          scores.Dionysus += 2;
+          scores.Aphrodite += 1;
+        } else if (answer === 's4a4') {
+          scores.Hades += 1;
+          scores.Ares += 1;
+        } else if (answer === 's4a5') {
+          scores.Aphrodite += 1;
+        } else if (answer === 's4a6') {
+          scores.Hermes += 2;
+          scores.Aphrodite += 1;
+        }
+      }
 
 else if (currentStepId === 'step5') {
-    if (answer === 's5a1') {
-        scores.Athena += 1;
-    } else if (answer === 's5a2') {
-        scores.Poseidon += 1;
-    } else if (answer === 's5a3') {
-        scores.Zeus += 1;
-    } else if (answer === 's5a4') {
-        scores.Ares += 1;
-    } else if (answer === 's5a5') {
-        scores.Apollo += 1;
-    } else if (answer === 's5a6') {
-        scores.Hades += 1;
-    } else if (answer === 's5a7') {
-        scores.Hephaestus += 1;
-    } else if (answer === 's5a8') {
-        scores.Aphrodite += 1;
-    } else if (answer === 's5a9') {
-        scores.Hermes += 1;
-    } else if (answer === 's5a10') {
-        scores.Dionysus += 1;
-    }
-} 
-
-else if (currentStepId === 'step6') {
-    if (answer === 's6a1') {
-        scores.Athena += 1;
-    } else if (answer === 's6a2') {
-        scores.Poseidon += 1;
-    } else if (answer === 's6a3') {
-        scores.Zeus += 1;
-    } else if (answer === 's6a4') {
-        scores.Ares += 1;
-    } else if (answer === 's6a5') {
-        scores.Apollo += 1;
-    } else if (answer === 's6a6') {
-        scores.Hades += 1;
-    } else if (answer === 's6a7') {
-        scores.Hephaestus += 1;
-    } else if (answer === 's6a8') {
-        scores.Aphrodite += 1;
-    } else if (answer === 's6a9') {
-        scores.Hermes += 1;
-    } else if (answer === 's6a10') {
-        scores.Dionysus += 1;
-    }
-} 
+        if (answer === 's5a1') {
+          scores.Zeus += 1;
+          scores.Apollo += 1;
+          scores.Aphrodite += 1;
+        } else if (answer === 's5a2') {
+          scores.Ares += 1;
+        } else if (answer === 's5a3') {
+          scores.Hades += 1;
+          scores.Hephasutus += 1;
+        } else if (answer === 's5a4') {
+          scores.Hermes += 1;
+          scores.Athena += 1;
+        } else if (answer === 's5a5') {
+          scores.Aphrodite += 1;
+          scores.Dionysus += 1;
+        } else if (answer === 's5a6') {
+          scores.Dionysus += 1;
+          scores.Hermes += 1;
+        }
+      }
 
 else if (currentStepId === 'step7') {
-    if (answer === 's7a1') {
-        scores.Athena += 1;
-    } else if (answer === 's7a2') {
-        scores.Poseidon += 1;
-    } else if (answer === 's7a3') {
-        scores.Zeus += 1;
-    } else if (answer === 's7a4') {
-        scores.Ares += 1;
-    } else if (answer === 's7a5') {
-        scores.Apollo += 1;
-    } else if (answer === 's7a6') {
-        scores.Hades += 1;
-    } else if (answer === 's7a7') {
-        scores.Hephaestus += 1;
-    } else if (answer === 's7a8') {
-        scores.Aphrodite += 1;
-    } else if (answer === 's7a9') {
-        scores.Hermes += 1;
-    } else if (answer === 's7a10') {
-        scores.Dionysus += 1;
-    }
-} 
+        if (answer === 's7a1') {
+          scores.Athena += 1;
+          scores.Zeus += 1;
+        } else if (answer === 's7a2') {
+          scores.Ares += 1;
+          scores.Hephasutus += 1;
+        } else if (answer === 's7a3') {
+          scores.Hermes += 1;
+          scores.Apollo += 1;
+        } else if (answer === 's7a4') {
+          scores.Dionysus += 1;
+          scores.Aphrodite += 1;
+        } else if (answer === 's7a5') {
+          scores.Hermes += 1;
+          scores.Dionysus += 1;
+          scores.Aphrodite += 1;
+        } else if (answer === 's7a6') {
+          scores.Hades += 1;
+        }
+      }
 
 else if (currentStepId === 'step8') {
-    if (answer === 's8a1') {
-        scores.Athena += 1;
-    } else if (answer === 's8a2') {
-        scores.Poseidon += 1;
-    } else if (answer === 's8a3') {
-        scores.Zeus += 1;
-    } else if (answer === 's8a4') {
-        scores.Ares += 1;
-    } else if (answer === 's8a5') {
-        scores.Apollo += 1;
-    } else if (answer === 's8a6') {
-        scores.Hades += 1;
-    } else if (answer === 's8a7') {
-        scores.Hephaestus += 1;
-    } else if (answer === 's8a8') {
-        scores.Aphrodite += 1;
-    } else if (answer === 's8a9') {
-        scores.Hermes += 1;
-    } else if (answer === 's8a10') {
-        scores.Dionysus += 1;
-    }
-} 
-
-else if (currentStepId === 'step9') {
-    if (answer === 's9a1') {
-        scores.Athena += 1;
-    } else if (answer === 's9a2') {
-        scores.Poseidon += 1;
-    } else if (answer === 's9a3') {
-        scores.Zeus += 1;
-    } else if (answer === 's9a4') {
-        scores.Ares += 1;
-    } else if (answer === 's9a5') {
-        scores.Apollo += 1;
-    } else if (answer === 's9a6') {
-        scores.Hades += 1;
-    } else if (answer === 's9a7') {
-        scores.Hephaestus += 1;
-    } else if (answer === 's9a8') {
-        scores.Aphrodite += 1;
-    } else if (answer === 's9a9') {
-        scores.Hermes += 1;
-    } else if (answer === 's9a10') {
-        scores.Dionysus += 1;
-    }
-} 
-
-else if (currentStepId === 'step10') {
-    if (answer === 's10a1') {
-        scores.Athena += 1;
-    } else if (answer === 's10a2') {
-        scores.Poseidon += 1;
-    } else if (answer === 's10a3') {
-        scores.Zeus += 1;
-    } else if (answer === 's10a4') {
-        scores.Ares += 1;
-    } else if (answer === 's10a5') {
-        scores.Apollo += 1;
-    } else if (answer === 's10a6') {
-        scores.Hades += 1;
-    } else if (answer === 's10a7') {
-        scores.Hephaestus += 1;
-    } else if (answer === 's10a8') {
-        scores.Aphrodite += 1;
-    } else if (answer === 's10a9') {
-        scores.Hermes += 1;
-    } else if (answer === 's10a10') {
-        scores.Dionysus += 1;
-    }
-} 
-
-else if (currentStepId === 'step11') {
-    if (answer === 's11a1') {
-        scores.Athena += 1;
-    } else if (answer === 's11a2') {
-        scores.Poseidon += 1;
-    } else if (answer === 's11a3') {
-        scores.Zeus += 1;
-    } else if (answer === 's11a4') {
-        scores.Ares += 1;
-    } else if (answer === 's11a5') {
-        scores.Apollo += 1;
-    } else if (answer === 's11a6') {
-        scores.Hades += 1;
-    } else if (answer === 's11a7') {
-        scores.Hephaestus += 1;
-    } else if (answer === 's11a8') {
-        scores.Aphrodite += 1;
-    } else if (answer === 's11a9') {
-        scores.Hermes += 1;
-    } else if (answer === 's11a10') {
-        scores.Dionysus += 1;
-    }
-} 
-
-else if (currentStepId === 'step12') {
-    if (answer === 's12a1') {
-        scores.Athena += 1;
-    } else if (answer === 's12a2') {
-        scores.Poseidon += 1;
-    } else if (answer === 's12a3') {
-        scores.Zeus += 1;
-    } else if (answer === 's12a4') {
-        scores.Ares += 1;
-    } else if (answer === 's12a5') {
-        scores.Apollo += 1;
-    } else if (answer === 's12a6') {
-        scores.Hades += 1;
-    } else if (answer === 's12a7') {
-        scores.Hephaestus += 1;
-    } else if (answer === 's12a8') {
-        scores.Aphrodite += 1;
-    } else if (answer === 's12a9') {
-        scores.Hermes += 1;
-    } else if (answer === 's12a10') {
-        scores.Dionysus += 1;
-    }
-} 
+        if (answer === 's8a1') {
+          scores.Zeus += 1;
+        } else if (answer === 's8a2') {
+          scores.Ares += 1;
+          scores.Hephasutus += 1;
+        } else if (answer === 's8a3') {
+          scores.Dionysus += 1;
+          scores.Apollo += 1;
+        } else if (answer === 's8a4') {
+          scores.Dionysus += 1;
+          scores.Aphrodite += 1;
+        } else if (answer === 's8a5') {
+          scores.Hermes += 1;
+          scores.Hades += 1;
+          scores.Aphrodite += 1;
+        } else if (answer === 's8a6') {
+          scores.Hermes += 1;
+        }
+      }
 
 setTimeout(() => {
 document.getElementById(currentStepId).classList.remove('active');
@@ -352,7 +240,6 @@ document.getElementById('cabinLink').href = 'https://t.me/+xybZT7TslEE5YmY1';
 
 
 
-
 // Enabling Contact Form
 const form = document.querySelector('[data-form]');
 const formInputs = document.querySelectorAll('[data-form-input]');
@@ -371,14 +258,14 @@ mainB.setParams({
 } // Contact form ends here
 
 
+
 // Main Button Section
 mainB.onClick(() => {
   
   if (mainB.text === 'Begin The Trial') {
 document.getElementById('start').classList.remove('active');
-document.getElementById('step1').classList.add('active');
-    
-    mainB.setParams({
+document.getElementById('step1').classList.add('active');  
+mainB.setParams({
       text: "Confirm",
       is_active: true,
       is_visible: false,      
@@ -388,7 +275,17 @@ document.getElementById('step1').classList.add('active');
   
  
   else if (mainB.text === 'Confirm') {
-  
+
+//if submit before
+if (submitState === "yes") {
+document.getElementById('notSubmit').classList.remove('active');
+document.getElementById('yesSubmit').classList.add('active');
+}
+
+//else not submit before
+else if (submitState === 'no') {
+    localStorage.setItem("isSubmit", "yes");
+   
 const form = document.querySelector('[data-form]');
 const formData = {
    fullname: form.querySelector('[name="fullname"]').value,
@@ -436,6 +333,7 @@ const url = `https://api.telegram.org/bot${botToken}/sendMessage`;
         console.error('Error:', error);
         Telegram.WebApp.showAlert('Error sending your details.');
       });
+  }
 
 // Transition from step4 to finish
 setTimeout(() => {
