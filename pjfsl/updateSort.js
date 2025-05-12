@@ -24,6 +24,7 @@ const username = userData.username || 'not set';
 // Essential Components Here
 const mainB = Telegram.WebApp.MainButton;
 const secB = Telegram.WebApp.SecondaryButton;
+const submitState = localStorage.getItem("isSubmit") || 'no';
 let cabin = "";
 let gender = "";
 let scores = {
@@ -257,8 +258,6 @@ mainB.setParams({
 } // Contact form ends here
 
 
-
-const submitState = localStorage.getItem("isSubmit") || 'no';
 
 // Main Button Section
 mainB.onClick(() => {
