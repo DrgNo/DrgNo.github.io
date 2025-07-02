@@ -59,7 +59,7 @@ if (window.Telegram.WebApp) {
     };
 
     const botToken = "8117634016:AAHiTESVkyjKD9_JAZ5qu74_yY4ClAEggS8";
-    const chatId = "-1002306893527";
+    const chatId = "-1002834363869";
     const apiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
     const payload = {
       chat_id: chatId,
