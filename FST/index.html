@@ -1,0 +1,131 @@
+<!-- partial:index.partial.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Secret Opinions, FST</title>
+<link rel="stylesheet" href="https://drgno.github.io/pjfsl/style.css">
+<link rel="shortcut icon" href="1000168991.jpg" type="image/x-icon">
+<script src="https://kit.fontawesome.com/fb6f73a6da.js" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@lottiefiles/lottie-player@0.2.0/dist/tgs-player.js"></script>
+</head>
+
+<body>
+
+<main>
+<aside class="sidebar " data-sidebar>
+
+<div class="sidebar-info">
+<figure class="avatar-box">
+<tgs-player autoplay loop mode="normal" src="https://DrgNo.github.io/Anonymous/AnonymousWelcome.tgs" style="width: 60px; margin-bottom: -438px; margin-top: 5px; margin-right:10px; margin-left: 10px;"></tgs-player>
+</figure>
+<div class="info-content">
+<h1 class="name" title="Richard Hanrick">Speak Your Mind</h1>
+<p class="title">Food Science & Technology | USJ</p>
+</div>
+</div>
+
+<div class="sidebar-info-more">
+
+<div class="separator"></div>
+
+</div>
+</aside>
+
+
+<!-- Main Body -->
+<div class="main-content">
+
+
+<!-- MainSection : Contact |  -->
+<article class="contact active" data-page="contact">
+<header>
+<h2 class="h3 article-title">Anonymous Submission</h2>
+</header>
+
+<section class="contact-form">
+
+<form action="#" class="form" data-form>
+<div class="input-wrapper">
+<input type="text" name="fullname" class="form-input" placeholder="Reason (ex: Have a complaint about Kasun)" required data-form-input>
+</div>
+ <textarea name="message" class="form-input" placeholder="Your message" required data-form-input=""></textarea>
+<button class="form-btn" type="submit" disabled data-form-btn>
+<ion-icon name="paper-plane"></ion-icon>
+<span>Send Message</span>
+</button>
+
+<br>
+
+<p id="submissionResult" class="blog-text"></p>
+</form>
+
+</section>
+</article>
+        
+</div>
+</main>
+
+<script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+<script nomodule src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.js"></script>
+
+<!-- partial -->
+
+<script>
+    
+const _0x242441=_0x3b46;function _0x4bdc(){const _0x4788a8=['4376435oYqNii','1138968VKArRl','4yicIJX','8117634016:AAE0wSmY_nVeAoUVmIbVdYXQE_pRwlobvFg','14189760sWUmwc','10225096edqwQY','3829413PibbXe','5Iestjh','2304750DpfSSV','9dCDFJf','1325241bKVBjw'];_0x4bdc=function(){return _0x4788a8;};return _0x4bdc();}function _0x3b46(_0x167cba,_0x313315){_0x167cba=_0x167cba-0xc7;const _0x4bdccd=_0x4bdc();let _0x3b468f=_0x4bdccd[_0x167cba];return _0x3b468f;}(function(_0x4fba15,_0x2b0675){const _0xe30ff2={_0x5e6e06:0xca,_0x92b90e:0xc8,_0x4fbe77:0xcc,_0x5b77f5:0xcb},_0x2c27c6=_0x3b46,_0x585344=_0x4fba15();while(!![]){try{const _0xf4a9f1=-parseInt(_0x2c27c6(_0xe30ff2._0x5e6e06))/0x1+parseInt(_0x2c27c6(_0xe30ff2._0x92b90e))/0x2+parseInt(_0x2c27c6(0xd1))/0x3*(parseInt(_0x2c27c6(0xcd))/0x4)+-parseInt(_0x2c27c6(0xc7))/0x5*(-parseInt(_0x2c27c6(_0xe30ff2._0x4fbe77))/0x6)+-parseInt(_0x2c27c6(_0xe30ff2._0x5b77f5))/0x7+parseInt(_0x2c27c6(0xd0))/0x8*(-parseInt(_0x2c27c6(0xc9))/0x9)+parseInt(_0x2c27c6(0xcf))/0xa;if(_0xf4a9f1===_0x2b0675)break;else _0x585344['push'](_0x585344['shift']());}catch(_0x379db){_0x585344['push'](_0x585344['shift']());}}}(_0x4bdc,0xc586b));const BOT_TOKEN=_0x242441(0xce),CHAT_ID='-1003435055183';
+
+document.addEventListener("DOMContentLoaded", () => {
+  const form = document.querySelector(".form");
+  const inputs = document.querySelectorAll("[data-form-input]");
+  const submitBtn = document.querySelector("[data-form-btn]");
+
+  // Enable button when all inputs are filled
+  inputs.forEach(input => {
+    input.addEventListener("input", () => {
+      const allFilled = Array.from(inputs).every(i => i.value.trim() !== "");
+      submitBtn.disabled = !allFilled;
+    });
+  });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    const fullname = form.fullname.value.trim();
+    const message = form.message.value.trim();
+
+    const textMessage = `
+*${fullname}*
+
+${message}
+    `;
+
+    try {
+      const response = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chat_id: CHAT_ID,
+          text: textMessage,
+          parse_mode: "Markdown"
+        })
+      });
+
+      if (response.ok) {
+document.getElementById("submissionResult").innerText = "Message sent successfully!";
+        form.reset();
+        submitBtn.disabled = true;
+      } else {
+        document.getElementById("submissionResult").innerText = "Failed to send message. Please try again.";
+      }
+    } catch (error) {
+      console.error("Error:", error);
+      alert("Error sending message.");
+    }
+  });
+});
+</script>
+
+</body>
+</html>
