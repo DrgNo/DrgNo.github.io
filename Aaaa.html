@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Faculty of Applied Sciences - Batch Portal</title>
+    <style>
+    body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f7f6;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}
+
+.container {
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    width: 100%;
+    max-width: 400px;
+    text-align: center;
+}
+
+input {
+    width: 90%;
+    padding: 10px;
+    margin: 10px 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+button {
+    width: 100%;
+    padding: 10px;
+    background-color: #0056b3;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    margin-top: 10px;
+}
+
+button:hover {
+    background-color: #004494;
+}
+
+.logout {
+    background-color: #dc3545;
+}
+
+.logout:hover {
+    background-color: #c82333;
+}
+
+.card {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 6px;
+    text-align: left;
+    margin: 20px 0;
+    border: 1px solid #e9ecef;
+}
+
+.error {
+    color: red;
+    font-size: 14px;
+    margin-top: 10px;
+}
+</style>
+</head>
+<body>
+
+    <!-- Login Section -->
+    <div id="login-container" class="container">
+        <h2>Batchmate Login</h2>
+        <p>Enter your assigned credentials to view your details.</p>
+        <input type="email" id="email" placeholder="Email (e.g., name@batch.local)">
+        <input type="password" id="password" placeholder="Secret Code">
+        <button id="login-btn">Log In</button>
+        <p id="error-msg" class="error"></p>
+    </div>
+
+    <!-- Dashboard Section (Hidden until logged in) -->
+    <div id="dashboard-container" class="container" style="display: none;">
+        <h2>Welcome, <span id="display-name">Student</span>!</h2>
+        <div class="card">
+            <h3>Your Academic Details</h3>
+            <p><strong>Degree:</strong> <span id="display-degree">Loading...</span></p>
+            <p><strong>Current Assignment:</strong> <span id="display-project">Loading...</span></p>
+            <p><strong>Presentation Focus:</strong> <span id="display-focus">Loading...</span></p>
+        </div>
+        <button id="logout-btn" class="logout">Log Out</button>
+    </div>
+
+    <!-- Firebase JS Logic -->
+    <script>
+        // Import Firebase modules securely via CDN
+import {initializeApp} from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+
+// REPLACE THIS with your actual Firebase config from Step 1
+const firebaseConfig = {
+    apiKey: "AIzaSyDfgcIpOgJJeObDrWm_Ce0MuWSI7ZU0lB0",
+    authDomain: "drgno-fst.firebaseapp.com",
+    projectId: "drgno-fst",
+    storageBucket: "drgno-fst.firebasestorage.app",
+    messagingSenderId: "91216205592",
+    appId: "1:91216205592:web:616c05cd40727421a2b06d"
+  };
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// Get HTML elements
+const loginContainer = document.getElementById('login-container');
+const dashboardContainer = document.getElementById('dashboard-container');
+const loginBtn = document.getElementById('login-btn');
+const logoutBtn = document.getElementById('logout-btn');
+const errorMsg = document.getElementById('error-msg');
+
+// Login logic
+loginBtn.addEventListener('click', () => {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    
+    signInWithEmailAndPassword(auth, email, password)
+        .catch((error) => {
+            errorMsg.innerText = "Invalid credentials. Please try again.";
+        });
+});
+
+// Logout logic
+logoutBtn.addEventListener('click', () => {
+    signOut(auth);
+});
+
+// Monitor Login Status
+onAuthStateChanged(auth, async (user) => {
+    if (user) {
+        // User is logged in
+        loginContainer.style.display = 'none';
+        dashboardContainer.style.display = 'block';
+        
+        // Fetch their specific data from Firestore using their unique UID
+        const docRef = doc(db, "batchmates", user.uid);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            // Update the HTML with dummy data fields from Firestore
+            document.getElementById('display-name').innerText = data.name || "Student";
+            document.getElementById('display-degree').innerText = data.degree || "BSc in Applied Sciences";
+            document.getElementById('display-project').innerText = data.project_group || "Group 12 ICT Presentation";
+            document.getElementById('display-focus').innerText = data.focus || "Hilton Yala Resort & Aliya Resort";
+        } else {
+            document.getElementById('display-name').innerText = "Data not found!";
+        }
+    } else {
+        // User is logged out
+        loginContainer.style.display = 'block';
+        dashboardContainer.style.display = 'none';
+        
+        // Clear input fields
+        document.getElementById('email').value = '';
+        document.getElementById('password').value = '';
+        errorMsg.innerText = '';
+    }
+});
+
+    </script>
+</body>
+</html>
