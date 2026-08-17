@@ -77,11 +77,9 @@ button:hover {
 
     <!-- Login Section -->
     <div id="login-container" class="container">
-        <h2>Batchmate Login</h2>
-        <p>Enter your assigned credentials to view your details.</p>
-        <input type="email" id="email" placeholder="Email (e.g., name@batch.local)">
-        <input type="password" id="password" placeholder="Secret Code">
-        <button id="login-btn">Log In</button>
+        <h2>Batchmate Portal</h2>
+        <p>Sign in with your Google account to view your details.</p>
+        <button id="google-login-btn">Sign in with Google</button>
         <p id="error-msg" class="error"></p>
     </div>
 
@@ -98,13 +96,18 @@ button:hover {
     </div>
 
     <!-- Firebase JS Logic -->
-    <script>
-        // Import Firebase modules securely via CDN
-import {initializeApp} from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
-import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    <script type="module">
+     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
+import { 
+    getAuth, 
+    GoogleAuthProvider, 
+    signInWithPopup, 
+    signOut, 
+    onAuthStateChanged 
+} from "https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js";
+import { getFirestore, doc, getDoc } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 
-// REPLACE THIS with your actual Firebase config from Step 1
+// Your Firebase configuration
 const firebaseConfig = {
     apiKey: "AIzaSyDfgcIpOgJJeObDrWm_Ce0MuWSI7ZU0lB0",
     authDomain: "drgno-fst.firebaseapp.com",
@@ -118,59 +121,55 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const provider = new GoogleAuthProvider();
 
-// Get HTML elements
+// UI Elements
 const loginContainer = document.getElementById('login-container');
 const dashboardContainer = document.getElementById('dashboard-container');
-const loginBtn = document.getElementById('login-btn');
+const googleLoginBtn = document.getElementById('google-login-btn');
 const logoutBtn = document.getElementById('logout-btn');
 const errorMsg = document.getElementById('error-msg');
 
-// Login logic
-loginBtn.addEventListener('click', () => {
-    const email = document.getElementById('email').value;
-    const password = document.getElementById('password').value;
-    
-    signInWithEmailAndPassword(auth, email, password)
+// Google Sign-In Button Handler
+googleLoginBtn.addEventListener('click', () => {
+    signInWithPopup(auth, provider)
         .catch((error) => {
-            errorMsg.innerText = "Invalid credentials. Please try again.";
+            console.error(error);
+            errorMsg.innerText = "Login failed or window closed. Try again.";
         });
 });
 
-// Logout logic
+// Logout Button Handler
 logoutBtn.addEventListener('click', () => {
     signOut(auth);
 });
 
-// Monitor Login Status
+// Monitor Auth State
 onAuthStateChanged(auth, async (user) => {
     if (user) {
-        // User is logged in
         loginContainer.style.display = 'none';
         dashboardContainer.style.display = 'block';
-        
-        // Fetch their specific data from Firestore using their unique UID
-        const docRef = doc(db, "batchmates", user.uid);
+
+        // Fetch data using the user's email address as the Document ID
+        const docRef = doc(db, "batchmates", user.email);
         const docSnap = await getDoc(docRef);
 
         if (docSnap.exists()) {
             const data = docSnap.data();
-            // Update the HTML with dummy data fields from Firestore
-            document.getElementById('display-name').innerText = data.name || "Student";
-            document.getElementById('display-degree').innerText = data.degree || "BSc in Applied Sciences";
-            document.getElementById('display-project').innerText = data.project_group || "Group 12 ICT Presentation";
-            document.getElementById('display-focus').innerText = data.focus || "Hilton Yala Resort & Aliya Resort";
+            document.getElementById('display-name').innerText = data.name || user.displayName;
+            document.getElementById('display-degree').innerText = data.degree || "N/A";
+            document.getElementById('display-project').innerText = data.project_group || "N/A";
+            document.getElementById('display-focus').innerText = data.focus || "N/A";
         } else {
-            document.getElementById('display-name').innerText = "Data not found!";
+            // User signed in with Google, but their email isn't in your database
+            document.getElementById('display-name').innerText = user.displayName;
+            document.getElementById('display-degree').innerText = "No record found for this email.";
+            document.getElementById('display-project').innerText = "N/A";
+            document.getElementById('display-focus').innerText = "N/A";
         }
     } else {
-        // User is logged out
         loginContainer.style.display = 'block';
         dashboardContainer.style.display = 'none';
-        
-        // Clear input fields
-        document.getElementById('email').value = '';
-        document.getElementById('password').value = '';
         errorMsg.innerText = '';
     }
 });
