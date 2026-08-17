@@ -1,7 +1,7 @@
 if (window.Telegram.WebApp) {
   const webApp = Telegram.WebApp;
 
-  // Fetch Telegram user data
+  // Feth Telegram user data
   const userNameSpan = document.getElementById('userName');
   const user = webApp.initDataUnsafe?.user || {};
   const displayName = user.first_name
