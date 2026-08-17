@@ -97,11 +97,12 @@ button:hover {
 
     <!-- Firebase JS Logic -->
     <script type="module">
-     import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
 import { 
     getAuth, 
     GoogleAuthProvider, 
-    signInWithPopup, 
+    signInWithRedirect, 
+    getRedirectResult,
     signOut, 
     onAuthStateChanged 
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-auth.js";
@@ -132,12 +133,17 @@ const errorMsg = document.getElementById('error-msg');
 
 // Google Sign-In Button Handler
 googleLoginBtn.addEventListener('click', () => {
-    signInWithPopup(auth, provider)
-        .catch((error) => {
-            console.error(error);
-            errorMsg.innerText = "Login failed or window closed. Try again.";
-        });
+    signInWithRedirect(auth, provider);
 });
+
+// Check for errors when returning from Google redirect
+getRedirectResult(auth).catch((error) => {
+    if (error) {
+        console.error(error);
+        errorMsg.innerText = "Login error: " + error.message;
+    }
+});
+    
 
 // Logout Button Handler
 logoutBtn.addEventListener('click', () => {
