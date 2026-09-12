@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wall of Fame</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <button id="menu-toggle" class="menu-toggle" aria-label="Open menu">☰</button>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="brand small sidebar-brand">
+        <span class="brand-mark">◆</span>
+        <span class="brand-name">Legends<span class="accent"> Row</span></span>
+      </div>
+      <nav class="side-nav">
+        <a href="home.html" class="side-link">Home</a>
+        <a href="dashboard.html" class="side-link">Dashboard</a>
+        <a href="fund.html" class="side-link">Fund</a>
+        <a href="wall.html" class="side-link active">Wall of Fame</a>
+        <a href="settings.html" class="side-link">Settings</a>
+        <a href="admin.html" class="side-link" id="admin-nav-link" hidden>Admin</a>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="user-email" class="user-email" hidden></span>
+        <button id="logout-btn" class="ghost-btn">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="content-area">
+      <div class="dash-wrap" id="wall-page">
+        <div id="loading-state" class="state-msg">Loading…</div>
+        <div id="error-state" class="state-msg error-msg" hidden></div>
+
+        <div id="wall-content" hidden>
+          <p class="section-label" style="margin-bottom:14px;">Wall of Fame</p>
+          <div class="wall-grid" id="wall-grid"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Popup shown when a Wall of Fame box is tapped -->
+  <div class="modal-overlay" id="wall-modal-overlay" hidden>
+    <div class="modal-box">
+      <button class="modal-close" id="modal-close" aria-label="Close">✕</button>
+      <img id="modal-image" class="modal-image" alt="" hidden>
+      <h2 id="modal-title" class="modal-title"></h2>
+      <p id="modal-desc" class="modal-desc"></p>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

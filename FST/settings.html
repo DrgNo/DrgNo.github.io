@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Settings</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <button id="menu-toggle" class="menu-toggle" aria-label="Open menu">☰</button>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="brand small sidebar-brand">
+        <span class="brand-mark">◆</span>
+        <span class="brand-name">Control<span class="accent"> Room</span></span>
+      </div>
+      <nav class="side-nav">
+        <a href="home.html" class="side-link">Home</a>
+        <a href="dashboard.html" class="side-link">Dashboard</a>
+        <a href="fund.html" class="side-link">Fund</a>
+        <a href="wall.html" class="side-link">Wall of Fame</a>
+        <a href="settings.html" class="side-link active">Settings</a>
+        <a href="admin.html" class="side-link" id="admin-nav-link" hidden>Admin</a>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="user-email" class="user-email" hidden></span>
+        <button id="logout-btn" class="ghost-btn">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="content-area">
+      <div class="dash-wrap" id="settings-page">
+
+        <div class="card settings-section">
+          <p class="section-label">Change Password</p>
+          <form id="password-form">
+            <label for="current-password">Current password</label>
+            <input type="password" id="current-password" required autocomplete="current-password">
+
+            <label for="new-password">New password</label>
+            <input type="password" id="new-password" required minlength="6" autocomplete="new-password">
+
+            <label for="confirm-password">Confirm new password</label>
+            <input type="password" id="confirm-password" required minlength="6" autocomplete="new-password">
+
+            <button type="submit" id="password-btn">Update password</button>
+          </form>
+          <p id="password-error" class="error-msg" hidden></p>
+          <p id="password-success" class="success-msg" hidden></p>
+        </div>
+
+        <div class="card settings-section" style="margin-top:18px;">
+          <p class="section-label">More Settings</p>
+          <p class="info-text" style="color:var(--muted)">Additional customization options will appear here in future updates.</p>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Batch Fund</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <button id="menu-toggle" class="menu-toggle" aria-label="Open menu">☰</button>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="brand small sidebar-brand">
+        <span class="brand-mark">◆</span>
+        <span class="brand-name">Capital<span class="accent"> Pool</span></span>
+      </div>
+      <nav class="side-nav">
+        <a href="home.html" class="side-link">Home</a>
+        <a href="dashboard.html" class="side-link">Dashboard</a>
+        <a href="fund.html" class="side-link active">Fund</a>
+        <a href="wall.html" class="side-link">Wall of Fame</a>
+        <a href="settings.html" class="side-link">Settings</a>
+        <a href="admin.html" class="side-link" id="admin-nav-link" hidden>Admin</a>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="user-email" class="user-email" hidden></span>
+        <button id="logout-btn" class="ghost-btn">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="content-area">
+      <div class="dash-wrap" id="fund-page">
+        <div id="loading-state" class="state-msg">Loading fund records…</div>
+        <div id="error-state" class="state-msg error-msg" hidden></div>
+
+        <div id="fund-content" hidden>
+          <div class="card full-span" style="margin-bottom:18px;">
+            <p class="section-label">Batch Fund</p>
+            <div class="fund-summary">
+              <div class="fund-stat income">
+                <span class="points-label">Total Income</span>
+                <span class="points-value" id="f-total-income">Rs. 0</span>
+              </div>
+              <div class="fund-stat expense">
+                <span class="points-label">Total Outcome</span>
+                <span class="points-value" id="f-total-expense">Rs. 0</span>
+              </div>
+              <div class="fund-stat balance">
+                <span class="points-label">Current Balance</span>
+                <span class="points-value" id="f-balance">Rs. 0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card full-span">
+            <p class="section-label">Transaction History</p>
+            <ul class="tx-list" id="tx-list"></ul>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Batch Portal — Admin</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <button id="menu-toggle" class="menu-toggle" aria-label="Open menu">☰</button>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="brand small sidebar-brand">
+        <span class="brand-mark">◆</span>
+        <span class="brand-name">Batch<span class="accent">Portal</span></span>
+      </div>
+      <nav class="side-nav">
+        <a href="home.html" class="side-link">Home</a>
+        <a href="dashboard.html" class="side-link">Dashboard</a>
+        <a href="fund.html" class="side-link">Fund</a>
+        <a href="wall.html" class="side-link">Wall of Fame</a>
+        <a href="settings.html" class="side-link">Settings</a>
+        <a href="admin.html" class="side-link active" id="admin-nav-link" hidden>Admin</a>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="user-email" class="user-email"></span>
+        <button id="logout-btn" class="ghost-btn">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="content-area">
+      <div class="dash-wrap" id="admin-page">
+        <div id="loading-state" class="state-msg">Checking access…</div>
+        <div id="access-denied" class="state-msg error-msg" hidden>You don't have access to this page.</div>
+
+        <div id="admin-content" hidden>
+          <p class="section-label" style="margin-bottom:16px;">Admin — Add Records</p>
+
+          <!-- Fund Transaction -->
+          <div class="card full-span" style="margin-bottom:18px;">
+            <p class="section-label">Add Fund Transaction</p>
+            <form id="form-fund">
+              <label for="fund-type">Type</label>
+              <select id="fund-type">
+                <option value="income">Income</option>
+                <option value="expense">Expense</option>
+              </select>
+
+              <label for="fund-amount">Amount</label>
+              <input type="number" id="fund-amount" step="0.01" required>
+
+              <label for="fund-description">Description</label>
+              <input type="text" id="fund-description" required>
+
+              <label for="fund-date">Date</label>
+              <input type="date" id="fund-date" required>
+
+              <button type="submit" class="btn-primary">Add Transaction</button>
+            </form>
+            <p class="error-msg" id="fund-error" hidden></p>
+            <p class="success-msg" id="fund-success" hidden></p>
+          </div>
+
+          <!-- Wall of Fame -->
+          <div class="card full-span" style="margin-bottom:18px;">
+            <p class="section-label">Add Wall of Fame Entry</p>
+            <form id="form-wall">
+              <label for="wall-title">Title</label>
+              <input type="text" id="wall-title" required>
+
+              <label for="wall-description">Description</label>
+              <textarea id="wall-description" rows="3" required></textarea>
+
+              <label for="wall-imageurl">Image URL</label>
+              <input type="text" id="wall-imageurl" placeholder="https://...">
+
+              <label for="wall-date">Date</label>
+              <input type="date" id="wall-date" required>
+
+              <button type="submit" class="btn-primary">Add Entry</button>
+            </form>
+            <p class="error-msg" id="wall-form-error" hidden></p>
+            <p class="success-msg" id="wall-form-success" hidden></p>
+          </div>
+
+          <!-- Announcement -->
+          <div class="card full-span" style="margin-bottom:18px;">
+            <p class="section-label">Add Announcement</p>
+            <form id="form-announcement">
+              <label for="ann-title">Title</label>
+              <input type="text" id="ann-title" required>
+
+              <label for="ann-message">Message</label>
+              <textarea id="ann-message" rows="3" required></textarea>
+
+              <label for="ann-date">Date</label>
+              <input type="date" id="ann-date" required>
+
+              <button type="submit" class="btn-primary">Add Announcement</button>
+            </form>
+            <p class="error-msg" id="ann-error" hidden></p>
+            <p class="success-msg" id="ann-success" hidden></p>
+          </div>
+
+          <!-- Batch Leadership -->
+          <div class="card full-span" style="margin-bottom:18px;">
+            <p class="section-label">Add Batch Leadership</p>
+            <form id="form-leader">
+              <label for="leader-name">Full Name</label>
+              <input type="text" id="leader-name" required>
+
+              <label for="leader-designation">Designation</label>
+              <input type="text" id="leader-designation" placeholder="e.g. Batch President" required>
+
+              <label for="leader-title">Title / Company</label>
+              <input type="text" id="leader-title">
+
+              <label for="leader-photo">Photo URL</label>
+              <input type="text" id="leader-photo" placeholder="https://...">
+
+              <label for="leader-responsibility">Responsibility (1 line)</label>
+              <input type="text" id="leader-responsibility" placeholder="Manages reunion planning & logistics">
+
+              <label for="leader-order">Order (optional — lower shows first)</label>
+              <input type="number" id="leader-order">
+
+              <button type="submit" class="btn-primary">Add Leader</button>
+            </form>
+            <p class="error-msg" id="leader-error" hidden></p>
+            <p class="success-msg" id="leader-success" hidden></p>
+          </div>
+
+          <!-- Group Project -->
+          <div class="card full-span">
+            <p class="section-label">Add Group Project</p>
+            <form id="form-project">
+              <label for="proj-subject">Subject / Domain</label>
+              <input type="text" id="proj-subject" placeholder="e.g. CS101: Distributed Systems">
+
+              <label for="proj-title">Project Title</label>
+              <input type="text" id="proj-title" required>
+
+              <label for="proj-abstract">Abstract / Objective</label>
+              <textarea id="proj-abstract" rows="3"></textarea>
+
+              <label for="proj-status">Status</label>
+              <select id="proj-status">
+                <option>Ideation</option>
+                <option>In Progress</option>
+                <option>Final Review</option>
+              </select>
+
+              <label for="proj-group">Group Name / Number</label>
+              <input type="text" id="proj-group">
+
+              <label for="proj-leader">Group Leader</label>
+              <input type="text" id="proj-leader">
+
+              <label for="proj-members">Members (separate with |)</label>
+              <input type="text" id="proj-members" placeholder="Alex Rivera|Priya Fernando|Nimal Perera">
+
+              <label for="proj-milestones">Deliverables & Milestones (one per line)</label>
+              <textarea id="proj-milestones" rows="3" placeholder="Presentation - Oct 5&#10;Final report due - Oct 20"></textarea>
+
+              <label for="proj-order">Order (optional)</label>
+              <input type="number" id="proj-order">
+
+              <button type="submit" class="btn-primary">Add Project</button>
+            </form>
+            <p class="error-msg" id="proj-error" hidden></p>
+            <p class="success-msg" id="proj-success" hidden></p>
+          </div>
+
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
