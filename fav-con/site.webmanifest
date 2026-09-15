@@ -1,6 +1,6 @@
 {
-  "name": "MyWebSite",
-  "short_name": "MySite",
+  "name": "Batch Portal",
+  "short_name": "FST",
   "icons": [
     {
       "src": "/web-app-manifest-192x192.png",
