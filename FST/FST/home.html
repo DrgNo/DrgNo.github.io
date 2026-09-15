@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Batch Portal — Home</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <button id="menu-toggle" class="menu-toggle" aria-label="Open menu">☰</button>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="brand small sidebar-brand">
+        <span class="brand-mark">◆</span>
+        <span class="brand-name">Batch<span class="accent">Portal</span></span>
+      </div>
+      <nav class="side-nav">
+        <a href="home.html" class="side-link active">Home</a>
+        <a href="dashboard.html" class="side-link">Dashboard</a>
+        <a href="fund.html" class="side-link">Fund</a>
+        <a href="wall.html" class="side-link">Wall of Fame</a>
+        <a href="settings.html" class="side-link">Settings</a>
+        <a href="admin.html" class="side-link" id="admin-nav-link" hidden>Admin</a>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="user-email" class="user-email"></span>
+        <button id="logout-btn" class="ghost-btn">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="content-area">
+      <div class="dash-wrap" id="home-page">
+        <div id="loading-state" class="state-msg">Loading…</div>
+        <div id="error-state" class="state-msg error-msg" hidden></div>
+
+        <div id="home-content" hidden>
+
+          <!-- Upcoming Events -->
+          <div class="card full-span" style="margin-bottom:18px;">
+            <p class="section-label">Upcoming Events</p>
+            <div class="event-grid" id="events-grid"></div>
+          </div>
+
+          <h1 class="welcome-heading" id="welcome-heading">Welcome</h1>
+          <p class="welcome-sub">Here's what's happening in the batch right now.</p>
+
+          <!-- Announcement / Notice Board -->
+          <div class="card full-span" style="margin-bottom:18px;">
+            <p class="section-label">Announcements</p>
+            <ul class="notice-list" id="notice-list"></ul>
+          </div>
+
+          <!-- Batchmate Directory -->
+          <div class="card full-span" style="margin-bottom:18px;">
+            <p class="section-label">Batchmates</p>
+            <input type="text" id="batchmate-search" class="batchmate-search" placeholder="Search by name or index number…">
+            <div class="batchmate-grid-wrap">
+              <div class="batchmate-grid" id="batchmate-grid"></div>
+            </div>
+          </div>
+
+          <!-- Batch Leadership -->
+          <div class="card full-span" style="margin-bottom:18px;">
+            <p class="section-label">Batch Leadership</p>
+            <div class="leader-grid" id="leader-grid"></div>
+          </div>
+
+          <!-- Ongoing Group Projects -->
+          <div class="card full-span">
+            <p class="section-label">Ongoing Group Projects</p>
+            <div class="project-grid" id="project-grid"></div>
+          </div>
+
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Event details popup -->
+  <div class="modal-overlay" id="event-modal-overlay" hidden>
+    <div class="modal-box">
+      <button class="modal-close" id="event-modal-close" aria-label="Close">✕</button>
+      <h2 id="event-modal-title" class="modal-title"></h2>
+      <p id="event-modal-countdown" class="modal-countdown"></p>
+      <p id="event-modal-date" class="modal-date-line"></p>
+      <p id="event-modal-desc" class="modal-desc"></p>
+      <div class="modal-section">
+        <span class="project-meta-label">Event Leaders</span>
+        <ul class="pill-list" id="event-modal-leaders"></ul>
+      </div>
+      <div class="modal-section">
+        <span class="project-meta-label">Labels (tap for details)</span>
+        <ul class="pill-list" id="event-modal-labels"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batchmate details popup -->
+  <div class="modal-overlay" id="batchmate-modal-overlay" hidden>
+    <div class="modal-box">
+      <button class="modal-close" id="batchmate-modal-close" aria-label="Close">✕</button>
+      <div style="padding:20px 20px 0; display:flex; align-items:center; gap:14px;">
+        <div class="avatar-slot" id="bm-modal-avatar-slot"></div>
+        <h2 id="bm-modal-name" class="modal-title" style="margin:0;"></h2>
+      </div>
+      <div style="padding:16px 20px 20px;">
+        <div id="bm-modal-fields"></div>
+        <p class="project-meta-label" style="margin-top:10px;">Clubs</p>
+        <ul class="pill-list" id="bm-modal-clubs"></ul>
+        <p class="project-meta-label" style="margin-top:14px;">Sports</p>
+        <ul class="pill-list" id="bm-modal-sports"></ul>
+        <p class="project-meta-label" style="margin-top:14px;">Skills</p>
+        <ul class="pill-list" id="bm-modal-skills"></ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Label detail popup (replaces the browser's default alert()) -->
+  <div class="modal-overlay" id="label-modal-overlay" hidden>
+    <div class="modal-box">
+      <button class="modal-close" id="label-modal-close" aria-label="Close">✕</button>
+      <div class="label-color-bar" id="label-modal-colorbar"></div>
+      <div class="label-modal-body">
+        <h3 class="label-modal-title" id="label-modal-title"></h3>
+        <p class="label-modal-desc" id="label-modal-desc"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Group detail popup (for projects with more than one group) -->
+  <div class="modal-overlay" id="group-modal-overlay" hidden>
+    <div class="modal-box">
+      <button class="modal-close" id="group-modal-close" aria-label="Close">✕</button>
+      <div style="padding:20px;">
+        <h2 class="modal-title" id="group-modal-title" style="margin:0 0 6px;"></h2>
+        <p class="project-meta-label" style="margin-top:14px;">Leader</p>
+        <p class="info-text" id="group-modal-leader" style="margin:0 0 14px;"></p>
+        <p class="project-meta-label">Due Date</p>
+        <p class="info-text" id="group-modal-due" style="margin:0 0 14px;"></p>
+        <p class="project-meta-label">Members</p>
+        <ul class="pill-list" id="group-modal-members"></ul>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
