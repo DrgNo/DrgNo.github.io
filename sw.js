@@ -25,7 +25,7 @@ self.addEventListener("push", (event) => {
     body: data.body || "",
     icon: "./fav-con/apple-touch-icon.png",   // optional — safe to leave even if the file doesn't exist
     badge: "./fav-con/apple-touch-icon.png",
-    data: { url: data.url || "./fst/home.html" },
+    data: { url: data.url || "/home.html" },
     tag: data.tag || "batchportal"
   };
 
@@ -34,7 +34,7 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) || "./fst/home.html";
+  const targetUrl = (event.notification.data && event.notification.data.url) || "/home.html";
 
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
