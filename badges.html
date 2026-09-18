@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<link rel="icon" type="image/png" href="./fav-con/favicon-96x96.png" sizes="96x96" />
+<link rel="icon" type="image/svg+xml" href="./fav-con/favicon.svg" />
+<link rel="shortcut icon" href="./fav-con/favicon.ico" />
+<link rel="apple-touch-icon" sizes="180x180" href="./fav-con/apple-touch-icon.png" />
+<link rel="manifest" href="./fav-con/site.webmanifest" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Achievements</title>
+<script>(function(){try{var m=localStorage.getItem("theme-mode")||"dark";var p=localStorage.getItem("theme-palette")||"blue";document.documentElement.setAttribute("data-mode",m);document.documentElement.setAttribute("data-palette",p);}catch(e){}})();</script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <button id="menu-toggle" class="menu-toggle" aria-label="Open menu">☰</button>
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+    <aside class="sidebar" id="sidebar">
+      <div class="brand small sidebar-brand">
+        <span class="brand-mark">◆</span>
+        <span class="brand-name">My<span class="accent"> Badges</span></span>
+      </div>
+      <nav class="side-nav">
+        <a href="home.html" class="side-link">Home</a>
+        <a href="dashboard.html" class="side-link">Dashboard</a>
+        <a href="fund.html" class="side-link">Fund</a>
+        <a href="wall.html" class="side-link">Wall of Fame</a>
+        <a href="badges.html" class="side-link active">Badges</a>
+        <a href="settings.html" class="side-link">Settings</a>
+        <a href="admin.html" class="side-link" id="admin-nav-link" hidden>Admin</a>
+      </nav>
+      <div class="sidebar-footer">
+        <span id="user-email" class="user-email" hidden></span>
+        <button id="logout-btn" class="ghost-btn">Sign out</button>
+      </div>
+    </aside>
+
+    <main class="content-area">
+      <div class="dash-wrap" id="badges-page">
+        <div id="loading-state" class="state-msg">Loading…</div>
+        <div id="error-state" class="state-msg error-msg" hidden></div>
+
+        <div id="badges-content" hidden>
+          <p class="section-label" style="margin-bottom:14px;">Your Badges</p>
+          <div class="badge-grid" id="badge-grid"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Badge details popup -->
+  <div class="modal-overlay" id="badge-modal-overlay" hidden>
+    <div class="modal-box badge-modal-box">
+      <button class="modal-close" id="badge-modal-close" aria-label="Close">✕</button>
+      <h2 id="badge-modal-title" class="modal-title badge-modal-title"></h2>
+      <div class="badge-modal-stage">
+        <img id="badge-modal-image" class="badge-modal-image" alt="">
+      </div>
+      <p id="badge-modal-desc" class="modal-desc"></p>
+    </div>
+  </div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
