@@ -9,6 +9,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Main Stage</title>
+<script>(function(){try{var m=localStorage.getItem("theme-mode")||"dark";var p=localStorage.getItem("theme-palette")||"blue";document.documentElement.setAttribute("data-mode",m);document.documentElement.setAttribute("data-palette",p);}catch(e){}})();</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -26,6 +27,7 @@
         <a href="dashboard.html" class="side-link">Dashboard</a>
         <a href="fund.html" class="side-link">Fund</a>
         <a href="wall.html" class="side-link">Wall of Fame</a>
+        <a href="badges.html" class="side-link">Badges</a>
         <a href="settings.html" class="side-link">Settings</a>
         <a href="admin.html" class="side-link" id="admin-nav-link" hidden>Admin</a>
       </nav>
@@ -110,14 +112,19 @@
         <div class="avatar-slot" id="bm-modal-avatar-slot"></div>
         <h2 id="bm-modal-name" class="modal-title" style="margin:0;"></h2>
       </div>
-      <div style="padding:16px 20px 20px;">
-        <div id="bm-modal-fields"></div>
-        <p class="project-meta-label" style="margin-top:10px;">Clubs</p>
-        <ul class="pill-list" id="bm-modal-clubs"></ul>
-        <p class="project-meta-label" style="margin-top:14px;">Sports</p>
-        <ul class="pill-list" id="bm-modal-sports"></ul>
-        <p class="project-meta-label" style="margin-top:14px;">Skills</p>
-        <ul class="pill-list" id="bm-modal-skills"></ul>
+      <div class="bm-modal-body-wrap" id="bm-modal-body-wrap">
+        <div id="bm-modal-body-content">
+          <div id="bm-modal-fields"></div>
+          <p class="project-meta-label" style="margin-top:10px;">Clubs</p>
+          <ul class="pill-list" id="bm-modal-clubs"></ul>
+          <p class="project-meta-label" style="margin-top:14px;">Sports</p>
+          <ul class="pill-list" id="bm-modal-sports"></ul>
+          <p class="project-meta-label" style="margin-top:14px;">Skills</p>
+          <ul class="pill-list" id="bm-modal-skills"></ul>
+          <p class="project-meta-label" style="margin-top:14px;">Badges</p>
+          <ul class="pill-list" id="bm-modal-badges"></ul>
+        </div>
+        <div class="bm-privacy-overlay" id="bm-modal-privacy-overlay" hidden></div>
       </div>
     </div>
   </div>
@@ -147,6 +154,18 @@
         <p class="project-meta-label">Members</p>
         <ul class="pill-list" id="group-modal-members"></ul>
       </div>
+    </div>
+  </div>
+
+  <!-- Badge details popup (used by mini badge icons + batchmate popup's Badges list) -->
+  <div class="modal-overlay" id="badge-modal-overlay" hidden>
+    <div class="modal-box badge-modal-box">
+      <button class="modal-close" id="badge-modal-close" aria-label="Close">✕</button>
+      <h2 id="badge-modal-title" class="modal-title badge-modal-title"></h2>
+      <div class="badge-modal-stage">
+        <img id="badge-modal-image" class="badge-modal-image" alt="">
+      </div>
+      <p id="badge-modal-desc" class="modal-desc"></p>
     </div>
   </div>
 
