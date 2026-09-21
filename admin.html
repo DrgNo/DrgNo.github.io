@@ -32,7 +32,7 @@
         <a href="admin.html" class="side-link active" id="admin-nav-link" hidden>Admin</a>
       </nav>
       <div class="sidebar-footer">
-        <span id="user-email" class="user-email"></span>
+        <span id="user-email" class="user-email" hidden></span>
         <button id="logout-btn" class="ghost-btn">Sign out</button>
       </div>
     </aside>
@@ -56,6 +56,8 @@
             <button type="button" class="admin-section-btn" data-modal="modal-event">Add Event</button>
             <button type="button" class="admin-section-btn" data-modal="modal-task">Assign Task</button>
             <button type="button" class="admin-section-btn" data-modal="modal-badges">Manage Student Badges</button>
+            <button type="button" class="admin-section-btn" data-modal="modal-badbehavior">Manage Bad Behavior Records</button>
+            <button type="button" class="admin-section-btn" data-modal="modal-bulkfield">Add/Remove Field (All Batchmates)</button>
           </div>
 
           <!-- Active Tasks stays visible on the page — it's a live status panel, not an add-form -->
@@ -64,8 +66,24 @@
               <p class="section-label" style="margin:0;">Active Tasks</p>
               <button type="button" id="refresh-active-tasks" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
             </div>
-            <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tasks with an amber "Needs verification" badge mean the batchmate marked it done — tap Verify to confirm and complete it.</p>
+            <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tasks with an amber "Needs verification" badge mean the batchmate marked it done — pick a rating (1-10) and tap Verify to confirm, complete it, and award prestige points.</p>
             <div id="admin-active-tasks"></div>
+          </div>
+
+          <!-- Completed Tasks — history, sortable -->
+          <div class="card full-span">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; gap:10px; flex-wrap:wrap;">
+              <p class="section-label" style="margin:0;">Completed Tasks</p>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <select id="completed-tasks-sort" style="padding:6px 10px; font-size:12px;">
+                  <option value="date-desc">Date — newest first</option>
+                  <option value="date-asc">Date — oldest first</option>
+                  <option value="batchmate">Batchmate name</option>
+                </select>
+                <button type="button" id="refresh-completed-tasks" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+              </div>
+            </div>
+            <div id="admin-completed-tasks"></div>
           </div>
 
           <!-- Active Group Projects — live status panel, not an add-form -->
@@ -78,10 +96,47 @@
             <div id="admin-active-projects"></div>
           </div>
 
+          <!-- Completed Group Projects — history, sortable -->
+          <div class="card full-span">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; gap:10px; flex-wrap:wrap;">
+              <p class="section-label" style="margin:0;">Completed Group Projects</p>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <select id="completed-projects-sort" style="padding:6px 10px; font-size:12px;">
+                  <option value="date-desc">Date — newest first</option>
+                  <option value="date-asc">Date — oldest first</option>
+                  <option value="title">Project title</option>
+                </select>
+                <button type="button" id="refresh-completed-projects" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+              </div>
+            </div>
+            <div id="admin-completed-projects"></div>
+          </div>
+
+          <!-- Detail Change Requests — live status panel, not an add-form -->
+          <div class="card full-span">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+              <p class="section-label" style="margin:0;">Detail Change Requests</p>
+              <button type="button" id="refresh-change-requests" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+            </div>
+            <p class="fine-print" style="text-align:left; margin:0 0 14px;">A batchmate's requested edits to their own profile. Approve to save the change to their profile (and the directory, for fields shown there); reject to dismiss it without saving anything.</p>
+            <div id="admin-change-requests"></div>
+          </div>
+
+<!-- Prestige Leaderboard — live status panel, not an add-form -->
+          <div class="card full-span">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+              <p class="section-label" style="margin:0;">Prestige Leaderboard</p>
+              <button type="button" id="refresh-leaderboard" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+            </div>
+            <p class="fine-print" style="text-align:left; margin:0 0 14px;">Every batchmate, ranked by total prestige points.</p>
+            <div id="admin-leaderboard"></div>
+          </div>
+
         </div>
       </div>
     </main>
   </div>
+
 
   <!-- ── Popups, one per section ─────────────────────────────────── -->
 
@@ -97,8 +152,25 @@
             <option value="expense">Expense</option>
           </select>
 
-          <label for="fund-amount">Amount</label>
-          <input type="number" id="fund-amount" step="0.01" required>
+          <label for="fund-mode">Breakdown</label>
+          <select id="fund-mode">
+            <option value="lump">Single value (not tied to specific students)</option>
+            <option value="perStudent">Per student</option>
+          </select>
+
+          <div id="fund-lump-section">
+            <label for="fund-amount">Amount</label>
+            <input type="number" id="fund-amount" step="0.01">
+          </div>
+
+          <div id="fund-perstudent-section" hidden>
+            <label for="fund-per-head">Amount per student</label>
+            <input type="number" id="fund-per-head" step="0.01">
+            <p class="fine-print" style="text-align:left; margin:-12px 0 10px;">Total = amount per student × students ticked below. Income only: ticked students each get this added to their personal fund total, and 1 prestige point per Rs. 100.</p>
+            <input type="text" id="fund-student-search" placeholder="Search students by name or index…">
+            <div id="fund-student-checklist" class="member-checklist" style="max-height:220px; overflow-y:auto;"></div>
+            <p class="fine-print" id="fund-computed-total" style="text-align:left; margin:10px 0 0;">Total: Rs. 0</p>
+          </div>
 
           <label for="fund-description">Description</label>
           <input type="text" id="fund-description" required>
@@ -307,8 +379,18 @@
           <label for="task-description">Description</label>
           <textarea id="task-description" rows="3"></textarea>
 
+          <label for="task-difficulty">Difficulty</label>
+          <select id="task-difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium" selected>Medium</option>
+            <option value="hard">Hard</option>
+            <option value="nightmare">Nightmare</option>
+          </select>
+          <p class="fine-print" style="text-align:left; margin:-12px 0 18px;">Sets the base prestige points earned on time — Nightmare earns the most.</p>
+
           <label for="task-duedate">Due Date (optional)</label>
           <input type="date" id="task-duedate">
+          <p class="fine-print" style="text-align:left; margin:-12px 0 18px;">If set, the difficulty-based points are only earned when finished by this date — admin rating points always apply.</p>
 
           <button type="submit" class="btn-primary">Assign Task</button>
         </form>
@@ -329,6 +411,70 @@
         <p class="section-label" style="margin-top:16px;">Badges</p>
         <div class="member-checklist" id="badge-checklist"></div>
         <p class="fine-print" style="text-align:left; margin:8px 0 0;" id="badge-assign-status"></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-badbehavior" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-badbehavior" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Manage Bad Behavior Records</p>
+        <p class="fine-print" style="text-align:left; margin:0 0 16px;">
+          Each record on file reduces how fast this batchmate earns
+          prestige points from every method (tasks, projects, fund
+          donations) — it doesn't remove points already earned.
+        </p>
+        <label for="badbehavior-student-select">Student</label>
+        <select id="badbehavior-student-select"></select>
+
+        <p class="section-label" style="margin-top:16px;">Existing Records</p>
+        <div id="badbehavior-list"></div>
+
+        <p class="section-label" style="margin-top:16px;">Add a Record</p>
+        <form id="form-badbehavior">
+          <textarea id="badbehavior-text" rows="2" placeholder="e.g. 2026-09-21 — Missed mandatory event without notice" required></textarea>
+          <button type="submit" class="btn-primary">Add Record</button>
+        </form>
+        <p class="error-msg" id="badbehavior-error" hidden></p>
+        <p class="success-msg" id="badbehavior-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-bulkfield" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-bulkfield" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Add/Remove Field (All Batchmates)</p>
+        <p class="fine-print" style="text-align:left; margin:0 0 16px;">
+          Adds or deletes one field across every document in the
+          "batchmates" collection at once. This only touches "batchmates"
+          — if the field is also shown in the directory (fullName, gender,
+          birthday, primaryMobile, sports, clubs, skills, campusIndexNumber,
+          photoUrl), update "batchmatesPublic" separately. This cannot be
+          undone from here, so double-check the field name before applying.
+        </p>
+        <form id="form-bulkfield">
+          <label for="bulkfield-action">Action</label>
+          <select id="bulkfield-action">
+            <option value="add">Add field (set on every batchmate)</option>
+            <option value="remove">Remove field (delete from every batchmate)</option>
+          </select>
+
+          <label for="bulkfield-key">Field Name</label>
+          <input type="text" id="bulkfield-key" placeholder="e.g. hobby" required>
+          <p class="fine-print" style="text-align:left; margin:-12px 0 18px;">Letters, numbers and underscores only, starting with a letter — matches how existing fields (e.g. fullName, bloodGroup) are named.</p>
+
+          <div id="bulkfield-value-row">
+            <label for="bulkfield-value">Default Value (for new field)</label>
+            <input type="text" id="bulkfield-value" placeholder="Leave blank for an empty value">
+          </div>
+
+          <button type="submit" class="btn-primary">Apply to All Batchmates</button>
+        </form>
+        <p class="error-msg" id="bulkfield-error" hidden></p>
+        <p class="success-msg" id="bulkfield-success" hidden></p>
       </div>
     </div>
   </div>

@@ -64,6 +64,29 @@
             <div class="task-box-grid" id="active-tasks-list"></div>
           </div>
 
+          <!-- Prestige Points -->
+          <div class="card" style="margin-bottom:18px;">
+            <div class="section-label-row">
+              <p class="section-label" style="margin:0;">Prestige Points</p>
+              <button type="button" id="prestige-info-btn" class="info-icon-btn" aria-label="How prestige points work">i</button>
+            </div>
+            <div class="prestige-total-row">
+              <span id="f-prestige-total" class="prestige-total-value">0</span>
+              <span class="prestige-total-label">total</span>
+            </div>
+            <p id="f-prestige-note" class="fine-print" style="text-align:left; margin:6px 0 14px; color:var(--warn, #e0a94a);" hidden></p>
+            <div id="prestige-log-list" class="prestige-log-list"></div>
+          </div>
+
+          <!-- My Fund Donations -->
+          <div class="card" style="margin-bottom:18px;">
+            <p class="section-label">My Fund Donations</p>
+            <div class="prestige-total-row">
+              <span id="f-fund-donated-value" class="prestige-total-value">Rs. 0</span>
+            </div>
+            <p class="fine-print" style="text-align:left; margin:6px 0 0;">Total value you have added to the batch fund.</p>
+          </div>
+
           <!-- Person Details -->
           <div class="card">
             <p class="section-label">Person Details</p>
@@ -144,9 +167,21 @@
         <p class="info-text" id="task-modal-due" style="margin:0 0 6px;"></p>
         <p id="task-modal-remaining" class="modal-countdown" style="font-size:15px; margin:0 0 18px;"></p>
 
-        <button type="button" id="task-notify-btn" class="btn-primary">Notify me that task is completed</button>
+        <button type="button" id="task-notify-btn" class="btn-primary">Notify Complete!</button>
         <p id="task-modal-note" class="fine-print" style="text-align:left; margin:12px 0 0;"></p>
       </div>
+    </div>
+  </div>
+
+  <!-- Prestige Points info popup — how every point is earned, and what slows earning down -->
+  <div class="modal-overlay" id="prestige-info-modal-overlay" hidden>
+    <div class="modal-box">
+      <button class="modal-close" id="prestige-info-modal-close" aria-label="Close">✕</button>
+      <div style="padding:20px 20px 0;">
+        <h2 class="modal-title" style="margin:0 0 4px;">How Prestige Points Work</h2>
+        <p class="info-text" style="color:var(--muted); margin:0 0 16px;">Every way to earn points, and what slows you down.</p>
+      </div>
+      <div style="padding:0 20px 20px;" id="prestige-info-body"></div>
     </div>
   </div>
 

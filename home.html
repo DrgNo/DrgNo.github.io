@@ -153,6 +153,21 @@
         <p class="info-text" id="group-modal-due" style="margin:0 0 14px;"></p>
         <p class="project-meta-label">Members</p>
         <ul class="pill-list" id="group-modal-members"></ul>
+        <div id="group-modal-rating-area" style="margin-top:16px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rate Group Members popup -->
+  <div class="modal-overlay" id="rate-modal-overlay" hidden>
+    <div class="modal-box">
+      <button class="modal-close" id="rate-modal-close" aria-label="Close">✕</button>
+      <div style="padding:20px;">
+        <h2 class="modal-title" id="rate-modal-title" style="margin:0 0 6px;">Rate Group Members</h2>
+        <p class="fine-print" style="text-align:left; margin:0 0 16px;">Rate everyone else in the group, leader included. You can't rate yourself.</p>
+        <div id="rate-modal-list" class="rate-modal-list"></div>
+        <button type="button" id="rate-modal-submit-btn" class="btn-primary" style="margin-top:16px;" hidden>Completed My Part</button>
+        <p id="rate-modal-status" class="fine-print" style="text-align:left; margin:12px 0 0;"></p>
       </div>
     </div>
   </div>

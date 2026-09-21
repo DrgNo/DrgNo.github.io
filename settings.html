@@ -102,12 +102,43 @@
         </div>
 
         <div class="card settings-section" style="margin-top:18px;">
+          <p class="section-label">Request to Change Details</p>
+          <p class="info-text" style="color:var(--muted); margin-bottom:16px;">
+            Ask the batch admin to update your profile details. Open the
+            form, edit any fields you'd like changed, and submit — an
+            admin will review and approve the update before it appears
+            on your profile.
+          </p>
+          <button type="button" id="open-change-request-btn" class="btn-primary" style="width:auto; padding:11px 22px;">Request Changes</button>
+          <p id="change-request-status" class="fine-print" style="text-align:left; margin:12px 0 0;"></p>
+        </div>
+
+        <div class="card settings-section" style="margin-top:18px;">
           <p class="section-label">More Settings</p>
           <p class="info-text" style="color:var(--muted)">Additional customization options will appear here in future updates.</p>
         </div>
 
       </div>
     </main>
+  </div>
+
+  <!-- Request to Change Details popup -->
+  <div class="modal-overlay" id="change-request-modal-overlay" hidden>
+    <div class="modal-box">
+      <button class="modal-close" id="change-request-modal-close" aria-label="Close">✕</button>
+      <div style="padding:20px 20px 0;">
+        <h2 class="modal-title" style="margin:0 0 8px;">Request to Change Details</h2>
+        <p class="info-text" style="color:var(--muted); margin:0;">
+          Edit any fields below, then submit. Fields left unchanged won't
+          be included in your request.
+        </p>
+      </div>
+      <form id="change-request-form" style="padding:16px 20px 20px;">
+        <div id="change-request-fields"></div>
+        <p id="change-request-error" class="error-msg" hidden></p>
+        <button type="submit" id="change-request-submit-btn" class="btn-primary" style="margin-top:4px;">Save & Submit Request</button>
+      </form>
+    </div>
   </div>
 
   <script type="module" src="app.js"></script>

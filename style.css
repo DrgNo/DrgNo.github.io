@@ -257,6 +257,58 @@ button {
 }
 .info-text { font-size: 14px; margin: 0; }
 
+/* Section label with an info icon button next to it (e.g. Prestige Points) */
+.section-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.info-icon-btn {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--panel-border);
+  background: var(--surface);
+  color: var(--muted);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 12.5px;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.info-icon-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+/* Prestige info modal — earn/lose breakdown */
+.prestige-info-section { margin-bottom: 18px; }
+.prestige-info-section:last-child { margin-bottom: 0; }
+.prestige-info-heading { font-size: 13.5px; font-weight: 600; color: var(--text); margin: 0 0 6px; }
+.prestige-info-list { list-style: none; margin: 0; padding: 0; }
+.prestige-info-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 13.5px;
+  color: var(--text);
+  padding: 7px 0;
+  border-bottom: 1px solid var(--panel-border);
+}
+.prestige-info-list li:last-child { border-bottom: none; }
+.prestige-info-points {
+  flex-shrink: 0;
+  white-space: nowrap;
+  font-weight: 700;
+  color: var(--blue);
+  font-family: 'Space Grotesk', sans-serif;
+}
+
 .pill-list, .line-list { list-style: none; margin: 0; padding: 0; }
 .pill-list { display: flex; flex-wrap: wrap; gap: 8px; }
 .pill-list li {
@@ -403,6 +455,15 @@ button {
 
 /* ── Settings page ────────────────────────────────────────────── */
 .settings-section {}
+
+/* Request to Change Details popup — the group headings, field labels
+   and inputs are appended as plain siblings into #change-request-fields
+   (not the <form> itself), so without this they fall back to normal
+   inline flow and run together. Stack them the same way the rest of
+   the app's forms do: label (small, grey) on its own line, input
+   (full width, normal size) directly below it. */
+#change-request-fields { display: flex; flex-direction: column; }
+#change-request-fields label { display: block; }
 .success-msg { color: var(--success); font-size: 13px; margin-top: -4px; }
 
 /* ── Home page ────────────────────────────────────────────────── */
@@ -583,26 +644,111 @@ button {
 .modal-desc { font-size: 14px; color: var(--text); margin: 0 20px 20px; line-height: 1.6; }
 
 /* ── Upcoming Events ──────────────────────────────────────────── */
-.wall-grid, .event-grid {
+.wall-grid {
   display: grid;
   grid-template-columns: 1fr;
   gap: 16px;
 }
 @media (min-width: 700px) {
-  .wall-grid, .event-grid { grid-template-columns: 1fr 1fr; }
+  .wall-grid { grid-template-columns: 1fr 1fr; }
 }
 
+/* Horizontally scrollable row of glass event cards. */
+.event-grid {
+  display: flex;
+  gap: 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 4px 12px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+.event-grid::-webkit-scrollbar { height: 7px; }
+.event-grid::-webkit-scrollbar-track { background: transparent; }
+.event-grid::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 4px; }
+
 .event-card {
-  background: var(--surface);
+  position: relative;
+  isolation: isolate;
+  flex: 0 0 250px;
+  scroll-snap-align: start;
+  background: color-mix(in srgb, var(--panel) 55%, transparent 45%);
+  backdrop-filter: blur(16px) saturate(150%);
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
   border: 1px solid var(--panel-border);
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 16px;
   cursor: pointer;
-  transition: border-color .15s ease;
+  overflow: hidden;
+  transition: border-color .3s ease, transform 2s ease, box-shadow 3s ease;
 }
-.event-card:hover { border-color: var(--blue); }
-.event-name { font-weight: 600; font-size: 14.5px; margin: 0; }
-.event-date { display: block; color: var(--muted); font-size: 12px; margin-top: 6px; }
+.event-card:hover { transform: translateY(-1px); }
+
+/* Slow-drifting, low-opacity colour wash behind the glass — position
+   shifts over time via background-position, staying subtle and tied
+   to the active theme palette (--blue / --blue-dim) rather than a
+   fixed hue, so it never fights the rest of the UI. */
+.event-card::before {
+  content: "";
+  position: absolute;
+  inset: -60% -30%;
+  z-index: -1;
+  background: linear-gradient(120deg,
+    var(--blue-dim) 0%,
+    var(--blue) 25%,
+    transparent 50%,
+    var(--blue-dim) 75%,
+    var(--blue) 100%);
+  background-size: 240% 240%;
+  opacity: .16;
+  filter: blur(22px);
+  animation: event-card-drift 16s ease-in-out infinite;
+}
+@keyframes event-card-drift {
+  0%   { background-position: 0% 30%; }
+  50%  { background-position: 100% 70%; }
+  100% { background-position: 0% 30%; }
+}
+
+/* Animated gradient border on hover, drawn with a masked pseudo-element
+   so the card's own border-radius and background are untouched. */
+.event-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(from 0deg,
+    var(--blue), color-mix(in srgb, var(--blue) 30%, transparent) 30%,
+    var(--blue-dim) 55%, color-mix(in srgb, var(--blue) 30%, transparent) 80%, var(--blue));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  transition: opacity .25s ease;
+  animation: event-card-spin 5s linear;
+  animation-play-state: paused;
+}
+.event-card:hover::after { opacity: 1; animation-play-state: running; }
+@keyframes event-card-spin { to { transform: rotate(360deg); } }
+
+.event-card-name { font-weight: 600; font-size: 14.5px; margin: 0 0 8px; }
+.event-card-meta { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 8px; }
+.event-card-date, .event-card-time { color: var(--muted); font-size: 12px; }
+.event-card-desc {
+  font-size: 12.5px;
+  color: var(--text);
+  opacity: .82;
+  margin: 0;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+@media (prefers-reduced-motion: reduce) {
+  .event-card::before, .event-card::after { animation: none; }
+}
 
 .modal-countdown {
   font-size: 20px;
@@ -752,6 +898,77 @@ button {
 
 .status-pending-badge { background: #5E3A12; color: #FFC97A; border: 1px solid #D6942A; }
 
+/* ── Prestige Points ──────────────────────────────────────────── */
+.prestige-total-row { display: flex; align-items: baseline; gap: 8px; }
+.prestige-total-value { font-size: 32px; font-weight: 700; color: var(--accent); }
+.prestige-total-label { font-size: 13px; color: var(--muted); }
+.prestige-log-list { display: flex; flex-direction: column; gap: 8px; }
+.prestige-log-item {
+  background: var(--surface);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.prestige-log-note { font-size: 13px; }
+.prestige-log-amount { font-size: 14px; font-weight: 700; }
+.prestige-positive { color: #4ADE80; }
+.prestige-negative { color: #F87171; }
+.bad-behavior-row {
+  background: var(--surface);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.bad-behavior-text { font-size: 13px; flex: 1; }
+.bad-behavior-remove {
+  background: none;
+  border: 1px solid #F87171;
+  color: #F87171;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ── Group Project Ratings ────────────────────────────────────── */
+.admin-project-rating-section { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.admin-rating-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+.admin-rating-row > span:first-child { flex: 1; min-width: 140px; font-weight: 600; }
+.admin-rating-awarded { color: var(--accent); font-size: 12px; }
+.rate-modal-list { display: flex; flex-direction: column; gap: 8px; max-height: 50vh; overflow-y: auto; }
+.rate-modal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--surface);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.rate-modal-row-self { opacity: 0.5; }
+.rate-modal-select { min-width: 64px; }
+
 /* ── Admin: Active Tasks ──────────────────────────────────────── */
 .admin-task-box {
   background: var(--surface);
@@ -789,6 +1006,14 @@ button {
   flex-shrink: 0;
 }
 .admin-task-verify-btn:hover { filter: brightness(1.1); }
+.task-rating-select {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 7px 8px;
+  font-size: 12.5px;
+}
 
 /* ── Admin: Active Group Projects ────────────────────────────────── */
 .admin-project-box {
@@ -832,6 +1057,45 @@ button {
 .status-ongoing  { background: #1E3A6E; color: #BFD3FF; border: 1px solid #2A5AD6; }
 .status-complete { background: #0F4A3E; color: #7CE8C6; border: 1px solid #1FAE87; }
 
+/* ── Admin: Detail Change Requests ───────────────────────────────── */
+.change-request-box {
+  background: var(--surface);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  transition: opacity .25s ease, transform .25s ease;
+}
+.change-request-box.removing { opacity: 0; transform: translateY(-6px); }
+.change-request-name { font-size: 13.5px; font-weight: 600; }
+.change-request-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.change-request-diff { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.change-request-diff-row { font-size: 12.5px; line-height: 1.5; }
+.change-request-diff-label { font-weight: 600; color: var(--text); }
+.change-request-diff-old { color: var(--muted); text-decoration: line-through; }
+.change-request-diff-new { color: #7CE8C6; }
+.change-request-actions { display: flex; gap: 10px; margin-top: 14px; }
+.change-request-approve-btn {
+  background: #0F4A3E;
+  color: #7CE8C6;
+  border: 1px solid #1FAE87;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.change-request-approve-btn:hover { filter: brightness(1.1); }
+.change-request-reject-btn {
+  background: #4A1414;
+  color: #FFA7A7;
+  border: 1px solid #B33A3A;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.change-request-reject-btn:hover { filter: brightness(1.1); }
+
 /* ── Admin: section buttons + popups ─────────────────────────────── */
 .admin-btn-grid {
   display: grid;
@@ -856,7 +1120,7 @@ button {
 .admin-modal-body { padding: 20px; max-width: 420px; }
 #modal-fund .modal-box, #modal-wall .modal-box, #modal-announcement .modal-box,
 #modal-leader .modal-box, #modal-eventlabel .modal-box,
-#modal-event .modal-box, #modal-task .modal-box { max-width: 440px; }
+#modal-event .modal-box, #modal-task .modal-box, #modal-bulkfield .modal-box { max-width: 440px; }
 #modal-project .modal-box { max-width: 540px; }
 
 /* ── Admin: dynamic group blocks (Add Group Project) ─────────────── */
