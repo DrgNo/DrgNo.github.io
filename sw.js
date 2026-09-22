@@ -2,7 +2,7 @@
 // Must be served from the SITE ROOT (same folder as index.html) on
 // GitHub Pages so its scope covers every page of the app.
 // Uses your 180x180 PNG apple-touch-icon for maximum resolution
-const imagePath = new URL("./fav-con/apple-touch-icon.png", self.registration.scope).href;
+// (referenced below via the relative "icon"/"badge" paths).
 
 self.addEventListener("install", () => {
   self.skipWaiting();

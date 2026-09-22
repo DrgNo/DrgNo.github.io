@@ -21,6 +21,7 @@ import {
   getDocs,
   addDoc,
   updateDoc,
+  deleteDoc,
   query,
   where,
   orderBy,
@@ -182,6 +183,71 @@ function initThemeControls() {
     if (!btn) return;
     applyTheme(currentMode(), btn.dataset.palette);
     refreshActiveStates(currentMode(), btn.dataset.palette);
+  });
+}
+
+
+// ── Site-wide: modal pop/close animations + page-change transitions ──
+// Runs on every page, unconditionally, before anything auth-related —
+// the modal markup and nav links are already in the DOM by the time
+// this module executes (type="module" scripts run after parsing).
+initModalAnimations();
+initPageTransitions();
+
+// Every modal on the site is opened/closed elsewhere in this file with
+// a plain `overlay.hidden = true` / `= false` — dozens of call sites.
+// Rather than touch each one, this shadows the native `hidden`
+// property on each .modal-overlay element: opening still removes
+// [hidden] immediately (the CSS pop-in animation runs on its own),
+// but closing first adds a `.closing` class and waits out the exit
+// animation before actually setting [hidden], so every existing
+// close call site gets an animated close for free.
+function initModalAnimations() {
+  document.querySelectorAll(".modal-overlay").forEach((overlay) => {
+    let hiddenState = overlay.hasAttribute("hidden");
+    let closeTimer = null;
+
+    Object.defineProperty(overlay, "hidden", {
+      configurable: true,
+      get() { return hiddenState; },
+      set(value) {
+        value = !!value;
+        if (value === hiddenState) return;
+        clearTimeout(closeTimer);
+        if (value) {
+          hiddenState = true;
+          overlay.classList.add("closing");
+          closeTimer = setTimeout(() => {
+            overlay.classList.remove("closing");
+            overlay.setAttribute("hidden", "");
+          }, 180);
+        } else {
+          hiddenState = false;
+          overlay.classList.remove("closing");
+          overlay.removeAttribute("hidden");
+        }
+      }
+    });
+  });
+}
+
+// Intercepts clicks on same-site links (sidebar nav, "View" links, etc.),
+// briefly fades the page out, then completes the navigation — external
+// links, new-tab links, downloads, in-page "#" links, and modified
+// clicks (Ctrl/Cmd/Shift/middle-click, for opening in a new tab) are
+// left alone.
+function initPageTransitions() {
+  document.addEventListener("click", (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const link = e.target.closest("a[href]");
+    if (!link) return;
+    const href = link.getAttribute("href");
+    if (!href || href.startsWith("#") || href.startsWith("http") || href.startsWith("mailto:") ||
+        href.startsWith("tel:") || link.target === "_blank" || link.hasAttribute("download")) return;
+
+    e.preventDefault();
+    document.documentElement.classList.add("page-exit");
+    setTimeout(() => { window.location.href = href; }, 150);
   });
 }
 
@@ -2268,6 +2334,34 @@ function wireAdminModals() {
   });
 }
 
+// Wires the sticky bottom tab bar (History / Active / Add / Danger).
+// All four panels' content is rendered once, up front, same as before —
+// this only toggles which panel is visible, so switching tabs is instant
+// and no render function needs to know or care which tab is active.
+function wireAdminTabBar() {
+  const bar = document.getElementById("admin-content-tabbar");
+  if (!bar) return;
+  const panels = document.querySelectorAll(".admin-tab-panel");
+
+  bar.addEventListener("click", (e) => {
+    const btn = e.target.closest(".admin-tab-pill");
+    if (!btn) return;
+    const tab = btn.dataset.tab;
+    bar.querySelectorAll(".admin-tab-pill").forEach((b) => b.classList.toggle("active", b === btn));
+    panels.forEach((p) => { p.hidden = p.dataset.tabPanel !== tab; });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+
+// Splits "a|b|c" or newline-separated text into a clean array of strings.
+// Top-level (not nested in initAdminPage) since both the in-page admin
+// forms and wireEventEditModal()/initEventLeadershipPanel() — which are
+// defined outside initAdminPage — need it.
+function splitList(value, sep) {
+  if (!value || !value.trim()) return [];
+  return value.split(sep).map((s) => s.trim()).filter(Boolean);
+}
+
 async function initAdminPage(isAdmin) {
   const loadingState = document.getElementById("loading-state");
   const accessDenied = document.getElementById("access-denied");
@@ -2280,14 +2374,10 @@ async function initAdminPage(isAdmin) {
     return;
   }
   adminContent.hidden = false;
+  document.getElementById("admin-content-tabbar").hidden = false;
   wireAdminModals();
+  wireAdminTabBar();
   await populateEventLabelSelect();
-
-  // Splits "a|b|c" or newline-separated text into a clean array of strings.
-  function splitList(value, sep) {
-    if (!value || !value.trim()) return [];
-    return value.split(sep).map((s) => s.trim()).filter(Boolean);
-  }
 
   // Wires one form: on submit, builds the data object, writes it to
   // Firestore, shows feedback, and resets the form on success. If
@@ -2489,16 +2579,29 @@ async function initAdminPage(isAdmin) {
 
   // Active Tasks panel
   await renderAdminActiveTasks();
-  document.getElementById("refresh-active-tasks").addEventListener("click", renderAdminActiveTasks);
+  document.getElementById("refresh-active-tasks").addEventListener("click", () => renderAdminActiveTasks());
+  document.getElementById("active-tasks-filter").addEventListener("change", (e) => renderActiveTasksList(e.target.value));
 
   // Completed Tasks panel
   await renderAdminCompletedTasks();
   document.getElementById("refresh-completed-tasks").addEventListener("click", renderAdminCompletedTasks);
-  document.getElementById("completed-tasks-sort").addEventListener("change", (e) => renderCompletedTasksList(e.target.value));
+  document.getElementById("completed-tasks-sort").addEventListener("change", () => renderCompletedTasksList());
+  document.getElementById("completed-tasks-filter").addEventListener("change", () => renderCompletedTasksList());
 
   // Prestige Leaderboard panel
   await renderPrestigeLeaderboard();
   document.getElementById("refresh-leaderboard").addEventListener("click", renderPrestigeLeaderboard);
+
+  // Fund Contribution Leaderboard panel
+  await renderFundLeaderboard();
+  document.getElementById("refresh-fund-leaderboard").addEventListener("click", renderFundLeaderboard);
+
+  // Fund Transaction History panel
+  await renderAdminFundTransactions();
+  document.getElementById("refresh-fund-transactions").addEventListener("click", renderAdminFundTransactions);
+  document.getElementById("fundtx-filter").addEventListener("change", () => renderFundTransactionsList());
+  document.getElementById("fundtx-sort").addEventListener("change", () => renderFundTransactionsList());
+  wireFundTransactionEditModal();
 
   // Active Group Projects panel
   await renderAdminActiveProjects();
@@ -2508,6 +2611,11 @@ async function initAdminPage(isAdmin) {
   await renderAdminCompletedProjects();
   document.getElementById("refresh-completed-projects").addEventListener("click", renderAdminCompletedProjects);
   document.getElementById("completed-projects-sort").addEventListener("change", (e) => renderCompletedProjectsList(e.target.value));
+
+  // Active Events panel
+  await renderAdminActiveEvents();
+  document.getElementById("refresh-active-events").addEventListener("click", renderAdminActiveEvents);
+  wireEventEditModal();
 
   // Detail Change Requests panel
   await renderAdminChangeRequests();
@@ -2521,6 +2629,9 @@ async function initAdminPage(isAdmin) {
 
   // Manage Bad Behavior Records
   await initBadBehaviorPanel();
+
+  // Add Event Leadership
+  await initEventLeadershipPanel();
 }
 
 // Manage Bad Behavior Records: pick a student, see their existing
@@ -3132,22 +3243,51 @@ async function populateBatchmateSelect() {
 const TASK_DIFFICULTY_POINTS = { easy: 5, medium: 10, hard: 20, nightmare: 35 };
 const TASK_RATING_POINTS_PER_STAR = 2;
 
+let activeTasksCache = null;
+
 async function renderAdminActiveTasks() {
   const container = document.getElementById("admin-active-tasks");
+  const filterSelect = document.getElementById("active-tasks-filter");
   if (!container) return;
   container.innerHTML = "Loading…";
 
   const q = query(collection(db, "tasks"), where("status", "in", ["ongoing", "pending"]));
   const snap = await getDocs(q);
+  activeTasksCache = [];
+  snap.forEach((docSnap) => activeTasksCache.push({ id: docSnap.id, ...docSnap.data() }));
 
-  if (snap.empty) {
+  if (filterSelect) {
+    const currentVal = filterSelect.value;
+    const byUid = new Map();
+    activeTasksCache.forEach((t) => { if (t.assignedToUid) byUid.set(t.assignedToUid, t.assignedToName || "Unknown"); });
+    const names = Array.from(byUid.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+    filterSelect.innerHTML = '<option value="">All students</option>';
+    names.forEach(([uid, name]) => {
+      const opt = document.createElement("option");
+      opt.value = uid;
+      opt.textContent = name;
+      filterSelect.appendChild(opt);
+    });
+    filterSelect.value = names.some(([uid]) => uid === currentVal) ? currentVal : "";
+  }
+
+  renderActiveTasksList(filterSelect ? filterSelect.value : "");
+}
+
+function renderActiveTasksList(filterUid) {
+  const container = document.getElementById("admin-active-tasks");
+  if (!container || !activeTasksCache) return;
+
+  const list = filterUid ? activeTasksCache.filter((t) => t.assignedToUid === filterUid) : activeTasksCache;
+
+  if (list.length === 0) {
     container.innerHTML = '<p class="info-text" style="color:var(--muted)">No active tasks right now.</p>';
     return;
   }
 
   container.innerHTML = "";
-  snap.forEach((docSnap) => {
-    const task = docSnap.data();
+  list.forEach((task) => {
+    const docId = task.id;
     const isPending = task.status === "pending";
 
     const box = document.createElement("div");
@@ -3200,7 +3340,7 @@ async function renderAdminActiveTasks() {
       verifyBtn.disabled = true;
       verifyBtn.textContent = "…";
       try {
-        await adminVerifyTask(docSnap.id, task, rating);
+        await adminVerifyTask(docId, task, rating);
         box.remove();
         if (!container.querySelector(".admin-task-box")) {
           container.innerHTML = '<p class="info-text" style="color:var(--muted)">No active tasks right now.</p>';
@@ -3258,7 +3398,7 @@ let completedTasksCache = null;
 
 async function renderAdminCompletedTasks() {
   const container = document.getElementById("admin-completed-tasks");
-  const sortSelect = document.getElementById("completed-tasks-sort");
+  const filterSelect = document.getElementById("completed-tasks-filter");
   if (!container) return;
   container.innerHTML = "Loading…";
 
@@ -3267,14 +3407,35 @@ async function renderAdminCompletedTasks() {
   completedTasksCache = [];
   snap.forEach((docSnap) => completedTasksCache.push({ id: docSnap.id, ...docSnap.data() }));
 
-  renderCompletedTasksList(sortSelect ? sortSelect.value : "date-desc");
+  if (filterSelect) {
+    const currentVal = filterSelect.value;
+    const byUid = new Map();
+    completedTasksCache.forEach((t) => { if (t.assignedToUid) byUid.set(t.assignedToUid, t.assignedToName || "Unknown"); });
+    const names = Array.from(byUid.entries()).sort((a, b) => a[1].localeCompare(b[1]));
+    filterSelect.innerHTML = '<option value="">All students</option>';
+    names.forEach(([uid, name]) => {
+      const opt = document.createElement("option");
+      opt.value = uid;
+      opt.textContent = name;
+      filterSelect.appendChild(opt);
+    });
+    filterSelect.value = names.some(([uid]) => uid === currentVal) ? currentVal : "";
+  }
+
+  renderCompletedTasksList();
 }
 
-function renderCompletedTasksList(sortMode) {
+function renderCompletedTasksList() {
   const container = document.getElementById("admin-completed-tasks");
   if (!container || !completedTasksCache) return;
 
-  const list = completedTasksCache.slice();
+  const sortSelect = document.getElementById("completed-tasks-sort");
+  const filterSelect = document.getElementById("completed-tasks-filter");
+  const sortMode = sortSelect ? sortSelect.value : "date-desc";
+  const filterUid = filterSelect ? filterSelect.value : "";
+
+  let list = completedTasksCache.slice();
+  if (filterUid) list = list.filter((t) => t.assignedToUid === filterUid);
   if (sortMode === "date-asc") {
     list.sort((a, b) => (a.completedDate || "").localeCompare(b.completedDate || ""));
   } else if (sortMode === "batchmate") {
@@ -3291,7 +3452,7 @@ function renderCompletedTasksList(sortMode) {
   container.innerHTML = "";
   list.forEach((task) => {
     const box = document.createElement("div");
-    box.className = "admin-task-box";
+    box.className = "admin-task-box admin-click-box";
 
     const left = document.createElement("div");
     const name = document.createElement("div");
@@ -3307,8 +3468,39 @@ function renderCompletedTasksList(sortMode) {
     left.appendChild(assignee);
 
     box.appendChild(left);
+    box.addEventListener("click", () => openTaskDetailModal(task));
     container.appendChild(box);
   });
+}
+
+// Simple label/value detail popup for a completed task — reuses
+// #modal-task-detail (in admin.html) so the Completed Tasks history
+// list itself can stay a compact single-line box.
+function openTaskDetailModal(task) {
+  const body = document.getElementById("task-detail-body");
+  const overlay = document.getElementById("modal-task-detail");
+  if (!body || !overlay) return;
+
+  const rows = [
+    ["Task", task.taskName || "Untitled task"],
+    ["Assigned to", task.assignedToName || "Unknown batchmate"],
+    ["Difficulty", task.difficulty || "—"],
+    ["Due date", task.dueDate || "—"],
+    ["Description", task.description || "—"],
+    ["Status", task.status || "—"],
+    ["Completed", task.completedDate || "—"],
+    ["Rating", task.rating ? task.rating + "/10" : "—"],
+    ["On time", task.onTime === false ? "No" : (task.status === "complete" ? "Yes" : "—")]
+  ];
+  body.innerHTML = "";
+  rows.forEach(([label, value]) => {
+    const row = document.createElement("div");
+    row.className = "admin-detail-row";
+    row.innerHTML = `<span class="admin-detail-label">${label}</span><span class="admin-detail-value"></span>`;
+    row.querySelector(".admin-detail-value").textContent = value;
+    body.appendChild(row);
+  });
+  overlay.hidden = false;
 }
 
 // ── Admin: Prestige Leaderboard ─────────────────────────────────
@@ -3351,6 +3543,508 @@ async function renderPrestigeLeaderboard() {
     row.appendChild(left);
     row.appendChild(right);
     container.appendChild(row);
+  });
+}
+
+// ── Admin: Fund Contribution Leaderboard ────────────────────────
+// Same shape as the Prestige Leaderboard above, ranked by `fundDonated`
+// instead. Reads the admin-only `batchmates` collection (not
+// `batchmatesPublic`) for the same privacy reason prestige points were
+// moved off `batchmatesPublic` — donation totals are admin-only too.
+async function renderFundLeaderboard() {
+  const container = document.getElementById("admin-fund-leaderboard");
+  if (!container) return;
+  container.innerHTML = "Loading…";
+
+  const snap = await getDocs(collection(db, "batchmates"));
+  const list = [];
+  snap.forEach((docSnap) => {
+    const d = docSnap.data();
+    list.push({ fullName: d.fullName || "Unnamed", donated: Number(d.fundDonated) || 0 });
+  });
+  list.sort((a, b) => b.donated - a.donated);
+
+  if (list.length === 0) {
+    container.innerHTML = '<p class="info-text" style="color:var(--muted)">No batchmates found.</p>';
+    return;
+  }
+
+  container.innerHTML = "";
+  list.forEach((p, index) => {
+    const row = document.createElement("div");
+    row.className = "prestige-log-item";
+
+    const left = document.createElement("div");
+    left.className = "prestige-log-note";
+    left.textContent = `${index + 1}. ${p.fullName}`;
+
+    const right = document.createElement("div");
+    right.className = "prestige-log-amount prestige-positive";
+    right.textContent = "Rs. " + p.donated.toLocaleString();
+
+    row.appendChild(left);
+    row.appendChild(right);
+    container.appendChild(row);
+  });
+}
+
+// ── Admin: Fund Transaction History ──────────────────────────────
+// Every fundTransactions doc, editable/deletable after the fact — unlike
+// the read-only history a batchmate sees on fund.html. Two shapes exist
+// (see initFundTransactionForm): "lump" (a single amount, no side effects
+// on any batchmate doc) and "perStudent" (amount = perStudentAmount ×
+// studentUids.length; an *income* one also bumped each listed student's
+// fundDonated and awarded prestige at creation time). Editing/deleting a
+// lump transaction is a plain updateDoc/deleteDoc. Editing/deleting a
+// perStudent *income* transaction has to mirror those side effects: apply
+// the same delta (or full reversal, on delete) to fundDonated and log a
+// matching prestige adjustment for every listed student, using the same
+// Math.floor(amount / FUND_LKR_PER_POINT) rule the original award used so
+// point totals stay exactly reversible. The type and student roster of a
+// perStudent transaction are locked in the edit modal — changing either
+// would mean retroactively applying or undoing donation/prestige effects
+// that were never computed for the "other" combination, so instead the
+// admin is asked to delete and re-add if that's genuinely what's needed.
+let fundTransactionsCache = null;
+
+async function renderAdminFundTransactions() {
+  const container = document.getElementById("admin-fund-transactions");
+  if (!container) return;
+  container.innerHTML = "Loading…";
+
+  const q = query(collection(db, "fundTransactions"), orderBy("date", "desc"));
+  const snap = await getDocs(q);
+  fundTransactionsCache = [];
+  snap.forEach((docSnap) => fundTransactionsCache.push({ id: docSnap.id, ...docSnap.data() }));
+
+  renderFundTransactionsList();
+}
+
+function renderFundTransactionsList() {
+  const container = document.getElementById("admin-fund-transactions");
+  if (!container || !fundTransactionsCache) return;
+
+  const filterSelect = document.getElementById("fundtx-filter");
+  const sortSelect = document.getElementById("fundtx-sort");
+  const filterType = filterSelect ? filterSelect.value : "";
+  const sortMode = sortSelect ? sortSelect.value : "date-desc";
+
+  let list = fundTransactionsCache.slice();
+  if (filterType) list = list.filter((tx) => (tx.type || "").toLowerCase() === filterType);
+
+  if (sortMode === "date-asc") {
+    list.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  } else if (sortMode === "amount-desc") {
+    list.sort((a, b) => (Number(b.amount) || 0) - (Number(a.amount) || 0));
+  } else if (sortMode === "amount-asc") {
+    list.sort((a, b) => (Number(a.amount) || 0) - (Number(b.amount) || 0));
+  } else {
+    list.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  }
+
+  if (list.length === 0) {
+    container.innerHTML = '<p class="info-text" style="color:var(--muted)">No transactions recorded yet.</p>';
+    return;
+  }
+
+  container.innerHTML = "";
+  list.forEach((tx) => {
+    const box = document.createElement("div");
+    box.className = "admin-task-box admin-click-box";
+
+    const left = document.createElement("div");
+    const name = document.createElement("div");
+    name.className = "admin-task-name";
+    const amount = Number(tx.amount) || 0;
+    const isExpense = (tx.type || "").toLowerCase() === "expense";
+    name.textContent = `${isExpense ? "−" : "+"} Rs. ${amount.toLocaleString()} — ${tx.description || "Untitled transaction"}`;
+
+    const meta = document.createElement("div");
+    meta.className = "admin-task-assignee";
+    const modeLabel = tx.mode === "perStudent"
+      ? `Per student × ${(tx.studentUids || []).length}`
+      : "Single value";
+    meta.textContent = `${tx.date || "No date"} · ${isExpense ? "expense" : "income"} · ${modeLabel}`;
+
+    left.appendChild(name);
+    left.appendChild(meta);
+    box.appendChild(left);
+    box.addEventListener("click", () => openFundTransactionEditModal(tx));
+    container.appendChild(box);
+  });
+}
+
+function openFundTransactionEditModal(tx) {
+  document.getElementById("fundtx-id").value = tx.id;
+  document.getElementById("fundtx-mode").value = tx.mode || "lump";
+  document.getElementById("fundtx-type").value = (tx.type || "income").toLowerCase();
+  document.getElementById("fundtx-description").value = tx.description || "";
+  document.getElementById("fundtx-date").value = tx.date || "";
+  document.getElementById("fundtx-error").hidden = true;
+  document.getElementById("fundtx-success").hidden = true;
+
+  const typeSelect = document.getElementById("fundtx-type");
+  const amountLabel = document.getElementById("fundtx-amount-label");
+  const amountInput = document.getElementById("fundtx-amount");
+  const totalNote = document.getElementById("fundtx-total-note");
+  const studentsSection = document.getElementById("fundtx-students-section");
+  const studentsList = document.getElementById("fundtx-students-list");
+  const modeNote = document.getElementById("fundtx-mode-note");
+
+  if (tx.mode === "perStudent") {
+    const names = tx.studentNames || [];
+
+    typeSelect.disabled = true;
+    amountLabel.textContent = "Amount per student";
+    amountInput.value = tx.perStudentAmount != null ? tx.perStudentAmount : "";
+    totalNote.hidden = false;
+    totalNote.textContent = `Total = amount per student × ${names.length} student${names.length === 1 ? "" : "s"}. Saving updates each listed student's fund total and prestige by the difference.`;
+    modeNote.textContent = "Per-student transaction — the type and student list are locked here. Only the amount per student, description, and date can be changed. To change who's included, delete this and re-add it from the Add tab.";
+    studentsSection.hidden = false;
+    studentsList.innerHTML = "";
+    names.forEach((n) => {
+      const row = document.createElement("div");
+      row.className = "member-check-row";
+      row.style.cursor = "default";
+      row.textContent = n;
+      studentsList.appendChild(row);
+    });
+  } else {
+    typeSelect.disabled = false;
+    amountLabel.textContent = "Amount";
+    amountInput.value = tx.amount != null ? tx.amount : "";
+    totalNote.hidden = true;
+    modeNote.textContent = "Single-value transaction — every field here can be edited freely.";
+    studentsSection.hidden = true;
+    studentsList.innerHTML = "";
+  }
+
+  document.getElementById("modal-fundtx-edit").hidden = false;
+}
+
+function wireFundTransactionEditModal() {
+  const form = document.getElementById("form-fundtx-edit");
+  const deleteBtn = document.getElementById("fundtx-delete-btn");
+  if (!form || !deleteBtn) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = document.getElementById("fundtx-id").value;
+    const mode = document.getElementById("fundtx-mode").value;
+    const errorEl = document.getElementById("fundtx-error");
+    const successEl = document.getElementById("fundtx-success");
+    errorEl.hidden = true;
+    successEl.hidden = true;
+
+    const tx = (fundTransactionsCache || []).find((t) => t.id === id);
+    if (!tx) {
+      errorEl.textContent = "Could not find this transaction — try refreshing.";
+      errorEl.hidden = false;
+      return;
+    }
+
+    const description = document.getElementById("fundtx-description").value.trim();
+    const date = document.getElementById("fundtx-date").value;
+    const newAmountInput = Number(document.getElementById("fundtx-amount").value) || 0;
+
+    try {
+      if (newAmountInput <= 0) throw new Error("Enter an amount.");
+
+      if (mode === "perStudent") {
+        const oldPerHead = Number(tx.perStudentAmount) || 0;
+        const studentUids = tx.studentUids || [];
+
+        await updateDoc(doc(db, "fundTransactions", id), {
+          perStudentAmount: newAmountInput,
+          amount: newAmountInput * studentUids.length,
+          description,
+          date
+        });
+
+        // Only "income" per-student transactions touched fundDonated/
+        // prestige at creation (see initFundTransactionForm) — mirror
+        // that here so an expense-mode per-student record is never
+        // awarded. Comparing floor(old/100) to floor(new/100), rather
+        // than flooring the raw delta, keeps this exactly reversible
+        // against the whole-point amount the original award used.
+        if ((tx.type || "").toLowerCase() === "income") {
+          const oldPoints = Math.floor(oldPerHead / FUND_LKR_PER_POINT);
+          const newPoints = Math.floor(newAmountInput / FUND_LKR_PER_POINT);
+          const pointsDelta = newPoints - oldPoints;
+          const amountDelta = newAmountInput - oldPerHead;
+
+          for (const uid of studentUids) {
+            if (amountDelta !== 0) {
+              await updateDoc(doc(db, "batchmates", uid), { fundDonated: increment(amountDelta) });
+            }
+            if (pointsDelta !== 0) {
+              await awardPrestige({
+                uid,
+                rawAmount: pointsDelta,
+                source: "fund-donation-edit",
+                note: `Fund donation edited: Rs. ${oldPerHead} → Rs. ${newAmountInput} — ${description || "batch fund"}`
+              });
+            }
+          }
+        }
+      } else {
+        const type = document.getElementById("fundtx-type").value;
+        await updateDoc(doc(db, "fundTransactions", id), {
+          type,
+          amount: newAmountInput,
+          description,
+          date
+        });
+      }
+
+      successEl.textContent = "Transaction updated.";
+      successEl.hidden = false;
+      await renderAdminFundTransactions();
+      await renderFundLeaderboard();
+      setTimeout(() => { document.getElementById("modal-fundtx-edit").hidden = true; }, 700);
+    } catch (err) {
+      errorEl.textContent = err.message || "Could not save changes. Please try again.";
+      errorEl.hidden = false;
+    }
+  });
+
+  deleteBtn.addEventListener("click", async () => {
+    const id = document.getElementById("fundtx-id").value;
+    const mode = document.getElementById("fundtx-mode").value;
+    if (!id) return;
+    if (!confirm("Delete this transaction? This can't be undone.")) return;
+
+    const errorEl = document.getElementById("fundtx-error");
+    errorEl.hidden = true;
+    const tx = (fundTransactionsCache || []).find((t) => t.id === id);
+
+    try {
+      if (tx && mode === "perStudent" && (tx.type || "").toLowerCase() === "income") {
+        const perHead = Number(tx.perStudentAmount) || 0;
+        const points = Math.floor(perHead / FUND_LKR_PER_POINT);
+        const studentUids = tx.studentUids || [];
+
+        for (const uid of studentUids) {
+          if (perHead) {
+            await updateDoc(doc(db, "batchmates", uid), { fundDonated: increment(-perHead) });
+          }
+          if (points > 0) {
+            await awardPrestige({
+              uid,
+              rawAmount: -points,
+              source: "fund-donation-delete",
+              note: `Fund donation removed: Rs. ${perHead} — ${tx.description || "batch fund"}`
+            });
+          }
+        }
+      }
+
+      await deleteDoc(doc(db, "fundTransactions", id));
+      document.getElementById("modal-fundtx-edit").hidden = true;
+      await renderAdminFundTransactions();
+      await renderFundLeaderboard();
+    } catch (err) {
+      errorEl.textContent = "Could not delete this transaction. Please try again.";
+      errorEl.hidden = false;
+    }
+  });
+}
+
+// ── Admin: Active Events ─────────────────────────────────────────
+// Every event, editable inline via a popup form (unlike the Home page's
+// read-only upcoming-only view, this includes past events too, since an
+// admin may still need to fix a typo or remove one after the fact).
+let activeEventsCache = null;
+
+async function renderAdminActiveEvents() {
+  const container = document.getElementById("admin-active-events");
+  if (!container) return;
+  container.innerHTML = "Loading…";
+
+  const snap = await getDocs(collection(db, "events"));
+  activeEventsCache = [];
+  snap.forEach((docSnap) => activeEventsCache.push({ id: docSnap.id, ...docSnap.data() }));
+  activeEventsCache.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+  if (activeEventsCache.length === 0) {
+    container.innerHTML = '<p class="info-text" style="color:var(--muted)">No events yet.</p>';
+    return;
+  }
+
+  container.innerHTML = "";
+  activeEventsCache.forEach((ev) => {
+    const box = document.createElement("div");
+    box.className = "admin-event-box";
+    const name = document.createElement("div");
+    name.className = "admin-event-name";
+    name.textContent = ev.name || "Untitled event";
+    const meta = document.createElement("div");
+    meta.className = "admin-event-meta";
+    meta.textContent = formatEventDate(ev.date) || "No date set";
+    box.appendChild(name);
+    box.appendChild(meta);
+    box.addEventListener("click", () => openEventEditModal(ev));
+    container.appendChild(box);
+  });
+}
+
+async function openEventEditModal(ev) {
+  document.getElementById("eventedit-id").value = ev.id;
+  document.getElementById("eventedit-name").value = ev.name || "";
+  document.getElementById("eventedit-datetime").value = ev.date || "";
+  document.getElementById("eventedit-description").value = ev.description || "";
+  document.getElementById("eventedit-leaders").value = Array.isArray(ev.leaders) ? ev.leaders.join("|") : "";
+  document.getElementById("eventedit-error").hidden = true;
+  document.getElementById("eventedit-success").hidden = true;
+
+  await populateEventLabelSelect("eventedit-labels-select");
+  const select = document.getElementById("eventedit-labels-select");
+  const selectedLabels = new Set(Array.isArray(ev.labels) ? ev.labels : []);
+  Array.from(select.options).forEach((opt) => { opt.selected = selectedLabels.has(opt.value); });
+
+  document.getElementById("modal-event-edit").hidden = false;
+}
+
+function wireEventEditModal() {
+  const form = document.getElementById("form-event-edit");
+  const deleteBtn = document.getElementById("eventedit-delete-btn");
+  if (!form || !deleteBtn) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const id = document.getElementById("eventedit-id").value;
+    const errorEl = document.getElementById("eventedit-error");
+    const successEl = document.getElementById("eventedit-success");
+    errorEl.hidden = true;
+    successEl.hidden = true;
+
+    const select = document.getElementById("eventedit-labels-select");
+    const selectedLabels = Array.from(select.selectedOptions).map((o) => o.value);
+
+    try {
+      await updateDoc(doc(db, "events", id), {
+        name: document.getElementById("eventedit-name").value.trim(),
+        date: document.getElementById("eventedit-datetime").value,
+        description: document.getElementById("eventedit-description").value.trim(),
+        leaders: splitList(document.getElementById("eventedit-leaders").value, "|"),
+        labels: selectedLabels
+      });
+      successEl.textContent = "Event updated.";
+      successEl.hidden = false;
+      await renderAdminActiveEvents();
+      setTimeout(() => { document.getElementById("modal-event-edit").hidden = true; }, 700);
+    } catch (err) {
+      errorEl.textContent = "Could not save changes. Please try again.";
+      errorEl.hidden = false;
+    }
+  });
+
+  deleteBtn.addEventListener("click", async () => {
+    const id = document.getElementById("eventedit-id").value;
+    if (!id) return;
+    if (!confirm("Delete this event? This can't be undone.")) return;
+    try {
+      await deleteDoc(doc(db, "events", id));
+      document.getElementById("modal-event-edit").hidden = true;
+      await renderAdminActiveEvents();
+    } catch (err) {
+      document.getElementById("eventedit-error").textContent = "Could not delete this event. Please try again.";
+      document.getElementById("eventedit-error").hidden = false;
+    }
+  });
+}
+
+// ── Admin: Add Event Leadership (Danger tab) ─────────────────────
+// Picks an existing event and edits its `leaders` array directly —
+// same field the Add Event / Edit Event forms write as a pipe-separated
+// list, just exposed here as individually add/removable entries.
+async function initEventLeadershipPanel() {
+  const select = document.getElementById("eventleadership-event-select");
+  const form = document.getElementById("form-eventleadership");
+  if (!select || !form) return;
+
+  const snap = await getDocs(collection(db, "events"));
+  const events = [];
+  snap.forEach((docSnap) => events.push({ id: docSnap.id, ...docSnap.data() }));
+  events.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+
+  select.innerHTML = "";
+  events.forEach((ev) => {
+    const opt = document.createElement("option");
+    opt.value = ev.id;
+    opt.textContent = (ev.name || "Untitled event") + (ev.date ? " — " + formatEventDate(ev.date) : "");
+    select.appendChild(opt);
+  });
+
+  function currentEvent() {
+    return events.find((ev) => ev.id === select.value);
+  }
+
+  function renderLeaderList() {
+    const list = document.getElementById("eventleadership-list");
+    const ev = currentEvent();
+    const leaders = ev && Array.isArray(ev.leaders) ? ev.leaders : [];
+    list.innerHTML = "";
+    if (leaders.length === 0) {
+      list.innerHTML = '<p class="info-text" style="color:var(--muted)">No leaders added yet.</p>';
+      return;
+    }
+    leaders.forEach((leaderName) => {
+      const row = document.createElement("div");
+      row.className = "admin-rating-row";
+      const label = document.createElement("span");
+      label.textContent = leaderName;
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "ghost-btn";
+      removeBtn.style.cssText = "padding:5px 10px; font-size:12px;";
+      removeBtn.textContent = "Remove";
+      removeBtn.addEventListener("click", async () => {
+        removeBtn.disabled = true;
+        try {
+          await updateDoc(doc(db, "events", ev.id), { leaders: arrayRemove(leaderName) });
+          ev.leaders = (ev.leaders || []).filter((n) => n !== leaderName);
+          renderLeaderList();
+        } catch (err) {
+          removeBtn.disabled = false;
+          alert("Could not remove this leader. Please try again.");
+        }
+      });
+      row.appendChild(label);
+      row.appendChild(removeBtn);
+      list.appendChild(row);
+    });
+  }
+
+  if (events.length > 0) renderLeaderList();
+  else document.getElementById("eventleadership-list").innerHTML = '<p class="info-text" style="color:var(--muted)">No events exist yet — add one first.</p>';
+
+  select.addEventListener("change", renderLeaderList);
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const ev = currentEvent();
+    const errorEl = document.getElementById("eventleadership-error");
+    const successEl = document.getElementById("eventleadership-success");
+    errorEl.hidden = true;
+    successEl.hidden = true;
+    if (!ev) return;
+
+    const nameInput = document.getElementById("eventleadership-name");
+    const name = nameInput.value.trim();
+    if (!name) return;
+
+    try {
+      await updateDoc(doc(db, "events", ev.id), { leaders: arrayUnion(name) });
+      ev.leaders = Array.isArray(ev.leaders) ? [...ev.leaders, name] : [name];
+      renderLeaderList();
+      nameInput.value = "";
+      successEl.textContent = "Leader added.";
+      successEl.hidden = false;
+    } catch (err) {
+      errorEl.textContent = "Could not add this leader. Please try again.";
+      errorEl.hidden = false;
+    }
   });
 }
 
@@ -3656,27 +4350,70 @@ function renderCompletedProjectsList(sortMode) {
   container.innerHTML = "";
   list.forEach((p) => {
     const box = document.createElement("div");
-    box.className = "admin-project-box";
+    box.className = "admin-project-box admin-click-box";
 
     const name = document.createElement("div");
     name.className = "admin-project-name";
     name.textContent = p.title || "Untitled project";
     box.appendChild(name);
 
-    const groups = Array.isArray(p.groups) ? p.groups : [];
-    const meta = document.createElement("div");
-    meta.className = "admin-project-desc";
-    const groupSummary = groups.length <= 1
-      ? "Whole batch"
-      : groups.map((g) => (g.groupName || "Group") + " (" + (g.leader || "no leader") + ")").join(", ");
-    const overall = p.overallRating && typeof p.overallRating.value === "number"
-      ? ` · overall rated ${p.overallRating.value}/10`
-      : "";
-    meta.textContent = (p.completedDate || "—") + " · " + groupSummary + overall;
-    box.appendChild(meta);
-
+    box.addEventListener("click", () => openProjectDetailModal(p));
     container.appendChild(box);
   });
+}
+
+// Detail popup for a completed project — reuses #modal-project-detail.
+// Shows the top-level project info plus a per-group breakdown (leader,
+// members, and that group's individual rating if the admin ever set one).
+function openProjectDetailModal(p) {
+  const body = document.getElementById("project-detail-body");
+  const overlay = document.getElementById("modal-project-detail");
+  if (!body || !overlay) return;
+
+  const groups = Array.isArray(p.groups) ? p.groups : [];
+  const overall = p.overallRating && typeof p.overallRating.value === "number" ? p.overallRating.value + "/10" : "—";
+
+  const topRows = [
+    ["Project", p.title || "Untitled project"],
+    ["Description", p.description || "—"],
+    ["Status", p.status || "—"],
+    ["Completed", p.completedDate || "—"],
+    ["Overall rating", overall]
+  ];
+  body.innerHTML = "";
+  topRows.forEach(([label, value]) => {
+    const row = document.createElement("div");
+    row.className = "admin-detail-row";
+    row.innerHTML = `<span class="admin-detail-label">${label}</span><span class="admin-detail-value"></span>`;
+    row.querySelector(".admin-detail-value").textContent = value;
+    body.appendChild(row);
+  });
+
+  if (groups.length === 0) {
+    const none = document.createElement("p");
+    none.className = "fine-print";
+    none.style.textAlign = "left";
+    none.textContent = "No groups were recorded for this project.";
+    body.appendChild(none);
+  } else {
+    groups.forEach((g, i) => {
+      const wrap = document.createElement("div");
+      wrap.className = "admin-detail-group";
+      const title = document.createElement("div");
+      title.className = "admin-detail-group-title";
+      title.textContent = g.groupName || `Group ${i + 1}`;
+      const meta = document.createElement("div");
+      meta.className = "admin-detail-group-meta";
+      const members = Array.isArray(g.members) ? g.members.join(", ") : "—";
+      const groupRating = g.rating && typeof g.rating.value === "number" ? ` · rated ${g.rating.value}/10` : "";
+      meta.textContent = `Leader: ${g.leader || "—"} · Members: ${members || "—"}${groupRating}`;
+      wrap.appendChild(title);
+      wrap.appendChild(meta);
+      body.appendChild(wrap);
+    });
+  }
+
+  overlay.hidden = false;
 }
 
 // ── Admin: Detail Change Requests ───────────────────────────────
@@ -3911,8 +4648,8 @@ function initBulkFieldForm() {
 // Fills the "Labels" multi-select on the admin page from the eventLabels
 // collection. Called on admin page load, and again right after a new
 // label is added, so it's usable without reloading the page.
-async function populateEventLabelSelect() {
-  const select = document.getElementById("event-labels-select");
+async function populateEventLabelSelect(targetId = "event-labels-select") {
+  const select = document.getElementById(targetId);
   if (!select) return;
 
   const previouslySelected = new Set(Array.from(select.selectedOptions).map((o) => o.value));

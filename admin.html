@@ -43,98 +43,178 @@
         <div id="access-denied" class="state-msg error-msg" hidden>You don't have access to this page.</div>
 
         <div id="admin-content" hidden>
-          <p class="section-label" style="margin-bottom:16px;">Admin — Add Records</p>
 
-          <!-- Buttons that open each section as a popup -->
-          <div class="admin-btn-grid">
-            <button type="button" class="admin-section-btn" data-modal="modal-fund">Add Fund Transaction</button>
-            <button type="button" class="admin-section-btn" data-modal="modal-wall">Add Wall of Fame Entry</button>
-            <button type="button" class="admin-section-btn" data-modal="modal-announcement">Add Announcement</button>
-            <button type="button" class="admin-section-btn" data-modal="modal-leader">Add Batch Leadership</button>
-            <button type="button" class="admin-section-btn" data-modal="modal-project">Add Group Project</button>
-            <button type="button" class="admin-section-btn" data-modal="modal-eventlabel">Add Event Label</button>
-            <button type="button" class="admin-section-btn" data-modal="modal-event">Add Event</button>
-            <button type="button" class="admin-section-btn" data-modal="modal-task">Assign Task</button>
-            <button type="button" class="admin-section-btn" data-modal="modal-badges">Manage Student Badges</button>
-            <button type="button" class="admin-section-btn" data-modal="modal-badbehavior">Manage Bad Behavior Records</button>
-            <button type="button" class="admin-section-btn" data-modal="modal-bulkfield">Add/Remove Field (All Batchmates)</button>
-          </div>
+          <!-- ══ HISTORY ═══════════════════════════════════════════ -->
+          <div class="admin-tab-panel" data-tab-panel="history">
 
-          <!-- Active Tasks stays visible on the page — it's a live status panel, not an add-form -->
-          <div class="card full-span">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
-              <p class="section-label" style="margin:0;">Active Tasks</p>
-              <button type="button" id="refresh-active-tasks" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
-            </div>
-            <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tasks with an amber "Needs verification" badge mean the batchmate marked it done — pick a rating (1-10) and tap Verify to confirm, complete it, and award prestige points.</p>
-            <div id="admin-active-tasks"></div>
-          </div>
-
-          <!-- Completed Tasks — history, sortable -->
-          <div class="card full-span">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; gap:10px; flex-wrap:wrap;">
-              <p class="section-label" style="margin:0;">Completed Tasks</p>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <select id="completed-tasks-sort" style="padding:6px 10px; font-size:12px;">
-                  <option value="date-desc">Date — newest first</option>
-                  <option value="date-asc">Date — oldest first</option>
-                  <option value="batchmate">Batchmate name</option>
-                </select>
-                <button type="button" id="refresh-completed-tasks" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; gap:10px; flex-wrap:wrap;">
+                <p class="section-label" style="margin:0;">Completed Tasks</p>
+                <div class="admin-list-controls">
+                  <select id="completed-tasks-filter">
+                    <option value="">All students</option>
+                  </select>
+                  <select id="completed-tasks-sort">
+                    <option value="date-desc">Date — newest first</option>
+                    <option value="date-asc">Date — oldest first</option>
+                    <option value="batchmate">Batchmate name</option>
+                  </select>
+                  <button type="button" id="refresh-completed-tasks" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+                </div>
               </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tap a task for full details.</p>
+              <div id="admin-completed-tasks" class="admin-scroll-list"></div>
             </div>
-            <div id="admin-completed-tasks"></div>
-          </div>
 
-          <!-- Active Group Projects — live status panel, not an add-form -->
-          <div class="card full-span">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
-              <p class="section-label" style="margin:0;">Active Group Projects</p>
-              <button type="button" id="refresh-active-projects" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
-            </div>
-            <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tap a status to update it. Marking a project "Complete" removes it from the website.</p>
-            <div id="admin-active-projects"></div>
-          </div>
-
-          <!-- Completed Group Projects — history, sortable -->
-          <div class="card full-span">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; gap:10px; flex-wrap:wrap;">
-              <p class="section-label" style="margin:0;">Completed Group Projects</p>
-              <div style="display:flex; align-items:center; gap:8px;">
-                <select id="completed-projects-sort" style="padding:6px 10px; font-size:12px;">
-                  <option value="date-desc">Date — newest first</option>
-                  <option value="date-asc">Date — oldest first</option>
-                  <option value="title">Project title</option>
-                </select>
-                <button type="button" id="refresh-completed-projects" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; gap:10px; flex-wrap:wrap;">
+                <p class="section-label" style="margin:0;">Completed Group Projects</p>
+                <div class="admin-list-controls">
+                  <select id="completed-projects-sort">
+                    <option value="date-desc">Date — newest first</option>
+                    <option value="date-asc">Date — oldest first</option>
+                    <option value="title">Project title</option>
+                  </select>
+                  <button type="button" id="refresh-completed-projects" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+                </div>
               </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tap a project for full details.</p>
+              <div id="admin-completed-projects" class="admin-scroll-list"></div>
             </div>
-            <div id="admin-completed-projects"></div>
+
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <p class="section-label" style="margin:0;">Prestige Leaderboard</p>
+                <button type="button" id="refresh-leaderboard" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+              </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Every batchmate, ranked by total prestige points.</p>
+              <div id="admin-leaderboard" class="admin-scroll-list"></div>
+            </div>
+
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <p class="section-label" style="margin:0;">Fund Contribution Leaderboard</p>
+                <button type="button" id="refresh-fund-leaderboard" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+              </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Every batchmate, ranked by total Rs. donated to the batch fund.</p>
+              <div id="admin-fund-leaderboard" class="admin-scroll-list"></div>
+            </div>
+
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; gap:10px; flex-wrap:wrap;">
+                <p class="section-label" style="margin:0;">Fund Transaction History</p>
+                <div class="admin-list-controls">
+                  <select id="fundtx-filter">
+                    <option value="">All types</option>
+                    <option value="income">Income only</option>
+                    <option value="expense">Expense only</option>
+                  </select>
+                  <select id="fundtx-sort">
+                    <option value="date-desc">Date — newest first</option>
+                    <option value="date-asc">Date — oldest first</option>
+                    <option value="amount-desc">Amount — highest first</option>
+                    <option value="amount-asc">Amount — lowest first</option>
+                  </select>
+                  <button type="button" id="refresh-fund-transactions" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+                </div>
+              </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Every income and expense entry ever logged. Tap one to edit or delete it.</p>
+              <div id="admin-fund-transactions" class="admin-scroll-list"></div>
+            </div>
+
           </div>
 
-          <!-- Detail Change Requests — live status panel, not an add-form -->
-          <div class="card full-span">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
-              <p class="section-label" style="margin:0;">Detail Change Requests</p>
-              <button type="button" id="refresh-change-requests" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+          <!-- ══ ACTIVE ════════════════════════════════════════════ -->
+          <div class="admin-tab-panel" data-tab-panel="active" hidden>
+
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; gap:10px; flex-wrap:wrap;">
+                <p class="section-label" style="margin:0;">Active Tasks</p>
+                <div class="admin-list-controls">
+                  <select id="active-tasks-filter">
+                    <option value="">All students</option>
+                  </select>
+                  <button type="button" id="refresh-active-tasks" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+                </div>
+              </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tasks with an amber "Needs verification" badge mean the batchmate marked it done — pick a rating (1-10) and tap Verify to confirm, complete it, and award prestige points.</p>
+              <div id="admin-active-tasks" class="admin-scroll-list"></div>
             </div>
-            <p class="fine-print" style="text-align:left; margin:0 0 14px;">A batchmate's requested edits to their own profile. Approve to save the change to their profile (and the directory, for fields shown there); reject to dismiss it without saving anything.</p>
-            <div id="admin-change-requests"></div>
+
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <p class="section-label" style="margin:0;">Active Group Projects</p>
+                <button type="button" id="refresh-active-projects" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+              </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tap a status to update it. Marking a project "Complete" removes it from the website.</p>
+              <div id="admin-active-projects" class="admin-scroll-list"></div>
+            </div>
+
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <p class="section-label" style="margin:0;">Active Events</p>
+                <button type="button" id="refresh-active-events" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+              </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tap an event to edit its details or delete it.</p>
+              <div id="admin-active-events" class="admin-scroll-list"></div>
+            </div>
+
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <p class="section-label" style="margin:0;">Detail Change Requests</p>
+                <button type="button" id="refresh-change-requests" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+              </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">A batchmate's requested edits to their own profile. Approve to save the change to their profile (and the directory, for fields shown there); reject to dismiss it without saving anything.</p>
+              <div id="admin-change-requests" class="admin-scroll-list"></div>
+            </div>
+
           </div>
 
-<!-- Prestige Leaderboard — live status panel, not an add-form -->
-          <div class="card full-span">
-            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
-              <p class="section-label" style="margin:0;">Prestige Leaderboard</p>
-              <button type="button" id="refresh-leaderboard" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+          <!-- ══ ADD ═══════════════════════════════════════════════ -->
+          <div class="admin-tab-panel" data-tab-panel="add" hidden>
+            <p class="section-label" style="margin-bottom:16px;">Add Records</p>
+            <div class="admin-btn-grid">
+              <button type="button" class="admin-section-btn" data-modal="modal-fund">Add Fund Transaction</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-event">Add Event</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-eventlabel">Add Event Label</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-task">Assign Task</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-project">Add Group Project</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-announcement">Add Announcement</button>
             </div>
-            <p class="fine-print" style="text-align:left; margin:0 0 14px;">Every batchmate, ranked by total prestige points.</p>
-            <div id="admin-leaderboard"></div>
+          </div>
+
+          <!-- ══ DANGER ════════════════════════════════════════════ -->
+          <div class="admin-tab-panel" data-tab-panel="danger" hidden>
+            <p class="section-label" style="margin-bottom:16px;">Danger Zone — sensitive & batch-wide actions</p>
+            <div class="admin-btn-grid">
+              <button type="button" class="admin-section-btn" data-modal="modal-wall">Add Wall of Fame Entry</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-leader">Add Batch Leadership</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-eventleadership">Add Event Leadership</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-badges">Manage Student Badges</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-badbehavior">Manage Bad Behavior Records</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-bulkfield">Add/Remove Field (All Batchmates)</button>
+            </div>
           </div>
 
         </div>
+
       </div>
     </main>
+
+    <!-- Sticky bottom tab bar: kept OUTSIDE .content-area on purpose.
+         .content-area has a load-in animation (pageFadeIn) that ends on
+         `transform: translateY(0)`, and animation-fill-mode:both keeps
+         that transform applied forever. A non-"none" transform on an
+         ancestor turns it into the containing block for any
+         position:fixed descendant, so bottom:18px would resolve against
+         .content-area's (tall, scrolling) box instead of the viewport —
+         which is why the bar used to drift to the bottom of the page. -->
+    <nav class="admin-tab-bar" id="admin-content-tabbar" hidden>
+      <button type="button" class="admin-tab-pill active" data-tab="history">History</button>
+      <button type="button" class="admin-tab-pill" data-tab="active">Active</button>
+      <button type="button" class="admin-tab-pill" data-tab="add">Add</button>
+      <button type="button" class="admin-tab-pill" data-tab="danger">Danger</button>
+    </nav>
   </div>
 
 
@@ -475,6 +555,120 @@
         </form>
         <p class="error-msg" id="bulkfield-error" hidden></p>
         <p class="success-msg" id="bulkfield-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-task-detail" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-task-detail" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Task Details</p>
+        <div id="task-detail-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-project-detail" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-project-detail" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Project Details</p>
+        <div id="project-detail-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-event-edit" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-event-edit" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Edit Event</p>
+        <form id="form-event-edit">
+          <input type="hidden" id="eventedit-id">
+          <label for="eventedit-name">Event Name</label>
+          <input type="text" id="eventedit-name" required>
+
+          <label for="eventedit-datetime">Date & Time</label>
+          <input type="datetime-local" id="eventedit-datetime" required>
+
+          <label for="eventedit-description">Description</label>
+          <textarea id="eventedit-description" rows="3"></textarea>
+
+          <label for="eventedit-leaders">Event Leaders (separate with |)</label>
+          <input type="text" id="eventedit-leaders" placeholder="Alex Rivera|Priya Fernando">
+
+          <label for="eventedit-labels-select">Labels (select one or more)</label>
+          <select id="eventedit-labels-select" multiple size="4"></select>
+
+          <button type="submit" class="btn-primary">Save Changes</button>
+        </form>
+        <button type="button" id="eventedit-delete-btn" class="danger-btn">Delete This Event</button>
+        <p class="error-msg" id="eventedit-error" hidden></p>
+        <p class="success-msg" id="eventedit-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-fundtx-edit" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-fundtx-edit" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Edit Fund Transaction</p>
+        <p class="fine-print" id="fundtx-mode-note" style="text-align:left; margin:0 0 16px;"></p>
+        <form id="form-fundtx-edit">
+          <input type="hidden" id="fundtx-id">
+          <input type="hidden" id="fundtx-mode">
+
+          <label for="fundtx-type">Type</label>
+          <select id="fundtx-type">
+            <option value="income">Income</option>
+            <option value="expense">Expense</option>
+          </select>
+
+          <label for="fundtx-amount" id="fundtx-amount-label">Amount</label>
+          <input type="number" id="fundtx-amount" step="0.01" required>
+          <p class="fine-print" id="fundtx-total-note" style="text-align:left; margin:-12px 0 14px;" hidden></p>
+
+          <div id="fundtx-students-section" hidden>
+            <label>Students on this transaction</label>
+            <div id="fundtx-students-list" class="member-checklist" style="max-height:160px; overflow-y:auto;"></div>
+          </div>
+
+          <label for="fundtx-description">Description</label>
+          <input type="text" id="fundtx-description" required>
+
+          <label for="fundtx-date">Date</label>
+          <input type="date" id="fundtx-date" required>
+
+          <button type="submit" class="btn-primary">Save Changes</button>
+        </form>
+        <button type="button" id="fundtx-delete-btn" class="danger-btn">Delete This Transaction</button>
+        <p class="error-msg" id="fundtx-error" hidden></p>
+        <p class="success-msg" id="fundtx-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-eventleadership" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-eventleadership" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Add Event Leadership</p>
+        <p class="fine-print" style="text-align:left; margin:0 0 16px;">Pick an event, then add or remove the names shown as its leaders.</p>
+        <label for="eventleadership-event-select">Event</label>
+        <select id="eventleadership-event-select"></select>
+
+        <p class="section-label" style="margin-top:16px;">Current Leaders</p>
+        <div id="eventleadership-list"></div>
+
+        <p class="section-label" style="margin-top:16px;">Add a Leader</p>
+        <form id="form-eventleadership">
+          <input type="text" id="eventleadership-name" placeholder="Full name" required>
+          <button type="submit" class="btn-primary">Add Leader</button>
+        </form>
+        <p class="error-msg" id="eventleadership-error" hidden></p>
+        <p class="success-msg" id="eventleadership-success" hidden></p>
       </div>
     </div>
   </div>

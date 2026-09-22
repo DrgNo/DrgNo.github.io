@@ -633,6 +633,61 @@ button {
   z-index: 2;
 }
 .modal-close:hover { border-color: var(--blue); color: var(--blue); }
+
+/* ── Modal open/close animations ──────────────────────────────────
+   Every modal on the site is opened/closed with a plain
+   `overlay.hidden = true/false` — dozens of call sites across the
+   file. Rather than touch each one, initModalAnimations() (app.js)
+   shadows the `hidden` property on every .modal-overlay so opening
+   removes the [hidden] attribute immediately (this animation runs
+   automatically) and closing adds a .closing class first, waits for
+   the exit animation, then actually applies [hidden]. */
+@keyframes modalBackdropIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalBackdropOut { from { opacity: 1; } to { opacity: 0; } }
+@keyframes modalPopIn {
+  from { opacity: 0; transform: translateY(14px) scale(.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes modalPopOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(10px) scale(.97); }
+}
+.modal-overlay:not([hidden]) { animation: modalBackdropIn .18s ease both; }
+.modal-overlay:not([hidden]) .modal-box {
+  animation: modalPopIn .26s cubic-bezier(.22, 1, .36, 1) both;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .22);
+}
+.modal-overlay.closing { animation: modalBackdropOut .16s ease both; pointer-events: none; }
+.modal-overlay.closing .modal-box { animation: modalPopOut .16s ease both; }
+
+/* ── Page load / page-change animations ───────────────────────────
+   .content-area (the <main> on every sidebar page) and .page-center
+   (the sign-in page's wrapper) fade + rise in on load. initPageTransitions()
+   in app.js intercepts same-site link clicks, adds .page-exit to <html>
+   for a brief fade-out, then completes the navigation — a lightweight
+   stand-in for a real page transition on a static multi-page site. */
+@keyframes pageFadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pageFadeOut {
+  from { opacity: 1; transform: translateY(0); }
+  to   { opacity: 0; transform: translateY(-8px); }
+}
+.content-area, .page-center { animation: pageFadeIn .35s ease both; }
+html.page-exit .content-area, html.page-exit .page-center {
+  animation: pageFadeOut .15s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-overlay:not([hidden]), .modal-overlay:not([hidden]) .modal-box,
+  .modal-overlay.closing, .modal-overlay.closing .modal-box,
+  .content-area, .page-center,
+  html.page-exit .content-area, html.page-exit .page-center {
+    animation: none !important;
+  }
+}
+
 .modal-image {
   width: 100%;
   max-height: 280px;
@@ -1120,7 +1175,10 @@ button {
 .admin-modal-body { padding: 20px; max-width: 420px; }
 #modal-fund .modal-box, #modal-wall .modal-box, #modal-announcement .modal-box,
 #modal-leader .modal-box, #modal-eventlabel .modal-box,
-#modal-event .modal-box, #modal-task .modal-box, #modal-bulkfield .modal-box { max-width: 440px; }
+#modal-event .modal-box, #modal-task .modal-box, #modal-bulkfield .modal-box,
+#modal-task-detail .modal-box, #modal-project-detail .modal-box,
+#modal-event-edit .modal-box, #modal-eventleadership .modal-box,
+#modal-fundtx-edit .modal-box { max-width: 440px; }
 #modal-project .modal-box { max-width: 540px; }
 
 /* ── Admin: dynamic group blocks (Add Group Project) ─────────────── */
@@ -1323,4 +1381,118 @@ button {
   border-radius: 50%;
   background: var(--panel);
   flex-shrink: 0;
+}
+
+/* ── Admin: bottom tab bar (History / Active / Add / Danger) ─────── */
+.admin-tab-bar {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 24px);
+  display: flex;
+  gap: 4px;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 999px;
+  padding: 5px;
+  z-index: 80;
+}
+@media (min-width: 880px) {
+  /* Center within the content area, not the whole viewport — the
+     230px fixed sidebar (see .sidebar / .content-area above) would
+     otherwise push the bar off-center on desktop. */
+  .admin-tab-bar { left: calc(50% + 115px); }
+}
+.admin-tab-pill {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 10px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .2s ease, color .2s ease;
+}
+.admin-tab-pill:hover { color: var(--text); }
+.admin-tab-pill.active {
+  background: linear-gradient(180deg, var(--blue), var(--blue-dim));
+  color: #fff;
+}
+.admin-tab-panel[hidden] { display: none; }
+.admin-tab-panel { padding-bottom: 90px; }
+
+/* Fixed-height, vertically scrollable list containers — used for
+   history/leaderboard-style panels so a long list doesn't push the
+   sticky tab bar (or the rest of the page) around. */
+.admin-scroll-list {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.admin-scroll-list::-webkit-scrollbar { width: 7px; }
+.admin-scroll-list::-webkit-scrollbar-track { background: transparent; }
+.admin-scroll-list::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 4px; }
+
+/* Row of sort/filter controls above a history list. */
+.admin-list-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.admin-list-controls select { margin-bottom: 0; padding: 6px 10px; font-size: 12px; }
+
+/* Clickable box — name only, opens a detail popup (Completed Projects,
+   Completed Tasks in the History tab). */
+.admin-click-box {
+  background: var(--surface);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color .15s ease, transform .15s ease;
+}
+.admin-click-box:hover { border-color: var(--blue); transform: translateY(-1px); }
+
+/* Detail popup body (task/project detail) — reuses .admin-modal-body's
+   padding, adds a simple label/value stack. */
+.admin-detail-row { display: flex; justify-content: space-between; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--panel-border); font-size: 13px; }
+.admin-detail-row:last-child { border-bottom: none; }
+.admin-detail-label { color: var(--muted); flex-shrink: 0; }
+.admin-detail-value { text-align: right; }
+.admin-detail-group { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--panel-border); }
+.admin-detail-group:first-of-type { margin-top: 16px; }
+.admin-detail-group-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.admin-detail-group-meta { font-size: 12px; color: var(--muted); }
+
+/* ── Admin: Active Events ─────────────────────────────────────── */
+.admin-event-box {
+  background: var(--surface);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  transition: border-color .15s ease, transform .15s ease;
+}
+.admin-event-box:hover { border-color: var(--blue); transform: translateY(-1px); }
+.admin-event-name { font-size: 13.5px; font-weight: 600; }
+.admin-event-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+.danger-btn {
+  background: none;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  width: 100%;
+  margin-top: 6px;
+}
+.danger-btn:hover { filter: brightness(1.15); }
+
+@media (max-width: 560px) {
+  .admin-tab-bar { bottom: 10px; padding: 4px; }
+  .admin-tab-pill { padding: 9px 12px; font-size: 12px; }
 }
