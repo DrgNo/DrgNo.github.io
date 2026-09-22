@@ -20,7 +20,7 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand small sidebar-brand">
         <span class="brand-mark">◆</span>
-        <span class="brand-name">Batch<span class="accent">Portal</span></span>
+        <span class="brand-name">Portal<span class="accent"> Management</span></span>
       </div>
       <nav class="side-nav">
         <a href="home.html" class="side-link">Home</a>
@@ -43,9 +43,22 @@
         <div id="access-denied" class="state-msg error-msg" hidden>You don't have access to this page.</div>
 
         <div id="admin-content" hidden>
+            
+          <!-- ══ ADD ═══════════════════════════════════════════════ -->
+          <div class="admin-tab-panel" data-tab-panel="add">
+            <p class="section-label" style="margin-bottom:16px;">Add Records</p>
+            <div class="admin-btn-grid">
+              <button type="button" class="admin-section-btn" data-modal="modal-fund">Add Fund Transaction</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-event">Add Event</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-eventlabel">Add Event Label</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-task">Assign Task</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-project">Add Group Project</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-announcement">Add Announcement</button>
+            </div>
+          </div>
 
           <!-- ══ HISTORY ═══════════════════════════════════════════ -->
-          <div class="admin-tab-panel" data-tab-panel="history">
+          <div class="admin-tab-panel" data-tab-panel="history" hidden>
 
             <div class="card full-span">
               <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; gap:10px; flex-wrap:wrap;">
@@ -55,8 +68,8 @@
                     <option value="">All students</option>
                   </select>
                   <select id="completed-tasks-sort">
-                    <option value="date-desc">Date — newest first</option>
-                    <option value="date-asc">Date — oldest first</option>
+                    <option value="date-desc">Date - newest first</option>
+                    <option value="date-asc">Date - oldest first</option>
                     <option value="batchmate">Batchmate name</option>
                   </select>
                   <button type="button" id="refresh-completed-tasks" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
@@ -71,8 +84,8 @@
                 <p class="section-label" style="margin:0;">Completed Group Projects</p>
                 <div class="admin-list-controls">
                   <select id="completed-projects-sort">
-                    <option value="date-desc">Date — newest first</option>
-                    <option value="date-asc">Date — oldest first</option>
+                    <option value="date-desc">Date - newest first</option>
+                    <option value="date-asc">Date - oldest first</option>
                     <option value="title">Project title</option>
                   </select>
                   <button type="button" id="refresh-completed-projects" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
@@ -110,10 +123,10 @@
                     <option value="expense">Expense only</option>
                   </select>
                   <select id="fundtx-sort">
-                    <option value="date-desc">Date — newest first</option>
-                    <option value="date-asc">Date — oldest first</option>
-                    <option value="amount-desc">Amount — highest first</option>
-                    <option value="amount-asc">Amount — lowest first</option>
+                    <option value="date-desc">Date - newest first</option>
+                    <option value="date-asc">Date - oldest first</option>
+                    <option value="amount-desc">Amount - highest first</option>
+                    <option value="amount-asc">Amount - lowest first</option>
                   </select>
                   <button type="button" id="refresh-fund-transactions" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
                 </div>
@@ -137,7 +150,7 @@
                   <button type="button" id="refresh-active-tasks" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
                 </div>
               </div>
-              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tasks with an amber "Needs verification" badge mean the batchmate marked it done — pick a rating (1-10) and tap Verify to confirm, complete it, and award prestige points.</p>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tasks with an amber "Needs verification" badge mean the batchmate marked it done - pick a rating (1-10) and tap Verify to confirm, complete it, and award prestige points.</p>
               <div id="admin-active-tasks" class="admin-scroll-list"></div>
             </div>
 
@@ -170,22 +183,9 @@
 
           </div>
 
-          <!-- ══ ADD ═══════════════════════════════════════════════ -->
-          <div class="admin-tab-panel" data-tab-panel="add" hidden>
-            <p class="section-label" style="margin-bottom:16px;">Add Records</p>
-            <div class="admin-btn-grid">
-              <button type="button" class="admin-section-btn" data-modal="modal-fund">Add Fund Transaction</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-event">Add Event</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-eventlabel">Add Event Label</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-task">Assign Task</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-project">Add Group Project</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-announcement">Add Announcement</button>
-            </div>
-          </div>
-
           <!-- ══ DANGER ════════════════════════════════════════════ -->
           <div class="admin-tab-panel" data-tab-panel="danger" hidden>
-            <p class="section-label" style="margin-bottom:16px;">Danger Zone — sensitive & batch-wide actions</p>
+            <p class="section-label" style="margin-bottom:16px;">Danger Zone - sensitive & batch-wide actions</p>
             <div class="admin-btn-grid">
               <button type="button" class="admin-section-btn" data-modal="modal-wall">Add Wall of Fame Entry</button>
               <button type="button" class="admin-section-btn" data-modal="modal-leader">Add Batch Leadership</button>
@@ -210,9 +210,9 @@
          .content-area's (tall, scrolling) box instead of the viewport —
          which is why the bar used to drift to the bottom of the page. -->
     <nav class="admin-tab-bar" id="admin-content-tabbar" hidden>
-      <button type="button" class="admin-tab-pill active" data-tab="history">History</button>
+      <button type="button" class="admin-tab-pill active" data-tab="add">Add</button>
       <button type="button" class="admin-tab-pill" data-tab="active">Active</button>
-      <button type="button" class="admin-tab-pill" data-tab="add">Add</button>
+      <button type="button" class="admin-tab-pill" data-tab="history">History</button>
       <button type="button" class="admin-tab-pill" data-tab="danger">Danger</button>
     </nav>
   </div>

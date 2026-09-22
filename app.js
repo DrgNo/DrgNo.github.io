@@ -823,7 +823,7 @@ function buildPrestigeInfoBody() {
   // Tasks
   const taskWrap = section(
     "Tasks",
-    "An admin assigns you a task with a difficulty. Finishing it by the due date earns the difficulty's base points; the admin's 1-10 rating on the task always adds points too, even if the deadline was missed."
+    "An admin assigns you a task with a difficulty. Finishing it by the due date earns the difficulty's base points. The admin will give 1-10 rating on the task which will always adds as points too, even if the deadline was missed."
   );
   list(taskWrap, [
     ["Easy task, finished on time", `+${TASK_DIFFICULTY_POINTS.easy}`],
@@ -839,8 +839,8 @@ function buildPrestigeInfoBody() {
     "Two ways an admin can award a whole project or a single group, plus ratings batchmates give each other once everyone on a group has rated."
   );
   list(projWrap, [
-    ["Admin's overall project rating (1-10) — paid to every group's members + leaders", `+${OVERALL_RATING_POINTS_PER_STAR} to +${10 * OVERALL_RATING_POINTS_PER_STAR}`],
-    ["Admin's single-group rating (1-10) — paid to that group's members + leader", `+${GROUP_RATING_POINTS_PER_STAR} to +${10 * GROUP_RATING_POINTS_PER_STAR}`],
+    ["Admin's overall project rating (1-10) will be paid to every group's members + leaders", `+${OVERALL_RATING_POINTS_PER_STAR} to +${10 * OVERALL_RATING_POINTS_PER_STAR}`],
+    ["Admin's single-group rating (1-10) wil be paid to that specific group's members + leader", `+${GROUP_RATING_POINTS_PER_STAR} to +${10 * GROUP_RATING_POINTS_PER_STAR}`],
     [`Peer/leader ratings of you, averaged (your leader's rating counts ${LEADER_RATING_WEIGHT}× a peer's)`, `+${MEMBER_RATING_POINTS_PER_STAR} to +${10 * MEMBER_RATING_POINTS_PER_STAR}`],
     ["If you're a leader: your members' ratings of you, averaged", `+${LEADER_RATING_POINTS_PER_STAR} to +${10 * LEADER_RATING_POINTS_PER_STAR}`]
   ]);
@@ -855,7 +855,7 @@ function buildPrestigeInfoBody() {
   const floorRecords = Math.ceil((1 - BAD_BEHAVIOR_FLOOR) / BAD_BEHAVIOR_STEP);
   const badWrap = section(
     "What Slows You Down",
-    `Each bad behavior record on file cuts how fast you earn every point above by ${Math.round(BAD_BEHAVIOR_STEP * 100)}%, down to a floor of ${Math.round(BAD_BEHAVIOR_FLOOR * 100)}% speed at ${floorRecords}+ records. It slows down future awards — it never removes points you've already earned.`
+    `Each bad behavior record on file cuts how fast you earn every point above by ${Math.round(BAD_BEHAVIOR_STEP * 100)}%, down to a floor of ${Math.round(BAD_BEHAVIOR_FLOOR * 100)}% speed at ${floorRecords}+ records. It slows down future awards. However it never remove points you've already earned.`
   );
   const exampleBase = TASK_DIFFICULTY_POINTS.hard;
   const exampleAwarded = Math.round(exampleBase * badBehaviorMultiplier(2));
@@ -868,7 +868,7 @@ function buildPrestigeInfoBody() {
   const closingNote = document.createElement("p");
   closingNote.className = "fine-print";
   closingNote.style.cssText = "text-align:left; margin:14px 0 0;";
-  closingNote.textContent = "Every award — positive or negative — shows up in your prestige history below, with a note on what it was for.";
+  closingNote.textContent = "Every award (positive or negative) shows up in your prestige history below, with a note on what it was for.";
   body.appendChild(closingNote);
 
   return body;
