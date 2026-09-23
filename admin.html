@@ -189,10 +189,12 @@
             <div class="admin-btn-grid">
               <button type="button" class="admin-section-btn" data-modal="modal-wall">Add Wall of Fame Entry</button>
               <button type="button" class="admin-section-btn" data-modal="modal-leader">Add Batch Leadership</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-eventleadership">Add Event Leadership</button>
               <button type="button" class="admin-section-btn" data-modal="modal-badges">Manage Student Badges</button>
               <button type="button" class="admin-section-btn" data-modal="modal-badbehavior">Manage Bad Behavior Records</button>
               <button type="button" class="admin-section-btn" data-modal="modal-bulkfield">Add/Remove Field (All Batchmates)</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-fieldmanager">Manage Profile Fields</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-admindirectory">Batchmate Directory</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-settingsfields">Settings Change-Request Fields</button>
             </div>
           </div>
 
@@ -559,6 +561,83 @@
     </div>
   </div>
 
+  <!-- Manage Profile Fields — controls which /batchmates fields appear as
+       simple detail rows on the Dashboard, what order they're in, what
+       each section is called, and which of them are also mirrored to
+       batchmatesPublic (and so shown in the Home directory). Clubs,
+       Sports, Skills and Badges have their own fixed sections and aren't
+       part of this — only the plain key/value detail groups are. -->
+  <div class="modal-overlay" id="modal-fieldmanager" hidden>
+    <div class="modal-box fieldmgr-box">
+      <button class="modal-close" data-close-modal="modal-fieldmanager" aria-label="Close">✕</button>
+      <div class="admin-modal-body fieldmgr-body">
+        <p class="section-label">Manage Profile Fields</p>
+        <p class="fine-print" style="text-align:left; margin:0 0 16px;">
+          Controls the Dashboard's detail cards (Person, Campus, Contact, etc.) — their order, titles, and fields. Mark a field "Public" to also show it on that batchmate's card in the Home directory popup; turning Public off removes it from there again. Changes only apply after you tap Save.
+        </p>
+        <div id="fieldmgr-sections"></div>
+        <button type="button" id="fieldmgr-add-section-btn" class="ghost-btn" style="margin-top:2px;">+ Add Section</button>
+        <div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button type="button" id="fieldmgr-save-btn" class="btn-primary" style="width:auto; flex:1; min-width:140px; margin-top:0;">Save Changes</button>
+          <button type="button" id="fieldmgr-resync-btn" class="ghost-btn">Re-sync Directory Now</button>
+        </div>
+        <p class="fine-print" style="text-align:left; margin:8px 0 0;">"Re-sync Directory Now" re-applies the current saved settings (including prestige levels) to every batchmate's directory entry, without changing anything below — useful after bulk-editing profiles elsewhere.</p>
+        <p class="error-msg" id="fieldmgr-error" hidden></p>
+        <p class="success-msg" id="fieldmgr-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batchmate Directory (Danger tab) — every batchmate's complete
+       record, admin-only. Click a card to see everything the site
+       currently holds on that person. -->
+  <div class="modal-overlay" id="modal-admindirectory" hidden>
+    <div class="modal-box admindir-box">
+      <button class="modal-close" data-close-modal="modal-admindirectory" aria-label="Close">✕</button>
+      <div class="admin-modal-body admindir-body">
+        <p class="section-label">Batchmate Directory</p>
+        <input type="text" id="admindir-search" placeholder="Search name or index number…" style="margin-bottom:14px;">
+        <div id="admindir-grid" class="admindir-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-admindirectory-detail" hidden>
+    <div class="modal-box admindir-box">
+      <button class="modal-close" data-close-modal="modal-admindirectory-detail" aria-label="Close">✕</button>
+      <div class="admin-modal-body admindir-body">
+        <div style="display:flex; align-items:center; gap:14px; margin-bottom:18px;">
+          <div class="avatar-slot" id="admindir-detail-avatar"></div>
+          <div style="min-width:0;">
+            <h2 id="admindir-detail-name" class="modal-title" style="margin:0;"></h2>
+            <p id="admindir-detail-index" class="fine-print" style="margin:2px 0 0;"></p>
+          </div>
+        </div>
+        <div id="admindir-detail-fields"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Change-Request Fields (Danger tab) — a tick list of every
+       field the Settings page's "Request to Change Details" form is
+       able to offer. Unticking a field removes it from that form for
+       every batchmate; it doesn't touch any data already saved. -->
+  <div class="modal-overlay" id="modal-settingsfields" hidden>
+    <div class="modal-box fieldmgr-box">
+      <button class="modal-close" data-close-modal="modal-settingsfields" aria-label="Close">✕</button>
+      <div class="admin-modal-body fieldmgr-body">
+        <p class="section-label">Settings Change-Request Fields</p>
+        <p class="fine-print" style="text-align:left; margin:0 0 16px;">
+          Controls which fields batchmates can request changes to from Settings → "Request Changes". Untick a field to hide it from that form (existing data is untouched either way).
+        </p>
+        <div id="settingsfields-sections"></div>
+        <button type="button" id="settingsfields-save-btn" class="btn-primary" style="margin-top:16px;">Save Changes</button>
+        <p class="error-msg" id="settingsfields-error" hidden></p>
+        <p class="success-msg" id="settingsfields-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="modal-task-detail" hidden>
     <div class="modal-box">
       <button class="modal-close" data-close-modal="modal-task-detail" aria-label="Close">✕</button>
@@ -646,29 +725,6 @@
         <button type="button" id="fundtx-delete-btn" class="danger-btn">Delete This Transaction</button>
         <p class="error-msg" id="fundtx-error" hidden></p>
         <p class="success-msg" id="fundtx-success" hidden></p>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal-overlay" id="modal-eventleadership" hidden>
-    <div class="modal-box">
-      <button class="modal-close" data-close-modal="modal-eventleadership" aria-label="Close">✕</button>
-      <div class="admin-modal-body">
-        <p class="section-label">Add Event Leadership</p>
-        <p class="fine-print" style="text-align:left; margin:0 0 16px;">Pick an event, then add or remove the names shown as its leaders.</p>
-        <label for="eventleadership-event-select">Event</label>
-        <select id="eventleadership-event-select"></select>
-
-        <p class="section-label" style="margin-top:16px;">Current Leaders</p>
-        <div id="eventleadership-list"></div>
-
-        <p class="section-label" style="margin-top:16px;">Add a Leader</p>
-        <form id="form-eventleadership">
-          <input type="text" id="eventleadership-name" placeholder="Full name" required>
-          <button type="submit" class="btn-primary">Add Leader</button>
-        </form>
-        <p class="error-msg" id="eventleadership-error" hidden></p>
-        <p class="success-msg" id="eventleadership-success" hidden></p>
       </div>
     </div>
   </div>

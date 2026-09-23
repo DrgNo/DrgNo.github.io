@@ -87,43 +87,20 @@
             <p class="fine-print" style="text-align:left; margin:6px 0 0;">Total value you have added to the batch fund.</p>
           </div>
 
-          <!-- Person Details -->
+          <!-- Roles (kept as its own fixed card; not part of the
+               admin-configurable field groups below) -->
           <div class="card">
-            <p class="section-label">Person Details</p>
-           <p class="section-label" style="margin-top:14px;margin-bottom:6px;opacity:.7">Roles</p>
-            <ul style="margin-bottom:18px;" id="f-roles" class="pill-list"></ul>
-            <div id="grp-person"></div>
+            <p class="section-label">Roles</p>
+            <ul id="f-roles" class="pill-list"></ul>
           </div>
 
-          <!-- Campus Details -->
-          <div class="card">
-            <p class="section-label">Campus Details</p>
-            <div id="grp-campus"></div>
-          </div>
-
-          <!-- Contact Options -->
-          <div class="card">
-            <p class="section-label">Contact Options</p>
-            <div id="grp-contact"></div>
-          </div>
-
-          <!-- Residential Details -->
-          <div class="card">
-            <p class="section-label">Residential Details</p>
-            <div id="grp-residential"></div>
-          </div>
-
-          <!-- Medical Details -->
-          <div class="card">
-            <p class="section-label">Medical Details</p>
-            <div id="grp-medical"></div>
-          </div>
-
-          <!-- Emergency Details -->
-          <div class="card">
-            <p class="section-label">Emergency Details</p>
-            <div id="grp-emergency"></div>
-          </div>
+          <!-- Person/Campus/Contact/Residential/Medical/Emergency (and any
+               admin-created sections) are rendered here dynamically, driven
+               by the field schema an admin sets from Admin → Danger →
+               "Manage Profile Fields". This anchor is not itself a .card —
+               renderDynamicFieldGroups() (app.js) inserts one .card per
+               section as its siblings, in the schema's order. -->
+          <div id="dynamic-field-groups-anchor"></div>
 
           <!-- Extracurricular Details -->
           <div class="card">

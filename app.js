@@ -662,6 +662,19 @@ const BAD_BEHAVIOR_STEP = 0.15;
 const BAD_BEHAVIOR_FLOOR = 0.25;
 const FUND_LKR_PER_POINT = 100; // every Rs. 100 a student personally donates = 1 prestige point
 
+// ── Prestige levels ───────────────────────────────────────────────
+// A coarse, public-facing stand-in for a batchmate's exact prestige
+// total: every PRESTIGE_POINTS_PER_LEVEL points earned is 1 level.
+// LEVEL_NAME is just the display word used in front of the number
+// (Home directory popup shows "<LEVEL_NAME> • <n>") — rename it here
+// if you want different wording; nothing else needs to change.
+const PRESTIGE_POINTS_PER_LEVEL = 1000;
+const LEVEL_NAME = "Prestige Rank";
+
+function levelForPoints(points) {
+  return Math.max(0, Math.floor((Number(points) || 0) / PRESTIGE_POINTS_PER_LEVEL));
+}
+
 function badBehaviorMultiplier(count) {
   const n = Number(count) || 0;
   return Math.max(BAD_BEHAVIOR_FLOOR, 1 - BAD_BEHAVIOR_STEP * n);
@@ -687,11 +700,24 @@ async function awardPrestige({ uid, rawAmount, source, note }) {
     prestigePoints: increment(finalAmount)
   });
 
-  // NOT mirrored to batchmatesPublic — batchmates should be able to see
-  // their own total (Dashboard, self-read on /batchmates) but not each
-  // other's. The Admin leaderboard reads /batchmates directly instead,
-  // using the admin-read bypass added in the prestige engine's first
-  // pass.
+  // The exact point total is still NOT mirrored to batchmatesPublic —
+  // batchmates should be able to see their own total (Dashboard,
+  // self-read on /batchmates) but not each other's exact score. The
+  // Admin leaderboard reads /batchmates directly instead, using the
+  // admin-read bypass added in the prestige engine's first pass.
+  //
+  // What DOES get mirrored is the much coarser derived level (every
+  // PRESTIGE_POINTS_PER_LEVEL points = 1) — enough for the directory's
+  // level badge/pill without exposing anyone's precise standing.
+  try {
+    const priorTotal = bmSnap.exists() ? (Number(bmSnap.data().prestigePoints) || 0) : 0;
+    const newLevel = levelForPoints(priorTotal + finalAmount);
+    await setDoc(doc(db, "batchmatesPublic", uid), { prestigeLevel: newLevel }, { merge: true });
+  } catch (err) {
+    // Non-fatal — the batchmate's own total/history is already saved;
+    // the public level badge will catch up next time an admin taps
+    // "Re-sync Directory Now" on the Admin page.
+  }
 
   await addDoc(collection(db, "prestigeLog"), {
     uid,
@@ -916,7 +942,8 @@ async function initDashboardPage(user) {
       return;
     }
 
-    renderRecord(snap.data());
+    const fieldSchema = await getDirectoryFieldSchema();
+    renderRecord(snap.data(), fieldSchema);
     await loadAndRenderTasks(user.uid);
     await loadAndRenderPrestige(user.uid, snap.data());
     wireTaskModal();
@@ -930,7 +957,43 @@ async function initDashboardPage(user) {
   }
 }
 
-function renderRecord(d) {
+// Builds the Dashboard's Person/Campus/Contact/Residential/Medical/
+// Emergency cards (plus any admin-added sections) from the field
+// schema instead of a fixed list — see the "Directory & Dashboard
+// field schema" block above. Re-run on every renderRecord() call, so
+// it first clears out whatever it inserted last time.
+function renderDynamicFieldGroups(d, groups) {
+  const anchor = document.getElementById("dynamic-field-groups-anchor");
+  if (!anchor) return;
+  anchor.parentElement.querySelectorAll(".dyn-field-card").forEach((el) => el.remove());
+
+  const sortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
+  let lastInserted = anchor;
+
+  sortedGroups.forEach((g) => {
+    const card = document.createElement("div");
+    card.className = "card dyn-field-card";
+
+    const label = document.createElement("p");
+    label.className = "section-label";
+    label.textContent = g.title || "Details";
+    card.appendChild(label);
+
+    const rowsWrap = document.createElement("div");
+    const fields = [...(g.fields || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+    fields.forEach((f) => {
+      const raw = d[f.key];
+      const value = Array.isArray(raw) ? raw.join(", ") : raw;
+      rowsWrap.appendChild(fieldRow(f.label || f.key, value));
+    });
+    card.appendChild(rowsWrap);
+
+    lastInserted.after(card);
+    lastInserted = card;
+  });
+}
+
+function renderRecord(d, fieldSchema) {
   const fullName = d.fullName || "—";
   document.getElementById("f-fullName").textContent = fullName;
 
@@ -954,46 +1017,7 @@ function renderRecord(d) {
   document.getElementById("f-gender").textContent = d.gender || "—";
   document.getElementById("f-district").textContent = d.district || "—";
 
-  fillGroup("grp-person", [
-    ["Full Name", d.fullName],
-    ["Gender", d.gender],
-    ["Birthday", d.birthday],
-    ["NIC Number", d.nicNumber],
-    ["Address", d.address],
-    ["District", d.district]
-  ]);
-
-  fillGroup("grp-campus", [
-    ["Campus Index Number", d.campusIndexNumber],
-    ["Campus Registration Number", d.campusRegNumber]
-  ]);
-
-  fillGroup("grp-contact", [
-    ["Primary Mobile Number", d.primaryMobile],
-    ["Alternative Numbers", Array.isArray(d.alternativeNumbers) ? d.alternativeNumbers.join(", ") : d.alternativeNumbers],
-    ["University Email", d.universityEmail],
-    ["Personal Email", d.personalEmail]
-  ]);
-
-  fillGroup("grp-residential", [
-    ["Residential Status", d.residentialStatus],
-    ["Residential Address", d.residentialAddress]
-  ]);
-
-  fillGroup("grp-medical", [
-    ["Blood Group", d.bloodGroup],
-    ["Dietary Option", d.dietaryOption],
-    ["Severe Medical Conditions", d.severeMedicalConditions],
-    ["Food Allergies", d.foodAllergies],
-    ["Chemical Allergies", d.chemicalAllergies]
-  ]);
-
-  fillGroup("grp-emergency", [
-    ["Emergency Contact Person Name", d.emergencyContactName],
-    ["Emergency Contact Person Relationship", d.emergencyRelationship],
-    ["Primary Emergency Number", d.primaryEmergencyNumber],
-    ["Secondary Emergency Number", d.secondaryEmergencyNumber]
-  ]);
+  renderDynamicFieldGroups(d, fieldSchema || DEFAULT_DIRECTORY_FIELD_GROUPS);
 
   fillPills("f-sports", d.sports, "No sports recorded.");
   fillPills("f-clubs", d.clubs, "No clubs recorded.");
@@ -1303,6 +1327,132 @@ CHANGE_REQUEST_GROUPS.forEach((group) => {
   group.fields.forEach((f) => { CHANGE_REQUEST_FIELD_INFO[f.key] = f; });
 });
 
+// ── Directory & Dashboard field schema ────────────────────────────
+// Drives two things, both admin-editable from Admin → Danger → "Manage
+// Profile Fields": (1) the plain key/value detail cards on the
+// Dashboard (Person, Campus, Contact, etc.) — their titles, field
+// labels, and order; (2) which of those fields are ALSO mirrored into
+// "batchmatesPublic" (and so shown to other batchmates in the Home
+// directory popup). Lives at /config/directoryFields as one doc,
+// { groups: [...] }. Falls back to this default shape — which matches
+// the site's original hardcoded groups — if that doc doesn't exist yet.
+// Sports/Clubs/Skills/Badges are NOT part of this: they're pill lists
+// with their own fixed sections on both pages, not simple fields.
+const DIRECTORY_FIELDS_DOC_PATH = ["config", "directoryFields"];
+const DEFAULT_DIRECTORY_FIELD_GROUPS = [
+  { id: "person", title: "Person Details", order: 0, fields: [
+      { key: "fullName", label: "Full Name", order: 0, public: true },
+      { key: "gender", label: "Gender", order: 1, public: true },
+      { key: "birthday", label: "Birthday", order: 2, public: true },
+      { key: "nicNumber", label: "NIC Number", order: 3, public: false },
+      { key: "address", label: "Address", order: 4, public: false },
+      { key: "district", label: "District", order: 5, public: false }
+  ]},
+  { id: "campus", title: "Campus Details", order: 1, fields: [
+      { key: "campusIndexNumber", label: "Campus Index Number", order: 0, public: true },
+      { key: "campusRegNumber", label: "Campus Registration Number", order: 1, public: false }
+  ]},
+  { id: "contact", title: "Contact Options", order: 2, fields: [
+      { key: "primaryMobile", label: "Primary Mobile Number", order: 0, public: true },
+      { key: "alternativeNumbers", label: "Alternative Numbers", order: 1, public: false },
+      { key: "universityEmail", label: "University Email", order: 2, public: false },
+      { key: "personalEmail", label: "Personal Email", order: 3, public: false }
+  ]},
+  { id: "residential", title: "Residential Details", order: 3, fields: [
+      { key: "residentialStatus", label: "Residential Status", order: 0, public: false },
+      { key: "residentialAddress", label: "Residential Address", order: 1, public: false }
+  ]},
+  { id: "medical", title: "Medical Details", order: 4, fields: [
+      { key: "bloodGroup", label: "Blood Group", order: 0, public: false },
+      { key: "dietaryOption", label: "Dietary Option", order: 1, public: false },
+      { key: "severeMedicalConditions", label: "Severe Medical Conditions", order: 2, public: false },
+      { key: "foodAllergies", label: "Food Allergies", order: 3, public: false },
+      { key: "chemicalAllergies", label: "Chemical Allergies", order: 4, public: false }
+  ]},
+  { id: "emergency", title: "Emergency Details", order: 5, fields: [
+      { key: "emergencyContactName", label: "Emergency Contact Person Name", order: 0, public: false },
+      { key: "emergencyRelationship", label: "Emergency Contact Person Relationship", order: 1, public: false },
+      { key: "primaryEmergencyNumber", label: "Primary Emergency Number", order: 2, public: false },
+      { key: "secondaryEmergencyNumber", label: "Secondary Emergency Number", order: 3, public: false }
+  ]}
+];
+
+// Deep-clones so callers can freely mutate what they get back without
+// corrupting the cache.
+function cloneFieldGroups(groups) {
+  return groups.map((g) => ({ ...g, fields: g.fields.map((f) => ({ ...f })) }));
+}
+
+let directoryFieldSchemaCache = null;
+async function getDirectoryFieldSchema(forceRefresh) {
+  if (directoryFieldSchemaCache && !forceRefresh) return directoryFieldSchemaCache;
+  try {
+    const snap = await getDoc(doc(db, ...DIRECTORY_FIELDS_DOC_PATH));
+    if (snap.exists() && Array.isArray(snap.data().groups) && snap.data().groups.length > 0) {
+      directoryFieldSchemaCache = snap.data().groups;
+    } else {
+      directoryFieldSchemaCache = DEFAULT_DIRECTORY_FIELD_GROUPS;
+    }
+  } catch (err) {
+    directoryFieldSchemaCache = DEFAULT_DIRECTORY_FIELD_GROUPS;
+  }
+  return directoryFieldSchemaCache;
+}
+
+// Returns every field across every group, sorted the same way the
+// Dashboard renders them (group order, then field order within it).
+function flattenFieldGroups(groups) {
+  const sortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const out = [];
+  sortedGroups.forEach((g) => {
+    const fields = [...(g.fields || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+    fields.forEach((f) => out.push(f));
+  });
+  return out;
+}
+
+// Re-applies the given schema's "public" fields (plus each batchmate's
+// derived prestige level) to every /batchmates doc's mirror in
+// batchmatesPublic. Called by the Admin page whenever the schema is
+// saved, and on demand via "Re-sync Directory Now". extraRemoveKeys
+// lets a save also strip fields that existed in a PREVIOUS version of
+// the schema but were deleted from this one — otherwise a deleted
+// field's last value would just sit in batchmatesPublic forever.
+// Requires admin privileges (Firestore rules gate both the read-all on
+// /batchmates and the write to /batchmatesPublic to admins only).
+async function syncDirectoryPublicFields(groups, extraRemoveKeys) {
+  const allFields = flattenFieldGroups(groups);
+  const removeKeys = new Set(extraRemoveKeys || []);
+  allFields.forEach((f) => { if (!f.public) removeKeys.add(f.key); });
+  allFields.forEach((f) => { if (f.public) removeKeys.delete(f.key); });
+
+  const snap = await getDocs(collection(db, "batchmates"));
+  const docs = [];
+  snap.forEach((docSnap) => docs.push(docSnap));
+
+  // Chunked into batches of 400 writes — Firestore caps a single
+  // writeBatch at 500, and a batch/cohort site is very unlikely to
+  // ever have that many students, but this keeps it safe either way.
+  const CHUNK_SIZE = 400;
+  for (let i = 0; i < docs.length; i += CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    docs.slice(i, i + CHUNK_SIZE).forEach((docSnap) => {
+      const d = docSnap.data();
+      const publicChanges = {};
+      allFields.forEach((f) => {
+        if (f.public) publicChanges[f.key] = d[f.key] === undefined ? null : d[f.key];
+      });
+      removeKeys.forEach((key) => { publicChanges[key] = deleteField(); });
+      publicChanges.prestigeLevel = levelForPoints(d.prestigePoints);
+      batch.set(doc(db, "batchmatesPublic", docSnap.id), publicChanges, { merge: true });
+    });
+    await batch.commit();
+  }
+
+  batchmatesPublicListCache = null;
+  return docs.length;
+}
+
 function crToInputValue(value, isList) {
   if (isList) return Array.isArray(value) ? value.join(", ") : (value || "");
   return value == null ? "" : String(value);
@@ -1320,16 +1470,43 @@ function crValuesEqual(a, b, isList) {
   return (a == null ? "" : String(a)) === (b == null ? "" : String(b));
 }
 
-function buildChangeRequestFields(container, baseData) {
+// Admin-configurable subset of CHANGE_REQUEST_GROUPS' fields that the
+// Settings page's "Request to Change Details" form actually shows —
+// see Admin → Danger → "Settings Change-Request Fields". Stored as
+// { enabledKeys: [...] } at /config/settingsFields; defaults to every
+// field (today's behavior) if that doc doesn't exist yet.
+const SETTINGS_FIELDS_DOC_PATH = ["config", "settingsFields"];
+let settingsEnabledKeysCache = null;
+async function getSettingsEnabledKeys(forceRefresh) {
+  if (settingsEnabledKeysCache && !forceRefresh) return settingsEnabledKeysCache;
+  const allKeys = [];
+  CHANGE_REQUEST_GROUPS.forEach((g) => g.fields.forEach((f) => allKeys.push(f.key)));
+  try {
+    const snap = await getDoc(doc(db, ...SETTINGS_FIELDS_DOC_PATH));
+    if (snap.exists() && Array.isArray(snap.data().enabledKeys)) {
+      settingsEnabledKeysCache = new Set(snap.data().enabledKeys);
+    } else {
+      settingsEnabledKeysCache = new Set(allKeys);
+    }
+  } catch (err) {
+    settingsEnabledKeysCache = new Set(allKeys);
+  }
+  return settingsEnabledKeysCache;
+}
+
+function buildChangeRequestFields(container, baseData, enabledKeys) {
   container.innerHTML = "";
   CHANGE_REQUEST_GROUPS.forEach((group) => {
+    const visibleFields = group.fields.filter((f) => !enabledKeys || enabledKeys.has(f.key));
+    if (visibleFields.length === 0) return;
+
     const heading = document.createElement("p");
     heading.className = "section-label";
     heading.style.cssText = "margin-top:14px;margin-bottom:6px;opacity:.7";
     heading.textContent = group.label;
     container.appendChild(heading);
 
-    group.fields.forEach((f) => {
+    visibleFields.forEach((f) => {
       const label = document.createElement("label");
       label.setAttribute("for", "cr-" + f.key);
       label.textContent = f.label;
@@ -1359,6 +1536,7 @@ async function initChangeRequestSection(user) {
   let liveData = {};
   let pendingRequestId = null;
   let pendingChanges = {};
+  const enabledKeys = await getSettingsEnabledKeys();
 
   async function refreshPendingStatus() {
     const q = query(
@@ -1400,7 +1578,7 @@ async function initChangeRequestSection(user) {
     // Prefill from the live profile, but let any still-pending proposed
     // edits take precedence so the user picks up where they left off.
     const displayData = { ...liveData, ...pendingChanges };
-    buildChangeRequestFields(fieldsContainer, displayData);
+    buildChangeRequestFields(fieldsContainer, displayData, enabledKeys);
     errorEl.hidden = true;
     overlay.hidden = false;
     openBtn.disabled = false;
@@ -1416,7 +1594,9 @@ async function initChangeRequestSection(user) {
     const previousValues = {};
     CHANGE_REQUEST_GROUPS.forEach((group) => {
       group.fields.forEach((f) => {
+        if (!enabledKeys.has(f.key)) return; // not offered on the form — nothing to read
         const input = document.getElementById("cr-" + f.key);
+        if (!input) return;
         const newVal = crFromInputValue(input.value, !!f.list);
         if (!crValuesEqual(liveData[f.key], newVal, !!f.list)) {
           changes[f.key] = newVal;
@@ -2355,8 +2535,8 @@ function wireAdminTabBar() {
 
 // Splits "a|b|c" or newline-separated text into a clean array of strings.
 // Top-level (not nested in initAdminPage) since both the in-page admin
-// forms and wireEventEditModal()/initEventLeadershipPanel() — which are
-// defined outside initAdminPage — need it.
+// forms and wireEventEditModal() — which is defined outside
+// initAdminPage — need it.
 function splitList(value, sep) {
   if (!value || !value.trim()) return [];
   return value.split(sep).map((s) => s.trim()).filter(Boolean);
@@ -2624,14 +2804,21 @@ async function initAdminPage(isAdmin) {
   // Add/Remove Field (All Batchmates)
   initBulkFieldForm();
 
+  // Manage Profile Fields (Dashboard sections + directory "public" flags)
+  initFieldManagerPanel();
+
+  // Batchmate Directory (full-record admin view)
+  initAdminDirectoryPanel();
+
+  // Settings Change-Request Fields (tick list)
+  initSettingsFieldsPanel();
+
   // Manage Student Badges
   await initBadgeAssignmentPanel();
 
   // Manage Bad Behavior Records
   await initBadBehaviorPanel();
 
-  // Add Event Leadership
-  await initEventLeadershipPanel();
 }
 
 // Manage Bad Behavior Records: pick a student, see their existing
@@ -3954,100 +4141,6 @@ function wireEventEditModal() {
   });
 }
 
-// ── Admin: Add Event Leadership (Danger tab) ─────────────────────
-// Picks an existing event and edits its `leaders` array directly —
-// same field the Add Event / Edit Event forms write as a pipe-separated
-// list, just exposed here as individually add/removable entries.
-async function initEventLeadershipPanel() {
-  const select = document.getElementById("eventleadership-event-select");
-  const form = document.getElementById("form-eventleadership");
-  if (!select || !form) return;
-
-  const snap = await getDocs(collection(db, "events"));
-  const events = [];
-  snap.forEach((docSnap) => events.push({ id: docSnap.id, ...docSnap.data() }));
-  events.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
-
-  select.innerHTML = "";
-  events.forEach((ev) => {
-    const opt = document.createElement("option");
-    opt.value = ev.id;
-    opt.textContent = (ev.name || "Untitled event") + (ev.date ? " — " + formatEventDate(ev.date) : "");
-    select.appendChild(opt);
-  });
-
-  function currentEvent() {
-    return events.find((ev) => ev.id === select.value);
-  }
-
-  function renderLeaderList() {
-    const list = document.getElementById("eventleadership-list");
-    const ev = currentEvent();
-    const leaders = ev && Array.isArray(ev.leaders) ? ev.leaders : [];
-    list.innerHTML = "";
-    if (leaders.length === 0) {
-      list.innerHTML = '<p class="info-text" style="color:var(--muted)">No leaders added yet.</p>';
-      return;
-    }
-    leaders.forEach((leaderName) => {
-      const row = document.createElement("div");
-      row.className = "admin-rating-row";
-      const label = document.createElement("span");
-      label.textContent = leaderName;
-      const removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "ghost-btn";
-      removeBtn.style.cssText = "padding:5px 10px; font-size:12px;";
-      removeBtn.textContent = "Remove";
-      removeBtn.addEventListener("click", async () => {
-        removeBtn.disabled = true;
-        try {
-          await updateDoc(doc(db, "events", ev.id), { leaders: arrayRemove(leaderName) });
-          ev.leaders = (ev.leaders || []).filter((n) => n !== leaderName);
-          renderLeaderList();
-        } catch (err) {
-          removeBtn.disabled = false;
-          alert("Could not remove this leader. Please try again.");
-        }
-      });
-      row.appendChild(label);
-      row.appendChild(removeBtn);
-      list.appendChild(row);
-    });
-  }
-
-  if (events.length > 0) renderLeaderList();
-  else document.getElementById("eventleadership-list").innerHTML = '<p class="info-text" style="color:var(--muted)">No events exist yet — add one first.</p>';
-
-  select.addEventListener("change", renderLeaderList);
-
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const ev = currentEvent();
-    const errorEl = document.getElementById("eventleadership-error");
-    const successEl = document.getElementById("eventleadership-success");
-    errorEl.hidden = true;
-    successEl.hidden = true;
-    if (!ev) return;
-
-    const nameInput = document.getElementById("eventleadership-name");
-    const name = nameInput.value.trim();
-    if (!name) return;
-
-    try {
-      await updateDoc(doc(db, "events", ev.id), { leaders: arrayUnion(name) });
-      ev.leaders = Array.isArray(ev.leaders) ? [...ev.leaders, name] : [name];
-      renderLeaderList();
-      nameInput.value = "";
-      successEl.textContent = "Leader added.";
-      successEl.hidden = false;
-    } catch (err) {
-      errorEl.textContent = "Could not add this leader. Please try again.";
-      errorEl.hidden = false;
-    }
-  });
-}
-
 // ── Admin: Active Group Projects ────────────────────────────────
 // Lists every project that isn't complete yet, with three toggle buttons
 // (Starting / Ongoing / Complete) to change its top-level status. Tapping
@@ -4645,6 +4738,498 @@ function initBulkFieldForm() {
   });
 }
 
+// ── Admin: Manage Profile Fields (Danger tab) ───────────────────────
+// Lets an admin edit the schema at /config/directoryFields — the same
+// schema renderDynamicFieldGroups() (Dashboard) and openBatchmateModal()
+// (Home directory popup) read. Edits happen on an in-memory copy
+// (fieldMgrState) and are only committed to Firestore — and pushed out
+// to every batchmate's batchmatesPublic doc via syncDirectoryPublicFields
+// — when "Save Changes" is tapped. Closing the popup without saving
+// discards them; reopening it always reloads the last-saved copy.
+let fieldMgrState = null;
+let fieldMgrRemovedKeys = [];
+let fieldMgrNextTempId = 1;
+
+function initFieldManagerPanel() {
+  const openBtn = document.querySelector('.admin-section-btn[data-modal="modal-fieldmanager"]');
+  const sectionsEl = document.getElementById("fieldmgr-sections");
+  const addSectionBtn = document.getElementById("fieldmgr-add-section-btn");
+  const saveBtn = document.getElementById("fieldmgr-save-btn");
+  const resyncBtn = document.getElementById("fieldmgr-resync-btn");
+  const errorEl = document.getElementById("fieldmgr-error");
+  const successEl = document.getElementById("fieldmgr-success");
+  if (!openBtn || !sectionsEl || !addSectionBtn || !saveBtn || !resyncBtn || !errorEl || !successEl) return;
+
+  const FIELD_KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
+  openBtn.addEventListener("click", async () => {
+    errorEl.hidden = true;
+    successEl.hidden = true;
+    sectionsEl.innerHTML = '<p class="info-text" style="color:var(--muted)">Loading…</p>';
+    const groups = await getDirectoryFieldSchema(true); // always start from the last saved copy
+    fieldMgrState = cloneFieldGroups(groups);
+    fieldMgrRemovedKeys = [];
+    renderSections();
+  });
+
+  function renderSections() {
+    sectionsEl.innerHTML = "";
+    const sortedGroups = [...fieldMgrState].sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    sortedGroups.forEach((g, gIndex) => {
+      const box = document.createElement("div");
+      box.className = "fieldmgr-section";
+
+      const head = document.createElement("div");
+      head.className = "fieldmgr-section-head";
+
+      const upBtn = document.createElement("button");
+      upBtn.type = "button";
+      upBtn.className = "fieldmgr-reorder-btn";
+      upBtn.textContent = "▲";
+      upBtn.title = "Move section up";
+      upBtn.disabled = gIndex === 0;
+      upBtn.addEventListener("click", () => moveGroup(g.id, -1));
+
+      const downBtn = document.createElement("button");
+      downBtn.type = "button";
+      downBtn.className = "fieldmgr-reorder-btn";
+      downBtn.textContent = "▼";
+      downBtn.title = "Move section down";
+      downBtn.disabled = gIndex === sortedGroups.length - 1;
+      downBtn.addEventListener("click", () => moveGroup(g.id, 1));
+
+      const titleInput = document.createElement("input");
+      titleInput.type = "text";
+      titleInput.value = g.title || "";
+      titleInput.placeholder = "Section title";
+      titleInput.addEventListener("input", () => { g.title = titleInput.value; });
+
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "fieldmgr-del-btn";
+      delBtn.textContent = "✕";
+      delBtn.title = "Delete section";
+      delBtn.addEventListener("click", () => {
+        const fieldCount = (g.fields || []).length;
+        if (!confirm(`Delete the "${g.title || "Untitled"}" section${fieldCount ? ` and its ${fieldCount} field(s)` : ""}? This only takes effect once you tap Save Changes.`)) return;
+        (g.fields || []).forEach((f) => fieldMgrRemovedKeys.push(f.key));
+        fieldMgrState = fieldMgrState.filter((x) => x.id !== g.id);
+        renderSections();
+      });
+
+      head.appendChild(upBtn);
+      head.appendChild(downBtn);
+      head.appendChild(titleInput);
+      head.appendChild(delBtn);
+      box.appendChild(head);
+
+      const sortedFields = [...(g.fields || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+      sortedFields.forEach((f, fIndex) => {
+        const row = document.createElement("div");
+        row.className = "fieldmgr-field-row";
+
+        const fUp = document.createElement("button");
+        fUp.type = "button";
+        fUp.className = "fieldmgr-reorder-btn";
+        fUp.textContent = "▲";
+        fUp.title = "Move field up";
+        fUp.disabled = fIndex === 0;
+        fUp.addEventListener("click", () => moveField(g.id, f, -1));
+
+        const fDown = document.createElement("button");
+        fDown.type = "button";
+        fDown.className = "fieldmgr-reorder-btn";
+        fDown.textContent = "▼";
+        fDown.title = "Move field down";
+        fDown.disabled = fIndex === sortedFields.length - 1;
+        fDown.addEventListener("click", () => moveField(g.id, f, 1));
+
+        const keyInput = document.createElement("input");
+        keyInput.type = "text";
+        keyInput.className = "fieldmgr-key-input";
+        keyInput.value = f.key || "";
+        keyInput.placeholder = "fieldKey";
+        keyInput.title = "Matches the property name on the batchmate's record (e.g. bloodGroup). Change with care — see the Add/Remove Field tool to create the matching data.";
+        keyInput.addEventListener("change", () => {
+          const newKey = keyInput.value.trim();
+          if (!FIELD_KEY_RE.test(newKey)) {
+            alert("Field name must start with a letter and contain only letters, numbers and underscores.");
+            keyInput.value = f.key;
+            return;
+          }
+          if (newKey !== f.key) {
+            fieldMgrRemovedKeys.push(f.key); // old key's mirrored copy (if any) gets cleaned up on save
+            f.key = newKey;
+          }
+        });
+
+        const labelInput = document.createElement("input");
+        labelInput.type = "text";
+        labelInput.className = "fieldmgr-label-input";
+        labelInput.value = f.label || "";
+        labelInput.placeholder = "Display label";
+        labelInput.addEventListener("input", () => { f.label = labelInput.value; });
+
+        const publicLabel = document.createElement("label");
+        publicLabel.className = "fieldmgr-public-toggle";
+        const publicCheckbox = document.createElement("input");
+        publicCheckbox.type = "checkbox";
+        publicCheckbox.checked = !!f.public;
+        publicCheckbox.addEventListener("change", () => { f.public = publicCheckbox.checked; });
+        publicLabel.appendChild(publicCheckbox);
+        publicLabel.appendChild(document.createTextNode("Public"));
+
+        const fDel = document.createElement("button");
+        fDel.type = "button";
+        fDel.className = "fieldmgr-del-btn";
+        fDel.textContent = "✕";
+        fDel.title = "Delete field";
+        fDel.addEventListener("click", () => {
+          fieldMgrRemovedKeys.push(f.key);
+          g.fields = g.fields.filter((x) => x !== f);
+          renderSections();
+        });
+
+        row.appendChild(fUp);
+        row.appendChild(fDown);
+        row.appendChild(keyInput);
+        row.appendChild(labelInput);
+        row.appendChild(publicLabel);
+        row.appendChild(fDel);
+        box.appendChild(row);
+      });
+
+      const addFieldBtn = document.createElement("button");
+      addFieldBtn.type = "button";
+      addFieldBtn.className = "fieldmgr-add-field-btn";
+      addFieldBtn.textContent = "+ Add Field";
+      addFieldBtn.addEventListener("click", () => {
+        const maxOrder = g.fields.reduce((m, x) => Math.max(m, x.order || 0), -1);
+        g.fields.push({ key: `newField${fieldMgrNextTempId++}`, label: "New Field", order: maxOrder + 1, public: false });
+        renderSections();
+      });
+      box.appendChild(addFieldBtn);
+
+      sectionsEl.appendChild(box);
+    });
+  }
+
+  function moveGroup(groupId, dir) {
+    const sorted = [...fieldMgrState].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const idx = sorted.findIndex((g) => g.id === groupId);
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const tmp = sorted[idx].order;
+    sorted[idx].order = sorted[swapIdx].order;
+    sorted[swapIdx].order = tmp;
+    renderSections();
+  }
+
+  function moveField(groupId, field, dir) {
+    const g = fieldMgrState.find((x) => x.id === groupId);
+    if (!g) return;
+    const sorted = [...g.fields].sort((a, b) => (a.order || 0) - (b.order || 0));
+    const idx = sorted.indexOf(field);
+    const swapIdx = idx + dir;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= sorted.length) return;
+    const tmp = sorted[idx].order;
+    sorted[idx].order = sorted[swapIdx].order;
+    sorted[swapIdx].order = tmp;
+    renderSections();
+  }
+
+  addSectionBtn.addEventListener("click", () => {
+    const maxOrder = fieldMgrState.reduce((m, g) => Math.max(m, g.order || 0), -1);
+    fieldMgrState.push({ id: `section${fieldMgrNextTempId++}`, title: "New Section", order: maxOrder + 1, fields: [] });
+    renderSections();
+  });
+
+  saveBtn.addEventListener("click", async () => {
+    errorEl.hidden = true;
+    successEl.hidden = true;
+
+    const sortedGroups = [...fieldMgrState].sort((a, b) => (a.order || 0) - (b.order || 0));
+    for (const g of sortedGroups) {
+      for (const f of g.fields) {
+        if (!FIELD_KEY_RE.test(f.key || "")) {
+          errorEl.textContent = `"${f.label || f.key}" has an invalid field name — letters, numbers and underscores only, starting with a letter.`;
+          errorEl.hidden = false;
+          return;
+        }
+      }
+    }
+    // Re-number order sequentially so future inserts/reorders never collide.
+    sortedGroups.forEach((g, gi) => {
+      g.order = gi;
+      const sortedFields = [...g.fields].sort((a, b) => (a.order || 0) - (b.order || 0));
+      sortedFields.forEach((f, fi) => { f.order = fi; });
+      g.fields = sortedFields;
+    });
+    fieldMgrState = sortedGroups;
+
+    saveBtn.disabled = true;
+    resyncBtn.disabled = true;
+    const originalSaveLabel = saveBtn.textContent;
+    saveBtn.textContent = "Saving…";
+    try {
+      await setDoc(doc(db, ...DIRECTORY_FIELDS_DOC_PATH), { groups: fieldMgrState, updatedAt: serverTimestamp() });
+      directoryFieldSchemaCache = fieldMgrState;
+      const count = await syncDirectoryPublicFields(fieldMgrState, fieldMgrRemovedKeys);
+      fieldMgrRemovedKeys = [];
+      successEl.textContent = `Saved — directory re-synced for ${count} batchmate(s).`;
+      successEl.hidden = false;
+    } catch (err) {
+      errorEl.textContent = "Could not save these changes — please try again.";
+      errorEl.hidden = false;
+    } finally {
+      saveBtn.disabled = false;
+      resyncBtn.disabled = false;
+      saveBtn.textContent = originalSaveLabel;
+    }
+  });
+
+  resyncBtn.addEventListener("click", async () => {
+    errorEl.hidden = true;
+    successEl.hidden = true;
+    resyncBtn.disabled = true;
+    saveBtn.disabled = true;
+    const originalResyncLabel = resyncBtn.textContent;
+    resyncBtn.textContent = "Re-syncing…";
+    try {
+      const savedGroups = await getDirectoryFieldSchema(true);
+      const count = await syncDirectoryPublicFields(savedGroups, []);
+      successEl.textContent = `Re-synced ${count} batchmate(s) against the last saved settings.`;
+      successEl.hidden = false;
+    } catch (err) {
+      errorEl.textContent = "Could not re-sync the directory — please try again.";
+      errorEl.hidden = false;
+    } finally {
+      resyncBtn.disabled = false;
+      saveBtn.disabled = false;
+      resyncBtn.textContent = originalResyncLabel;
+    }
+  });
+}
+
+// ── Admin: Batchmate Directory (Danger tab) ─────────────────────────
+// Every batchmate's complete /batchmates record, for admins only —
+// unlike the Home directory (batchmatesPublic), this reads the full
+// doc via the admin read-bypass, so private fields (medical, NIC,
+// emergency contacts, exact prestige total, etc.) are all visible here.
+function humanizeKey(key) {
+  const spaced = String(key || "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+function formatAdminDirValue(v) {
+  if (v === undefined || v === null || v === "") return "—";
+  if (Array.isArray(v)) return v.length ? v.join(", ") : "—";
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (v && typeof v === "object" && typeof v.toDate === "function") {
+    try { return v.toDate().toLocaleString(); } catch (err) { return String(v); }
+  }
+  if (typeof v === "object") return JSON.stringify(v);
+  return String(v);
+}
+
+// Renders every field on a batchmate's record into #admindir-detail-fields,
+// grouped by the same schema the Dashboard/directory use for the fields
+// it covers, plus fixed groups for extracurricular/prestige/records, plus
+// a catch-all "Other" group for anything left over (custom fields added
+// via "Add/Remove Field", or anything not in the schema).
+async function renderAdminDirectoryDetail(d) {
+  const container = document.getElementById("admindir-detail-fields");
+  container.innerHTML = "";
+
+  const schema = await getDirectoryFieldSchema();
+  const knownKeys = new Set(["fullName", "photoUrl"]);
+
+  const sortedGroups = [...schema].sort((a, b) => (a.order || 0) - (b.order || 0));
+  sortedGroups.forEach((g) => {
+    const box = document.createElement("div");
+    box.className = "admindir-detail-group";
+    const title = document.createElement("p");
+    title.className = "admindir-detail-group-title";
+    title.textContent = g.title || "Details";
+    box.appendChild(title);
+    const fields = [...(g.fields || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
+    fields.forEach((f) => {
+      knownKeys.add(f.key);
+      box.appendChild(fieldRow(f.label || f.key, formatAdminDirValue(d[f.key])));
+    });
+    container.appendChild(box);
+  });
+
+  const extraGroup = document.createElement("div");
+  extraGroup.className = "admindir-detail-group";
+  const extraTitle = document.createElement("p");
+  extraTitle.className = "admindir-detail-group-title";
+  extraTitle.textContent = "Extracurricular, Roles & Records";
+  extraGroup.appendChild(extraTitle);
+  ["roles", "sports", "clubs", "skills"].forEach((key) => {
+    knownKeys.add(key);
+    extraGroup.appendChild(fieldRow(humanizeKey(key), formatAdminDirValue(d[key])));
+  });
+  knownKeys.add("prestigePoints");
+  extraGroup.appendChild(fieldRow("Prestige Points (exact)", formatAdminDirValue(d.prestigePoints)));
+  knownKeys.add("badBehaviorRecords");
+  extraGroup.appendChild(fieldRow("Bad Behavior Records", formatAdminDirValue(d.badBehaviorRecords)));
+  container.appendChild(extraGroup);
+
+  const otherKeys = Object.keys(d).filter((k) => !knownKeys.has(k)).sort();
+  if (otherKeys.length > 0) {
+    const otherGroup = document.createElement("div");
+    otherGroup.className = "admindir-detail-group";
+    const otherTitle = document.createElement("p");
+    otherTitle.className = "admindir-detail-group-title";
+    otherTitle.textContent = "Other";
+    otherGroup.appendChild(otherTitle);
+    otherKeys.forEach((key) => {
+      otherGroup.appendChild(fieldRow(humanizeKey(key), formatAdminDirValue(d[key])));
+    });
+    container.appendChild(otherGroup);
+  }
+}
+
+let adminDirectoryCache = null;
+function initAdminDirectoryPanel() {
+  const openBtn = document.querySelector('.admin-section-btn[data-modal="modal-admindirectory"]');
+  const grid = document.getElementById("admindir-grid");
+  const searchInput = document.getElementById("admindir-search");
+  if (!openBtn || !grid || !searchInput) return;
+
+  function renderGrid(list) {
+    grid.innerHTML = "";
+    if (list.length === 0) {
+      grid.innerHTML = '<p class="info-text" style="color:var(--muted)">No matches found.</p>';
+      return;
+    }
+    list.forEach((b) => {
+      const card = document.createElement("div");
+      card.className = "admindir-card";
+      card.appendChild(buildAvatar(b.fullName, b.photoUrl));
+
+      const name = document.createElement("div");
+      name.className = "admindir-card-name";
+      name.textContent = (b.fullName || "Unnamed").split(" ")[0];
+
+      const index = document.createElement("div");
+      index.className = "admindir-card-index";
+      index.textContent = b.campusIndexNumber || "—";
+
+      card.appendChild(name);
+      card.appendChild(index);
+
+      card.addEventListener("click", async () => {
+        const avatarEl = document.getElementById("admindir-detail-avatar");
+        avatarEl.innerHTML = "";
+        avatarEl.appendChild(buildAvatar(b.fullName, b.photoUrl).firstChild);
+        document.getElementById("admindir-detail-name").textContent = b.fullName || "Unnamed";
+        document.getElementById("admindir-detail-index").textContent = b.campusIndexNumber || "—";
+        await renderAdminDirectoryDetail(b);
+        document.getElementById("modal-admindirectory-detail").hidden = false;
+      });
+
+      grid.appendChild(card);
+    });
+  }
+
+  openBtn.addEventListener("click", async () => {
+    grid.innerHTML = '<p class="info-text" style="color:var(--muted)">Loading…</p>';
+    searchInput.value = "";
+    const snap = await getDocs(collection(db, "batchmates"));
+    const list = [];
+    snap.forEach((docSnap) => list.push({ uid: docSnap.id, ...docSnap.data() }));
+    // Sorted by campus index number, same numeric-aware sort as the Home
+    // directory (so e.g. AS2025701..AS2025768 land in order).
+    list.sort((a, b) =>
+      (a.campusIndexNumber || "").localeCompare(b.campusIndexNumber || "", undefined, { numeric: true, sensitivity: "base" })
+    );
+    adminDirectoryCache = list;
+    renderGrid(list);
+  });
+
+  searchInput.addEventListener("input", () => {
+    if (!adminDirectoryCache) return;
+    const term = searchInput.value.trim().toLowerCase();
+    if (!term) { renderGrid(adminDirectoryCache); return; }
+    renderGrid(adminDirectoryCache.filter((b) => {
+      const name = (b.fullName || "").toLowerCase();
+      const idx = (b.campusIndexNumber || "").toLowerCase();
+      return name.includes(term) || idx.includes(term);
+    }));
+  });
+}
+
+// ── Admin: Settings Change-Request Fields (Danger tab) ──────────────
+// A tick list of every field CHANGE_REQUEST_GROUPS knows about — which
+// of them the Settings page's "Request to Change Details" form actually
+// offers. Saves to /config/settingsFields as { enabledKeys: [...] };
+// initChangeRequestSection() (Settings page) reads it via
+// getSettingsEnabledKeys() and hides anything unticked here.
+function initSettingsFieldsPanel() {
+  const openBtn = document.querySelector('.admin-section-btn[data-modal="modal-settingsfields"]');
+  const sectionsEl = document.getElementById("settingsfields-sections");
+  const saveBtn = document.getElementById("settingsfields-save-btn");
+  const errorEl = document.getElementById("settingsfields-error");
+  const successEl = document.getElementById("settingsfields-success");
+  if (!openBtn || !sectionsEl || !saveBtn || !errorEl || !successEl) return;
+
+  openBtn.addEventListener("click", async () => {
+    errorEl.hidden = true;
+    successEl.hidden = true;
+    sectionsEl.innerHTML = '<p class="info-text" style="color:var(--muted)">Loading…</p>';
+    const enabledKeys = await getSettingsEnabledKeys(true);
+    sectionsEl.innerHTML = "";
+    CHANGE_REQUEST_GROUPS.forEach((group) => {
+      const box = document.createElement("div");
+      box.className = "fieldmgr-section";
+      const title = document.createElement("p");
+      title.className = "section-label";
+      title.style.cssText = "margin:0 0 10px;";
+      title.textContent = group.label;
+      box.appendChild(title);
+      group.fields.forEach((f) => {
+        const row = document.createElement("label");
+        row.className = "member-check-row";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = enabledKeys.has(f.key);
+        checkbox.dataset.key = f.key;
+        row.appendChild(checkbox);
+        row.appendChild(document.createTextNode(f.label));
+        box.appendChild(row);
+      });
+      sectionsEl.appendChild(box);
+    });
+  });
+
+  saveBtn.addEventListener("click", async () => {
+    errorEl.hidden = true;
+    successEl.hidden = true;
+    const checked = Array.from(sectionsEl.querySelectorAll('input[type="checkbox"]'))
+      .filter((cb) => cb.checked)
+      .map((cb) => cb.dataset.key);
+
+    saveBtn.disabled = true;
+    const originalLabel = saveBtn.textContent;
+    saveBtn.textContent = "Saving…";
+    try {
+      await setDoc(doc(db, ...SETTINGS_FIELDS_DOC_PATH), { enabledKeys: checked, updatedAt: serverTimestamp() });
+      settingsEnabledKeysCache = new Set(checked);
+      successEl.textContent = "Saved.";
+      successEl.hidden = false;
+    } catch (err) {
+      errorEl.textContent = "Could not save these changes — please try again.";
+      errorEl.hidden = false;
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalLabel;
+    }
+  });
+}
+
 // Fills the "Labels" multi-select on the admin page from the eventLabels
 // collection. Called on admin page load, and again right after a new
 // label is added, so it's usable without reloading the page.
@@ -4907,7 +5492,8 @@ async function renderBatchmateDirectory() {
   const [, assignmentsMap, privacyMap] = await Promise.all([
     getBadgesMap(),
     getAllBadgeAssignments(),
-    getAllPrivacyMap()
+    getAllPrivacyMap(),
+    getDirectoryFieldSchema() // warms directoryFieldSchemaCache for openBatchmateModal()
   ]);
   batchmateBadgeAssignments = assignmentsMap;
   batchmatePrivacyMap = privacyMap;
@@ -4973,7 +5559,15 @@ function displayBatchmates(list) {
     const card = document.createElement("div");
     card.className = "batchmate-card";
 
-    card.appendChild(buildAvatar(b.fullName, b.photoUrl));
+    const avatarSlot = buildAvatar(b.fullName, b.photoUrl);
+    if (typeof b.prestigeLevel === "number") {
+      const levelBadge = document.createElement("span");
+      levelBadge.className = "level-badge";
+      levelBadge.textContent = b.prestigeLevel;
+      levelBadge.title = `${LEVEL_NAME} ${b.prestigeLevel}`;
+      avatarSlot.appendChild(levelBadge);
+    }
+    card.appendChild(avatarSlot);
 
     const name = document.createElement("div");
     name.className = "batchmate-card-name";
@@ -5031,11 +5625,22 @@ function openBatchmateModal(b) {
   avatarSlot.innerHTML = "";
   avatarSlot.appendChild(buildAvatar(b.fullName, b.photoUrl).firstChild);
 
-  fillGroup("bm-modal-fields", [
-    ["Birthday", b.birthday],
-    ["Contact Number", b.primaryMobile],
-    ["Gender", b.gender]
-  ]);
+  const publicFields = flattenFieldGroups(directoryFieldSchemaCache || DEFAULT_DIRECTORY_FIELD_GROUPS)
+    .filter((f) => f.public && f.key !== "fullName");
+  fillGroup("bm-modal-fields", publicFields.map((f) => {
+    const raw = b[f.key];
+    return [f.label || f.key, Array.isArray(raw) ? raw.join(", ") : raw];
+  }));
+
+  const levelPill = document.getElementById("bm-modal-level-pill");
+  if (levelPill) {
+    if (typeof b.prestigeLevel === "number") {
+      levelPill.textContent = `${LEVEL_NAME} • ${b.prestigeLevel}`;
+      levelPill.hidden = false;
+    } else {
+      levelPill.hidden = true;
+    }
+  }
 
   fillPills("bm-modal-clubs", b.clubs, "No clubs recorded.");
   fillPills("bm-modal-sports", b.sports, "No sports recorded.");

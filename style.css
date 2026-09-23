@@ -867,6 +867,41 @@ html.page-exit .content-area, html.page-exit .page-center {
 .batchmate-card-name { font-size: 12.5px; font-weight: 600; }
 .batchmate-card-index { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
+/* ── Prestige level badge (avatar corner icon + modal pill) ────────── */
+.level-badge {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--blue), var(--blue-dim));
+  border: 2px solid var(--surface);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: 'Space Grotesk', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.bm-modal-heading { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.level-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: var(--accent-soft-bg);
+  border: 1px solid var(--accent-soft-border);
+  color: var(--accent-soft-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 /* ── Label detail popup (replaces alert()) ───────────────────────── */
 .label-color-bar {
   height: 5px;
@@ -1173,6 +1208,119 @@ html.page-exit .content-area, html.page-exit .page-center {
 .admin-section-btn:hover { border-color: var(--blue); color: var(--blue); }
 
 .admin-modal-body { padding: 20px; max-width: 420px; }
+
+/* ── Admin: Profile Field Manager (Danger tab) ─────────────────────── */
+.fieldmgr-box { max-width: 620px; }
+.fieldmgr-body { max-width: none; }
+.fieldmgr-section {
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.fieldmgr-section-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.fieldmgr-section-head input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-weight: 600;
+  font-size: 13.5px;
+  padding: 8px 10px;
+}
+.fieldmgr-reorder-btn, .fieldmgr-del-btn {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--surface);
+  border: 1px solid var(--panel-border);
+  color: var(--muted);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.fieldmgr-reorder-btn:hover { border-color: var(--blue); color: var(--blue); }
+.fieldmgr-del-btn:hover { border-color: #d6426e; color: #d6426e; }
+.fieldmgr-field-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--panel-border);
+  flex-wrap: wrap;
+}
+.fieldmgr-field-row:last-of-type { border-bottom: none; }
+.fieldmgr-field-row input[type="text"] {
+  margin: 0;
+  padding: 7px 9px;
+  font-size: 12.5px;
+}
+.fieldmgr-key-input { width: 108px; flex-shrink: 0; font-family: 'Space Grotesk', monospace; }
+.fieldmgr-label-input { flex: 1; min-width: 110px; }
+.fieldmgr-public-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  flex-shrink: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.fieldmgr-public-toggle input { width: auto; margin: 0; accent-color: var(--blue); }
+.fieldmgr-add-field-btn {
+  margin-top: 6px;
+  background: transparent;
+  border: 1px dashed var(--panel-border);
+  border-radius: 8px;
+  padding: 8px;
+  width: 100%;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.fieldmgr-add-field-btn:hover { border-color: var(--blue); color: var(--blue); }
+
+/* ── Admin: Batchmate Directory (Danger tab) ───────────────────────── */
+.admindir-box { max-width: 680px; }
+.admindir-body { max-width: none; }
+.admindir-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+}
+.admindir-card {
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 12px 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .15s ease;
+}
+.admindir-card:hover { border-color: var(--blue); }
+.admindir-card .avatar-slot { width: 40px; height: 40px; margin: 0 auto 6px; }
+.admindir-card .avatar-photo, .admindir-card .avatar { width: 40px; height: 40px; font-size: 15px; }
+.admindir-card-name { font-size: 12px; font-weight: 600; }
+.admindir-card-index { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
+.admindir-detail-group { margin-bottom: 18px; }
+.admindir-detail-group-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  margin: 0 0 10px;
+}
+
+
 #modal-fund .modal-box, #modal-wall .modal-box, #modal-announcement .modal-box,
 #modal-leader .modal-box, #modal-eventlabel .modal-box,
 #modal-event .modal-box, #modal-task .modal-box, #modal-bulkfield .modal-box,
