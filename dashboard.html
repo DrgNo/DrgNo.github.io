@@ -162,6 +162,20 @@
     </div>
   </div>
 
+  <!-- Prestige note detail popup — full note text, same design as the
+       event label popup (Home page): modal-box with a color bar, title
+       and description, opened by tapping a truncated note. -->
+  <div class="modal-overlay" id="prestige-note-modal-overlay" hidden>
+    <div class="modal-box">
+      <button class="modal-close" id="prestige-note-modal-close" aria-label="Close">✕</button>
+      <div class="label-color-bar" id="prestige-note-modal-colorbar"></div>
+      <div class="label-modal-body">
+        <h2 class="label-modal-title" id="prestige-note-modal-title"></h2>
+        <p class="label-modal-desc" id="prestige-note-modal-desc"></p>
+      </div>
+    </div>
+  </div>
+
   <script type="module" src="app.js"></script>
 </body>
 </html>

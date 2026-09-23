@@ -30,8 +30,7 @@ import {
   serverTimestamp,
   writeBatch,
   deleteField,
-  increment,
-  limit
+  increment
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -764,12 +763,12 @@ async function loadAndRenderPrestige(uid, batchmateData) {
   }
 
   try {
-    const q = query(
-      collection(db, "prestigeLog"),
-      where("uid", "==", uid),
-      orderBy("createdAt", "desc"),
-      limit(15)
-    );
+    // uid equality + createdAt ordering on two different fields needs a
+    // composite Firestore index, which isn't deployed for this project —
+    // that made this query fail with "failed-precondition" and land in
+    // the catch below. Filter by uid only (single-field index, always
+    // auto-created) and sort/limit client-side instead.
+    const q = query(collection(db, "prestigeLog"), where("uid", "==", uid));
     const snap = await getDocs(q);
     listEl.innerHTML = "";
 
@@ -778,17 +777,24 @@ async function loadAndRenderPrestige(uid, batchmateData) {
       return;
     }
 
-    snap.forEach((docSnap) => {
-      const e = docSnap.data();
+    const entries = snap.docs
+      .map((docSnap) => docSnap.data())
+      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+
+    entries.forEach((e) => {
       const row = document.createElement("div");
       row.className = "prestige-log-item";
 
       const left = document.createElement("div");
       left.className = "prestige-log-note";
-      left.textContent = e.note || e.source || "Prestige update";
+      const noteText = e.note || e.source || "Prestige update";
+      left.textContent = noteText;
+      left.setAttribute("data-clickable", "true");
+
+      const amount = Number(e.finalAmount) || 0;
+      left.addEventListener("click", () => openPrestigeNoteModal(noteText, amount));
 
       const right = document.createElement("div");
-      const amount = Number(e.finalAmount) || 0;
       right.className = "prestige-log-amount " + (amount < 0 ? "prestige-negative" : "prestige-positive");
       right.textContent = (amount > 0 ? "+" : "") + amount;
 
@@ -925,6 +931,35 @@ function wirePrestigeInfoModal() {
   });
 }
 
+// Small popup shown when a (possibly truncated) prestige note is tapped —
+// same pattern as openLabelModal()/wireLabelModal() for event labels on
+// the Home page: a modal-box with a color bar, title and full description.
+function openPrestigeNoteModal(noteText, amount) {
+  const overlay = document.getElementById("prestige-note-modal-overlay");
+  if (!overlay) return;
+  const positive = amount >= 0;
+  document.getElementById("prestige-note-modal-title").textContent =
+    (positive ? "+" : "") + amount + " Prestige";
+  document.getElementById("prestige-note-modal-desc").textContent = noteText;
+  document.getElementById("prestige-note-modal-colorbar").style.background =
+    positive ? "#4ADE80" : "#F87171";
+  overlay.hidden = false;
+}
+
+function wirePrestigeNoteModal() {
+  const overlay = document.getElementById("prestige-note-modal-overlay");
+  const closeBtn = document.getElementById("prestige-note-modal-close");
+  if (!overlay || !closeBtn) return;
+
+  function closeModal() { overlay.hidden = true; }
+
+  closeBtn.addEventListener("click", closeModal);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !overlay.hidden) closeModal();
+  });
+}
+
 async function initDashboardPage(user) {
   const loadingState = document.getElementById("loading-state");
   const errorState = document.getElementById("error-state");
@@ -948,6 +983,7 @@ async function initDashboardPage(user) {
     await loadAndRenderPrestige(user.uid, snap.data());
     wireTaskModal();
     wirePrestigeInfoModal();
+    wirePrestigeNoteModal();
     loadingState.hidden = true;
     recordSection.hidden = false;
   } catch (err) {

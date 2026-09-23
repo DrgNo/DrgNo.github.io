@@ -992,19 +992,39 @@ html.page-exit .content-area, html.page-exit .page-center {
 .prestige-total-row { display: flex; align-items: baseline; gap: 8px; }
 .prestige-total-value { font-size: 32px; font-weight: 700; color: var(--accent); }
 .prestige-total-label { font-size: 13px; color: var(--muted); }
-.prestige-log-list { display: flex; flex-direction: column; gap: 8px; }
+.prestige-log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Exactly 4 rows visible, rest reachable by scroll: 4 × row height (36px)
+     + 3 × gap (6px) between them. Keep in sync if row height/gap change. */
+  max-height: calc(4 * 36px + 3 * 6px);
+  overflow-y: auto;
+}
 .prestige-log-item {
   background: var(--surface);
   border: 1px solid var(--panel-border);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 6px 12px;
+  height: 36px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
-.prestige-log-note { font-size: 13px; }
-.prestige-log-amount { font-size: 14px; font-weight: 700; }
+.prestige-log-note[data-clickable] { cursor: pointer; }
+.prestige-log-note {
+  font-size: 13px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+}
+.prestige-log-amount { font-size: 14px; font-weight: 700; flex: 0 0 auto; white-space: nowrap; }
 .prestige-positive { color: #4ADE80; }
 .prestige-negative { color: #F87171; }
 .bad-behavior-row {
