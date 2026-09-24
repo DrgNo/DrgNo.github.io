@@ -84,7 +84,8 @@
             <div class="prestige-total-row">
               <span id="f-fund-donated-value" class="prestige-total-value">Rs. 0</span>
             </div>
-            <p class="fine-print" style="text-align:left; margin:6px 0 0;">Total value you have added to the batch fund.</p>
+            <p class="fine-print" style="text-align:left; margin:6px 0 14px;">Total value you have added to the batch fund.</p>
+            <div id="fund-log-list" class="prestige-log-list"></div>
           </div>
 
           <!-- Roles (kept as its own fixed card; not part of the
@@ -172,6 +173,20 @@
       <div class="label-modal-body">
         <h2 class="label-modal-title" id="prestige-note-modal-title"></h2>
         <p class="label-modal-desc" id="prestige-note-modal-desc"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Fund donation record detail popup — same pattern as the prestige
+       note popup above: full description of one donation, opened by
+       tapping a truncated row in the "My Fund Donations" history list. -->
+  <div class="modal-overlay" id="fund-note-modal-overlay" hidden>
+    <div class="modal-box">
+      <button class="modal-close" id="fund-note-modal-close" aria-label="Close">✕</button>
+      <div class="label-color-bar" id="fund-note-modal-colorbar"></div>
+      <div class="label-modal-body">
+        <h2 class="label-modal-title" id="fund-note-modal-title"></h2>
+        <p class="label-modal-desc" id="fund-note-modal-desc"></p>
       </div>
     </div>
   </div>

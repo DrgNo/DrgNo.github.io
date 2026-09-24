@@ -1112,6 +1112,7 @@ html.page-exit .content-area, html.page-exit .page-center {
 .prestige-log-amount { font-size: 14px; font-weight: 700; flex: 0 0 auto; white-space: nowrap; }
 .prestige-positive { color: #4ADE80; }
 .prestige-negative { color: #F87171; }
+.fund-log-amount { color: var(--blue); }
 .bad-behavior-row {
   background: var(--surface);
   border: 1px solid var(--panel-border);

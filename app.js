@@ -837,6 +837,61 @@ async function loadAndRenderPrestige(uid, batchmateData) {
   }
 }
 
+// Dashboard: a batchmate's own fund donation history — same look/behavior
+// as the prestige history list above (4 rows visible, scroll for more,
+// tap a row to see the full record). Built from /fundTransactions rather
+// than /prestigeLog so every donation shows up here even ones too small
+// to have earned a prestige point (see FUND_LKR_PER_POINT / awardPrestige
+// call in initFundTransactionForm).
+async function loadAndRenderFundLog(uid) {
+  const listEl = document.getElementById("fund-log-list");
+  if (!listEl) return;
+
+  try {
+    // Single-field filter only (array-contains), same reasoning as the
+    // prestige query above: avoids needing a composite index. Non-income
+    // (expense) per-student transactions and the type filter are both
+    // applied client-side after the fetch.
+    const q = query(collection(db, "fundTransactions"), where("studentUids", "array-contains", uid));
+    const snap = await getDocs(q);
+    listEl.innerHTML = "";
+
+    const entries = snap.docs
+      .map((docSnap) => docSnap.data())
+      .filter((tx) => (tx.type || "").toLowerCase() === "income")
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+    if (entries.length === 0) {
+      listEl.innerHTML = '<p class="info-text" style="color:var(--muted)">No fund donations yet.</p>';
+      return;
+    }
+
+    entries.forEach((tx) => {
+      const row = document.createElement("div");
+      row.className = "prestige-log-item";
+
+      const left = document.createElement("div");
+      left.className = "prestige-log-note";
+      const noteText = tx.description || "Batch fund donation";
+      left.textContent = noteText;
+      left.setAttribute("data-clickable", "true");
+
+      const amount = Number(tx.perStudentAmount) || 0;
+      left.addEventListener("click", () => openFundNoteModal(noteText, amount, tx.date));
+
+      const right = document.createElement("div");
+      right.className = "prestige-log-amount fund-log-amount";
+      right.textContent = `Rs. ${amount.toLocaleString()}`;
+
+      row.appendChild(left);
+      row.appendChild(right);
+      listEl.appendChild(row);
+    });
+  } catch (err) {
+    listEl.innerHTML = '<p class="info-text" style="color:var(--muted)">Could not load fund donation history.</p>';
+  }
+}
+
 // ── Prestige info modal (Dashboard) ──────────────────────────────
 // Explains every way prestige points are earned and what slows down how
 // fast they're earned. Built from the same constants the award functions
@@ -971,14 +1026,41 @@ function openPrestigeNoteModal(noteText, amount) {
   document.getElementById("prestige-note-modal-title").textContent =
     (positive ? "+" : "") + amount + " Prestige";
   document.getElementById("prestige-note-modal-desc").textContent = noteText;
-  document.getElementById("prestige-note-modal-colorbar").style.background =
-    positive ? "#4ADE80" : "#F87171";
+  // Color bar matches the site's theme accent (data-palette), rather than
+  // a green/red positive-negative indicator.
+  document.getElementById("prestige-note-modal-colorbar").style.background = "var(--blue)";
   overlay.hidden = false;
 }
 
 function wirePrestigeNoteModal() {
   const overlay = document.getElementById("prestige-note-modal-overlay");
   const closeBtn = document.getElementById("prestige-note-modal-close");
+  if (!overlay || !closeBtn) return;
+
+  function closeModal() { overlay.hidden = true; }
+
+  closeBtn.addEventListener("click", closeModal);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !overlay.hidden) closeModal();
+  });
+}
+
+// Small popup shown when a (possibly truncated) fund donation note is
+// tapped — same pattern as openPrestigeNoteModal() above.
+function openFundNoteModal(noteText, amount, date) {
+  const overlay = document.getElementById("fund-note-modal-overlay");
+  if (!overlay) return;
+  document.getElementById("fund-note-modal-title").textContent =
+    `Rs. ${(Number(amount) || 0).toLocaleString()}` + (date ? ` — ${date}` : "");
+  document.getElementById("fund-note-modal-desc").textContent = noteText;
+  document.getElementById("fund-note-modal-colorbar").style.background = "var(--blue)";
+  overlay.hidden = false;
+}
+
+function wireFundNoteModal() {
+  const overlay = document.getElementById("fund-note-modal-overlay");
+  const closeBtn = document.getElementById("fund-note-modal-close");
   if (!overlay || !closeBtn) return;
 
   function closeModal() { overlay.hidden = true; }
@@ -1011,9 +1093,11 @@ async function initDashboardPage(user) {
     renderRecord(snap.data(), fieldSchema);
     await loadAndRenderTasks(user.uid);
     await loadAndRenderPrestige(user.uid, snap.data());
+    await loadAndRenderFundLog(user.uid);
     wireTaskModal();
     wirePrestigeInfoModal();
     wirePrestigeNoteModal();
+    wireFundNoteModal();
     loadingState.hidden = true;
     recordSection.hidden = false;
   } catch (err) {
