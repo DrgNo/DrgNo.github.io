@@ -9,7 +9,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Admin</title>
-<script>(function(){try{var m=localStorage.getItem("theme-mode")||"dark";var p=localStorage.getItem("theme-palette")||"blue";document.documentElement.setAttribute("data-mode",m);document.documentElement.setAttribute("data-palette",p);}catch(e){}})();</script>
+<script>(function(){try{var m=localStorage.getItem("theme-mode")||"dark";var p=localStorage.getItem("theme-palette")||"blue";var d=localStorage.getItem("theme-design")||"default";document.documentElement.setAttribute("data-mode",m);document.documentElement.setAttribute("data-palette",p);document.documentElement.setAttribute("data-design",d);}catch(e){}})();</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -385,6 +385,47 @@
     </div>
   </div>
 
+  <!-- Edit Group Project — opened from Active → Group Projects → "Edit
+       Project" on a specific project. Reuses the same group-block
+       builder as "Add Group Project" above (createGroupBlock() etc.,
+       app.js), just pointed at this modal's own groups container and
+       pre-filled with that project's current data. -->
+  <div class="modal-overlay" id="modal-project-edit" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-project-edit" aria-label="Close">✕</button>
+      <div class="admin-modal-body" style="max-width:520px;">
+        <p class="section-label">Edit Group Project</p>
+        <form id="form-projectedit">
+          <label for="projectedit-title">Project Name</label>
+          <input type="text" id="projectedit-title" required>
+
+          <label for="projectedit-description">Description</label>
+          <textarea id="projectedit-description" rows="3"></textarea>
+
+          <label for="projectedit-order">Order (optional)</label>
+          <input type="number" id="projectedit-order">
+
+          <label for="projectedit-status">Status</label>
+          <select id="projectedit-status">
+            <option value="starting">Starting</option>
+            <option value="ongoing">Ongoing</option>
+            <option value="complete">Complete</option>
+          </select>
+
+          <p class="section-label" style="margin-top:6px;">Groups</p>
+          <p class="fine-print" style="text-align:left; margin:0 0 14px;">Edit members, leader, due date, or group name below. Add or remove groups as needed.</p>
+
+          <div id="projectedit-groups-container"></div>
+          <button type="button" id="projectedit-add-group-btn" class="ghost-btn" style="width:100%; margin-bottom:18px;">+ Add Another Group</button>
+
+          <button type="submit" class="btn-primary">Save Changes</button>
+        </form>
+        <p class="error-msg" id="projectedit-error" hidden></p>
+        <p class="success-msg" id="projectedit-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="modal-eventlabel" hidden>
     <div class="modal-box">
       <button class="modal-close" data-close-modal="modal-eventlabel" aria-label="Close">✕</button>
@@ -452,8 +493,9 @@
       <div class="admin-modal-body">
         <p class="section-label">Assign Task</p>
         <form id="form-task">
-          <label for="task-batchmate">Batchmate</label>
-          <select id="task-batchmate" required></select>
+          <label>Assign To <span style="color:var(--muted);font-weight:400;">(pick one or more — the same task is created for each, tracked and rated independently)</span></label>
+          <input type="text" id="task-batchmate-search" placeholder="Search students by name or index…">
+          <div id="task-batchmate-checklist" class="member-checklist"></div>
 
           <label for="task-name">Task Name</label>
           <input type="text" id="task-name" required>

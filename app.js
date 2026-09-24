@@ -130,6 +130,7 @@ async function sendPushNotification({ type, title, message, url, targetUid }) {
 // keep that page's controls in sync with whatever is currently set.
 const THEME_MODE_KEY = "theme-mode";
 const THEME_PALETTE_KEY = "theme-palette";
+const THEME_DESIGN_KEY = "theme-design"; // "default" | "glass" — see the [data-design="glass"] block in style.css
 
 function applyTheme(mode, palette) {
   document.documentElement.setAttribute("data-mode", mode);
@@ -143,11 +144,21 @@ function applyTheme(mode, palette) {
   }
 }
 
+function applyDesign(design) {
+  document.documentElement.setAttribute("data-design", design);
+  try {
+    localStorage.setItem(THEME_DESIGN_KEY, design);
+  } catch (err) {
+    // localStorage unavailable — still applies for this page view.
+  }
+}
+
 // Wires the Appearance section on the Settings page. No-ops on every
 // other page since #theme-mode-toggle / #theme-palette-grid won't exist.
 function initThemeControls() {
   const modeToggle = document.getElementById("theme-mode-toggle");
   const paletteGrid = document.getElementById("theme-palette-grid");
+  const designToggle = document.getElementById("theme-design-toggle");
   if (!modeToggle || !paletteGrid) return;
 
   function currentMode() {
@@ -157,6 +168,10 @@ function initThemeControls() {
   function currentPalette() {
     try { return localStorage.getItem(THEME_PALETTE_KEY) || "blue"; }
     catch (err) { return "blue"; }
+  }
+  function currentDesign() {
+    try { return localStorage.getItem(THEME_DESIGN_KEY) || "default"; }
+    catch (err) { return "default"; }
   }
 
   function refreshActiveStates(mode, palette) {
@@ -183,6 +198,21 @@ function initThemeControls() {
     applyTheme(currentMode(), btn.dataset.palette);
     refreshActiveStates(currentMode(), btn.dataset.palette);
   });
+
+  if (designToggle) {
+    function refreshDesignActiveState(design) {
+      designToggle.querySelectorAll(".theme-mode-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.design === design);
+      });
+    }
+    refreshDesignActiveState(currentDesign());
+    designToggle.addEventListener("click", (e) => {
+      const btn = e.target.closest(".theme-mode-btn");
+      if (!btn) return;
+      applyDesign(btn.dataset.design);
+      refreshDesignActiveState(btn.dataset.design);
+    });
+  }
 }
 
 
@@ -1964,7 +1994,8 @@ async function renderProjects() {
 
         const count = document.createElement("div");
         count.className = "group-box-count";
-        const memberCount = Array.isArray(g.members) ? g.members.length : 0;
+        // Total headcount includes the leader, not just the members array.
+        const memberCount = (Array.isArray(g.members) ? g.members.length : 0) + (g.leader ? 1 : 0);
         count.textContent = memberCount + (memberCount === 1 ? " student" : " students");
 
         box.appendChild(name);
@@ -2201,6 +2232,7 @@ function openRateModal(project, groupIndex, group) {
   const submitBtn = document.getElementById("rate-modal-submit-btn");
   const statusEl = document.getElementById("rate-modal-status");
   const uid = auth.currentUser.uid;
+  const isLeaderRating = group.leaderUid === uid;
 
   titleEl.textContent = "Rate Group Members" + (group.groupName ? " — " + group.groupName : "");
   statusEl.textContent = "";
@@ -2210,44 +2242,74 @@ function openRateModal(project, groupIndex, group) {
   const roster = getGroupRoster(group);
   const ratingDocId = groupRatingDocId(project.id, groupIndex, uid);
 
+  function checkComplete() {
+    const rows = Array.from(listEl.querySelectorAll(".rate-modal-row:not(.rate-modal-row-self)"));
+    submitBtn.hidden = !rows.every((row) => !!row.dataset.value);
+  }
+
   getDoc(doc(db, "groupProjectRatings", ratingDocId)).then((snap) => {
-    const existing = snap.exists() ? snap.data().ratings || {} : {};
+    const existingData = snap.exists() ? snap.data() : {};
+    const existingRatings = existingData.ratings || {};
+    const existingNotes = existingData.notes || {};
     listEl.innerHTML = "";
 
     roster.forEach((person) => {
-      const row = document.createElement("div");
-      row.className = "rate-modal-row";
       const isSelf = person.uid === uid;
+      // A note field shows on this row when it's meaningful in ONE of two
+      // directions: the leader leaving a note for a member (only when
+      // the current rater IS the leader, on every non-leader row), or
+      // any member leaving a note about the leader (on the leader's own
+      // row, for every rater who isn't the leader themself).
+      const showNote = isSelf ? false : (isLeaderRating ? !person.isLeader : person.isLeader);
+      const notePlaceholder = person.isLeader
+        ? "Add a note about the leader (optional)…"
+        : "Add a note for this member (optional)…";
 
-      const label = document.createElement("span");
+      const row = document.createElement("div");
+      row.className = "rate-modal-row" + (isSelf ? " rate-modal-row-self" : "");
+      row.dataset.uid = person.uid;
+      row.dataset.value = existingRatings[person.uid] ? String(existingRatings[person.uid]) : "";
+
+      const label = document.createElement("div");
+      label.className = "rate-modal-name";
       label.textContent = person.name + (person.isLeader ? " (Leader)" : "");
       row.appendChild(label);
 
-      const select = document.createElement("select");
-      select.className = "task-rating-select rate-modal-select";
-      select.disabled = isSelf;
-      const blankOpt = document.createElement("option");
-      blankOpt.value = "";
-      blankOpt.textContent = isSelf ? "—" : "Rate…";
-      select.appendChild(blankOpt);
+      const picker = document.createElement("div");
+      picker.className = "rate-star-picker";
       for (let i = 1; i <= 10; i++) {
-        const opt = document.createElement("option");
-        opt.value = String(i);
-        opt.textContent = String(i);
-        if (existing[person.uid] === i) opt.selected = true;
-        select.appendChild(opt);
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "rate-star-btn";
+        btn.textContent = String(i);
+        btn.disabled = isSelf;
+        if (existingRatings[person.uid] === i) btn.classList.add("selected");
+        btn.addEventListener("click", () => {
+          row.dataset.value = String(i);
+          picker.querySelectorAll(".rate-star-btn").forEach((b) => b.classList.toggle("selected", b === btn));
+          checkComplete();
+        });
+        picker.appendChild(btn);
       }
-      select.dataset.uid = person.uid;
-      if (isSelf) row.classList.add("rate-modal-row-self");
-      row.appendChild(select);
+      row.appendChild(picker);
+
+      if (showNote) {
+        const noteLabel = document.createElement("p");
+        noteLabel.className = "rate-modal-note-label";
+        noteLabel.textContent = person.isLeader ? "Note about the leader" : "Note for " + person.name;
+        row.appendChild(noteLabel);
+
+        const note = document.createElement("textarea");
+        note.className = "rate-modal-note";
+        note.placeholder = notePlaceholder;
+        note.value = existingNotes[person.uid] || "";
+        row.appendChild(note);
+      }
+
       listEl.appendChild(row);
     });
 
-    function checkComplete() {
-      const selects = Array.from(listEl.querySelectorAll(".rate-modal-select:not(:disabled)"));
-      submitBtn.hidden = !selects.every((s) => s.value !== "");
-    }
-    listEl.addEventListener("change", checkComplete);
+    listEl.addEventListener("input", checkComplete);
     checkComplete();
   });
 
@@ -2256,14 +2318,18 @@ function openRateModal(project, groupIndex, group) {
     submitBtn.textContent = "Saving…";
     try {
       const ratings = {};
-      listEl.querySelectorAll(".rate-modal-select:not(:disabled)").forEach((s) => {
-        if (s.value) ratings[s.dataset.uid] = Number(s.value);
+      const notes = {};
+      listEl.querySelectorAll(".rate-modal-row:not(.rate-modal-row-self)").forEach((row) => {
+        if (row.dataset.value) ratings[row.dataset.uid] = Number(row.dataset.value);
+        const noteEl = row.querySelector(".rate-modal-note");
+        if (noteEl && noteEl.value.trim()) notes[row.dataset.uid] = noteEl.value.trim();
       });
       await setDoc(doc(db, "groupProjectRatings", ratingDocId), {
         projectId: project.id,
         groupIndex,
         raterUid: uid,
         ratings,
+        notes,
         submittedAt: new Date().toISOString()
       });
       overlay.hidden = true;
@@ -2684,6 +2750,7 @@ async function initAdminPage(isAdmin) {
 
   // Group Project — dynamic groups with cross-group member exclusion
   await initProjectForm();
+  initProjectEditForm();
   await initFundTransactionForm();
 
   // Event Label — no push
@@ -2742,7 +2809,7 @@ async function initAdminPage(isAdmin) {
   );
 
   // Assign Task
-  await populateBatchmateSelect();
+  await populateTaskBatchmateChecklist();
   const taskForm = document.getElementById("form-task");
   const taskErrorEl = document.getElementById("task-error");
   const taskSuccessEl = document.getElementById("task-success");
@@ -2753,36 +2820,67 @@ async function initAdminPage(isAdmin) {
     e.preventDefault();
     taskErrorEl.hidden = true;
     taskSuccessEl.hidden = true;
+
+    const checked = Array.from(document.querySelectorAll("#task-batchmate-checklist .task-member-checkbox:checked"));
+    if (checked.length === 0) {
+      taskErrorEl.textContent = "Pick at least one student to assign this task to.";
+      taskErrorEl.hidden = false;
+      return;
+    }
+
     taskBtn.disabled = true;
     taskBtn.textContent = "Assigning…";
 
     try {
-      const select = document.getElementById("task-batchmate");
-      const selectedOption = select.options[select.selectedIndex];
       const taskName = document.getElementById("task-name").value.trim();
-      const targetUid = select.value;
-
-      await addDoc(collection(db, "tasks"), {
-        assignedToUid: targetUid,
-        assignedToName: selectedOption ? selectedOption.textContent : "",
+      const baseData = {
         taskName,
         description: document.getElementById("task-description").value.trim(),
         difficulty: document.getElementById("task-difficulty").value,
         dueDate: document.getElementById("task-duedate").value,
         status: "ongoing"
+      };
+
+      // More than one person picked → the same task for a group. Each
+      // person still gets their OWN task doc (so the existing per-doc
+      // security rules, dashboard query, and verify/rate flow all just
+      // work unchanged) but they share a groupTaskId so the admin panel
+      // can display them together. A member's doc leaving "ongoing" once
+      // verified is exactly what takes them out of the shared pool —
+      // no extra bookkeeping needed for that.
+      const isGroup = checked.length > 1;
+      const groupTaskId = isGroup ? doc(collection(db, "tasks")).id : null;
+
+      const batch = writeBatch(db);
+      checked.forEach((cb) => {
+        const taskRef = doc(collection(db, "tasks"));
+        const data = { ...baseData, assignedToUid: cb.value, assignedToName: cb.dataset.displayName };
+        if (isGroup) {
+          data.groupTaskId = groupTaskId;
+          data.groupSize = checked.length;
+        }
+        batch.set(taskRef, data);
       });
-      taskSuccessEl.textContent = "Task assigned.";
+      await batch.commit();
+
+      taskSuccessEl.textContent = isGroup ? `Task assigned to ${checked.length} students.` : "Task assigned.";
       taskSuccessEl.hidden = false;
       taskForm.reset();
+      // form.reset() clears the search box's value but doesn't re-run its
+      // input filter, so any rows it had hidden would otherwise stay
+      // hidden — un-hide everything to match the now-empty search box.
+      document.querySelectorAll("#task-batchmate-checklist .member-check-row").forEach((row) => { row.hidden = false; });
       await renderAdminActiveTasks();
 
-      // Individual push — only the assigned batchmate gets this one.
-      sendPushNotification({
-        type: "task",
-        title: "New task assigned to you",
-        message: taskName,
-        url: "dashboard.html",
-        targetUid
+      // Individual push — every assigned batchmate gets their own notice.
+      checked.forEach((cb) => {
+        sendPushNotification({
+          type: "task",
+          title: "New task assigned to you",
+          message: taskName,
+          url: "dashboard.html",
+          targetUid: cb.value
+        });
       });
     } catch (err) {
       taskErrorEl.textContent = "Could not assign this task — check the fields and try again.";
@@ -3295,7 +3393,7 @@ async function initFundTransactionForm() {
 
 let groupBlockCounter = 0;
 
-async function createGroupBlock() {
+async function createGroupBlock(containerId = "groups-container") {
   groupBlockCounter++;
   const block = document.createElement("div");
   block.className = "group-block";
@@ -3317,19 +3415,20 @@ async function createGroupBlock() {
     <div class="member-checklist"></div>
   `;
 
-  document.getElementById("groups-container").appendChild(block);
+  document.getElementById(containerId).appendChild(block);
   await buildMemberChecklist(block);
-  await buildLeaderSelect(block);
-  refreshMemberExclusions();
+  await buildLeaderSelect(block, containerId);
+  refreshMemberExclusions(containerId);
 
   block.querySelector(".remove-group-btn").addEventListener("click", () => {
     block.remove();
-    refreshMemberExclusions();
-    updateRemoveButtonsVisibility();
+    refreshMemberExclusions(containerId);
+    updateRemoveButtonsVisibility(containerId);
   });
   block.querySelector(".group-member-search").addEventListener("input", () => applyRowVisibility(block));
 
-  updateRemoveButtonsVisibility();
+  updateRemoveButtonsVisibility(containerId);
+  return block;
 }
 
 async function buildMemberChecklist(block) {
@@ -3361,7 +3460,7 @@ async function buildMemberChecklist(block) {
 // Leader picker for a group block — a <select>, not free text, so a
 // leader can be targeted by UID for ratings/prestige. Participates in
 // the same taken-by-another-group exclusion as member checkboxes.
-async function buildLeaderSelect(block) {
+async function buildLeaderSelect(block, containerId = "groups-container") {
   const people = await getBatchmatesPublicList();
   const select = block.querySelector(".group-leader-select");
   select.innerHTML = "";
@@ -3379,7 +3478,7 @@ async function buildLeaderSelect(block) {
     select.appendChild(opt);
   });
 
-  select.addEventListener("change", refreshMemberExclusions);
+  select.addEventListener("change", () => refreshMemberExclusions(containerId));
 }
 
 function applyRowVisibility(block) {
@@ -3391,13 +3490,19 @@ function applyRowVisibility(block) {
   });
 }
 
-// Whenever a member checkbox or leader select changes anywhere, that
-// student disappears from every OTHER group's member list and leader
-// dropdown — a student can only be one leader or member, in one group,
-// per project (leader and member are mutually exclusive roles too).
-function refreshMemberExclusions() {
+// Whenever a member checkbox or leader select changes anywhere WITHIN
+// THE SAME group-block container, that student disappears from every
+// OTHER group's member list and leader dropdown in that container — a
+// student can only be one leader or member, in one group, per project
+// (leader and member are mutually exclusive roles too). Scoped to a
+// single container so the "Add Group Project" form and the "Edit Group
+// Project" modal — both built from the same group-block markup, and
+// both present in the DOM at once — never cross-exclude each other.
+function refreshMemberExclusions(containerId = "groups-container") {
+  const root = document.getElementById(containerId);
+  if (!root) return;
   const takenBy = {}; // uid -> the blockId that currently has them (member or leader)
-  document.querySelectorAll(".group-block").forEach((block) => {
+  root.querySelectorAll(".group-block").forEach((block) => {
     block.querySelectorAll(".member-checkbox:checked").forEach((cb) => {
       takenBy[cb.value] = block.dataset.blockId;
     });
@@ -3405,7 +3510,7 @@ function refreshMemberExclusions() {
     if (leaderSelect && leaderSelect.value) takenBy[leaderSelect.value] = block.dataset.blockId;
   });
 
-  document.querySelectorAll(".group-block").forEach((block) => {
+  root.querySelectorAll(".group-block").forEach((block) => {
     block.querySelectorAll(".member-check-row").forEach((row) => {
       const owner = takenBy[row.dataset.uid];
       row.dataset.excluded = (owner && owner !== block.dataset.blockId) ? "true" : "false";
@@ -3427,34 +3532,60 @@ function refreshMemberExclusions() {
   });
 }
 
-function updateRemoveButtonsVisibility() {
-  const blocks = document.querySelectorAll(".group-block");
+function updateRemoveButtonsVisibility(containerId = "groups-container") {
+  const root = document.getElementById(containerId);
+  if (!root) return;
+  const blocks = root.querySelectorAll(".group-block");
   blocks.forEach((block) => {
     block.querySelector(".remove-group-btn").hidden = blocks.length <= 1;
   });
 }
 
-async function populateBatchmateSelect() {
-  const select = document.getElementById("task-batchmate");
-  if (!select) return;
+// Populates the "Assign Task" checklist (search + one row per batchmate,
+// same member-check-row pattern group projects use). Multiple boxes can
+// be ticked — the submit handler below creates one task doc per person
+// picked, linked by a shared groupTaskId when there's more than one.
+async function populateTaskBatchmateChecklist() {
+  const container = document.getElementById("task-batchmate-checklist");
+  const searchInput = document.getElementById("task-batchmate-search");
+  if (!container) return;
 
   const people = await getBatchmatesPublicList();
-  select.innerHTML = "";
+  container.innerHTML = "";
 
   if (people.length === 0) {
-    const opt = document.createElement("option");
-    opt.disabled = true;
-    opt.textContent = "No batchmates found";
-    select.appendChild(opt);
+    container.innerHTML = '<p class="info-text" style="color:var(--muted)">No batchmates found.</p>';
     return;
   }
 
   people.forEach((p) => {
-    const opt = document.createElement("option");
-    opt.value = p.uid;
-    opt.textContent = p.fullName;
-    select.appendChild(opt);
+    const row = document.createElement("label");
+    row.className = "member-check-row";
+    row.dataset.name = (p.fullName + " " + p.campusIndexNumber).toLowerCase();
+
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "task-member-checkbox";
+    cb.value = p.uid;
+    cb.dataset.displayName = `${p.fullName} (${p.campusIndexNumber})`;
+
+    const label = document.createElement("span");
+    label.textContent = `${p.fullName} — ${p.campusIndexNumber}`;
+
+    row.appendChild(cb);
+    row.appendChild(label);
+    container.appendChild(row);
   });
+
+  if (searchInput && !searchInput.dataset.wired) {
+    searchInput.dataset.wired = "true";
+    searchInput.addEventListener("input", () => {
+      const term = searchInput.value.trim().toLowerCase();
+      container.querySelectorAll(".member-check-row").forEach((row) => {
+        row.hidden = !!term && !row.dataset.name.includes(term);
+      });
+    });
+  }
 }
 
 // Shows every task that isn't complete yet. A task the batchmate has
@@ -3508,8 +3639,144 @@ function renderActiveTasksList(filterUid) {
     return;
   }
 
+  // Tasks sharing a groupTaskId (assigned to several students at once,
+  // via the checklist in "Assign Task") render together under one
+  // header, each member as their own rate/verify row — solo tasks keep
+  // the original flat single-box layout.
+  const solo = [];
+  const groups = new Map(); // groupTaskId -> tasks[]
+  list.forEach((t) => {
+    if (t.groupTaskId) {
+      if (!groups.has(t.groupTaskId)) groups.set(t.groupTaskId, []);
+      groups.get(t.groupTaskId).push(t);
+    } else {
+      solo.push(t);
+    }
+  });
+
   container.innerHTML = "";
-  list.forEach((task) => {
+
+  // One member's rate-select + Verify button — shared shape between a
+  // group's member rows. onVerified is called after a successful verify
+  // so the caller can remove the row and update its own surrounding UI.
+  function buildMemberRow(task, onVerified) {
+    const docId = task.id;
+    const isPending = task.status === "pending";
+
+    const row = document.createElement("div");
+    row.className = "admin-task-member-row" + (isPending ? " needs-verify" : "");
+
+    const left = document.createElement("div");
+    left.className = "admin-task-member-left";
+    const assignee = document.createElement("span");
+    assignee.className = "admin-task-assignee";
+    assignee.textContent = task.assignedToName || "Unknown batchmate";
+    left.appendChild(assignee);
+    if (isPending) {
+      const badge = document.createElement("span");
+      badge.className = "admin-task-badge";
+      badge.textContent = "Needs verification";
+      left.appendChild(badge);
+    }
+
+    const right = document.createElement("div");
+    right.className = "admin-task-member-right";
+
+    const ratingSelect = document.createElement("select");
+    ratingSelect.className = "task-rating-select";
+    const blankOpt = document.createElement("option");
+    blankOpt.value = "";
+    blankOpt.textContent = "Rate…";
+    ratingSelect.appendChild(blankOpt);
+    for (let i = 1; i <= 10; i++) {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = String(i);
+      ratingSelect.appendChild(opt);
+    }
+
+    const verifyBtn = document.createElement("button");
+    verifyBtn.className = "admin-task-verify-btn";
+    verifyBtn.textContent = "Verify";
+    verifyBtn.addEventListener("click", async () => {
+      const rating = Number(ratingSelect.value);
+      if (!rating) {
+        alert("Pick a rating (1-10) before verifying — it always contributes prestige points.");
+        return;
+      }
+      verifyBtn.disabled = true;
+      verifyBtn.textContent = "…";
+      try {
+        await adminVerifyTask(docId, task, rating);
+        onVerified();
+      } catch (err) {
+        verifyBtn.disabled = false;
+        verifyBtn.textContent = "Verify";
+        alert("Could not verify this task. Please try again.");
+      }
+    });
+
+    right.appendChild(ratingSelect);
+    right.appendChild(verifyBtn);
+    row.appendChild(left);
+    row.appendChild(right);
+    return row;
+  }
+
+  function showEmptyStateIfNothingLeft() {
+    if (!container.querySelector(".admin-task-box")) {
+      container.innerHTML = '<p class="info-text" style="color:var(--muted)">No active tasks right now.</p>';
+    }
+  }
+
+  // Group boxes first — surfaces sets of people needing attention
+  // together, ahead of one-off solo tasks.
+  groups.forEach((members, groupTaskId) => {
+    const first = members[0];
+    const box = document.createElement("div");
+    box.className = "admin-task-box admin-task-group-box";
+
+    const header = document.createElement("div");
+    header.className = "admin-task-group-header";
+    const name = document.createElement("div");
+    name.className = "admin-task-name";
+    name.textContent = first.taskName || "Untitled task";
+    header.appendChild(name);
+    const progress = document.createElement("div");
+    progress.className = "admin-task-group-progress";
+    progress.textContent = `${members.length} of ${first.groupSize || members.length} still active`;
+    header.appendChild(progress);
+    box.appendChild(header);
+
+    if (first.description) {
+      const desc = document.createElement("div");
+      desc.className = "admin-project-desc";
+      desc.textContent = first.description;
+      box.appendChild(desc);
+    }
+
+    const rowsWrap = document.createElement("div");
+    rowsWrap.className = "admin-task-group-members";
+    members.forEach((task) => {
+      const row = buildMemberRow(task, () => {
+        row.remove();
+        const remaining = rowsWrap.querySelectorAll(".admin-task-member-row").length;
+        if (remaining === 0) {
+          box.remove();
+          showEmptyStateIfNothingLeft();
+        } else {
+          progress.textContent = `${remaining} of ${first.groupSize || members.length} still active`;
+        }
+      });
+      rowsWrap.appendChild(row);
+    });
+    box.appendChild(rowsWrap);
+
+    container.appendChild(box);
+  });
+
+  // Solo tasks — unchanged single-assignee layout.
+  solo.forEach((task) => {
     const docId = task.id;
     const isPending = task.status === "pending";
 
@@ -3565,9 +3832,7 @@ function renderActiveTasksList(filterUid) {
       try {
         await adminVerifyTask(docId, task, rating);
         box.remove();
-        if (!container.querySelector(".admin-task-box")) {
-          container.innerHTML = '<p class="info-text" style="color:var(--muted)">No active tasks right now.</p>';
-        }
+        showEmptyStateIfNothingLeft();
       } catch (err) {
         verifyBtn.disabled = false;
         verifyBtn.textContent = "Verify";
@@ -4279,12 +4544,126 @@ async function renderAdminActiveProjects() {
 
     box.appendChild(toggles);
 
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "ghost-btn";
+    editBtn.style.cssText = "margin:10px 0 0; padding:6px 14px; font-size:12px;";
+    editBtn.textContent = "Edit Project";
+    editBtn.addEventListener("click", () => openProjectEditModal(p));
+    box.appendChild(editBtn);
+
     const ratingSection = document.createElement("div");
     ratingSection.className = "admin-project-rating-section";
     box.appendChild(ratingSection);
     renderAdminProjectRatingControls(ratingSection, p);
 
     container.appendChild(box);
+  });
+}
+
+// ── Admin: Edit Group Project ───────────────────────────────────────
+// Opened by the "Edit Project" button above. Reuses the exact same
+// group-block builder as "Add Group Project" (createGroupBlock() etc.),
+// just pointed at this modal's own #projectedit-groups-container and
+// pre-filled with the project's current title/description/status/order
+// and each group's name/leader/due date/members.
+async function openProjectEditModal(p) {
+  const overlay = document.getElementById("modal-project-edit");
+  const errorEl = document.getElementById("projectedit-error");
+  const successEl = document.getElementById("projectedit-success");
+  if (!overlay) return;
+  errorEl.hidden = true;
+  successEl.hidden = true;
+
+  document.getElementById("projectedit-title").value = p.title || "";
+  document.getElementById("projectedit-description").value = p.description || "";
+  document.getElementById("projectedit-status").value = p.status || "starting";
+  document.getElementById("projectedit-order").value = (p.order === undefined || p.order === null) ? "" : p.order;
+
+  const container = document.getElementById("projectedit-groups-container");
+  container.innerHTML = "";
+  await getBatchmatesPublicList(); // warm the cache before building blocks
+
+  const groups = Array.isArray(p.groups) && p.groups.length > 0 ? p.groups : [{}];
+  for (const g of groups) {
+    const block = await createGroupBlock("projectedit-groups-container");
+    block.querySelector(".group-name-input").value = g.groupName || "";
+    block.querySelector(".group-duedate-input").value = g.dueDate || "";
+    const leaderSelect = block.querySelector(".group-leader-select");
+    if (g.leaderUid) leaderSelect.value = g.leaderUid;
+    const memberUids = new Set(Array.isArray(g.memberUids) ? g.memberUids : []);
+    block.querySelectorAll(".member-checkbox").forEach((cb) => {
+      cb.checked = memberUids.has(cb.value);
+    });
+  }
+  refreshMemberExclusions("projectedit-groups-container");
+  updateRemoveButtonsVisibility("projectedit-groups-container");
+
+  overlay.dataset.projectId = p.id;
+  overlay.hidden = false;
+}
+
+function initProjectEditForm() {
+  const overlay = document.getElementById("modal-project-edit");
+  const addGroupBtn = document.getElementById("projectedit-add-group-btn");
+  const form = document.getElementById("form-projectedit");
+  const errorEl = document.getElementById("projectedit-error");
+  const successEl = document.getElementById("projectedit-success");
+  if (!overlay || !addGroupBtn || !form) return;
+
+  const groupsContainer = document.getElementById("projectedit-groups-container");
+  groupsContainer.addEventListener("change", (e) => {
+    if (e.target.classList.contains("member-checkbox")) refreshMemberExclusions("projectedit-groups-container");
+  });
+
+  addGroupBtn.addEventListener("click", () => createGroupBlock("projectedit-groups-container"));
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorEl.hidden = true;
+    successEl.hidden = true;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const originalLabel = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Saving…";
+
+    try {
+      const groups = [];
+      groupsContainer.querySelectorAll(".group-block").forEach((block) => {
+        const checked = Array.from(block.querySelectorAll(".member-checkbox:checked"));
+        const leaderSelect = block.querySelector(".group-leader-select");
+        const leaderOpt = leaderSelect.options[leaderSelect.selectedIndex];
+        groups.push({
+          groupName: block.querySelector(".group-name-input").value.trim(),
+          leader: leaderSelect.value ? leaderOpt.textContent : "",
+          leaderUid: leaderSelect.value || "",
+          dueDate: block.querySelector(".group-duedate-input").value,
+          members: checked.map((cb) => cb.dataset.displayName),
+          memberUids: checked.map((cb) => cb.value)
+        });
+      });
+
+      const updates = {
+        title: document.getElementById("projectedit-title").value.trim(),
+        description: document.getElementById("projectedit-description").value.trim(),
+        status: document.getElementById("projectedit-status").value || "starting",
+        groups
+      };
+      const orderVal = document.getElementById("projectedit-order").value;
+      updates.order = orderVal === "" ? deleteField() : Number(orderVal);
+
+      await updateDoc(doc(db, "groupProjects", overlay.dataset.projectId), updates);
+      successEl.textContent = "Saved.";
+      successEl.hidden = false;
+      await renderAdminActiveProjects();
+      setTimeout(() => { overlay.hidden = true; }, 700);
+    } catch (err) {
+      errorEl.textContent = "Could not save these changes — please try again.";
+      errorEl.hidden = false;
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalLabel;
+    }
   });
 }
 
