@@ -23,6 +23,7 @@
 
   --blue: #4C8DFF;
   --blue-dim: #2A5AD6;
+  --accent: var(--blue);
 }
 
 [data-mode="light"] {
@@ -465,6 +466,7 @@ button {
 
 .content-area {
   flex: 1;
+  min-width: 0;
   margin-left: 230px;
   min-height: 100vh;
 }
@@ -1150,6 +1152,8 @@ html.page-exit .content-area, html.page-exit .page-center {
 }
 .admin-rating-row > span:first-child { flex: 1; min-width: 140px; font-weight: 600; }
 .admin-rating-awarded { color: var(--accent); font-size: 12px; }
+.admin-rating-picker { display: flex; flex-wrap: wrap; gap: 6px; max-width: 165px; }
+.admin-rating-picker .rate-star-btn { width: 26px; height: 26px; font-size: 11px; }
 .rate-modal-list { display: flex; flex-direction: column; gap: 10px; max-height: 60vh; overflow-y: auto; }
 .rate-modal-row {
   display: flex;
@@ -1241,14 +1245,6 @@ html.page-exit .content-area, html.page-exit .page-center {
   flex-shrink: 0;
 }
 .admin-task-verify-btn:hover { filter: brightness(1.1); }
-.task-rating-select {
-  background: var(--surface);
-  color: var(--text);
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  padding: 7px 8px;
-  font-size: 12.5px;
-}
 
 /* Group tasks — the same task assigned to several students at once.
    Each still gets rated/verified individually (member row), but they're
@@ -1274,6 +1270,7 @@ html.page-exit .content-area, html.page-exit .page-center {
 .admin-task-member-left .admin-task-assignee { margin-top: 0; font-size: 12.5px; color: var(--text); font-weight: 600; }
 .admin-task-member-left .admin-task-badge { margin-top: 0; }
 .admin-task-member-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.admin-task-edit-btn { padding: 5px 12px; font-size: 11.5px; flex-shrink: 0; }
 
 /* ── Admin: Active Group Projects ────────────────────────────────── */
 .admin-project-box {
@@ -1550,6 +1547,32 @@ html.page-exit .content-area, html.page-exit .page-center {
 .group-box-leader { color: var(--muted); font-size: 12px; margin-top: 4px; }
 .group-box-count { color: var(--blue); font-size: 11.5px; font-weight: 600; margin-top: 6px; }
 
+.rating-roster-toggle {
+  background: none;
+  border: none;
+  color: var(--blue);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0;
+  margin-left: 4px;
+  cursor: pointer;
+}
+.rating-roster-mini {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.rating-roster-chip {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.rating-roster-chip.rated { background: color-mix(in srgb, var(--success) 18%, transparent); color: var(--success); }
+.rating-roster-chip.pending { background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
+
 /* ── Settings: Appearance (theme mode + palette) ──────────────────── */
 .theme-subsection-label { font-size: 12.5px; color: var(--muted); margin: 0 0 10px; }
 
@@ -1755,9 +1778,25 @@ html.page-exit .content-area, html.page-exit .page-center {
 .admin-scroll-list::-webkit-scrollbar-track { background: transparent; }
 .admin-scroll-list::-webkit-scrollbar-thumb { background: var(--panel-border); border-radius: 4px; }
 
-/* Row of sort/filter controls above a history list. */
+/* Row of sort/filter controls above a history list. Native <select>
+   elements won't shrink below their widest <option>'s text on their
+   own (min-width:auto by default on a flex item), so a long option —
+   e.g. a full student name in the "All students" filter — could push
+   this row, and the whole page, wider than the viewport. flex-basis
+   + min-width:0 lets the box shrink to fit; the ellipsis keeps the
+   truncated option readable instead of just clipping mid-character. */
 .admin-list-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.admin-list-controls select { margin-bottom: 0; padding: 6px 10px; font-size: 12px; }
+.admin-list-controls select {
+  margin-bottom: 0;
+  padding: 6px 10px;
+  font-size: 12px;
+  flex: 1 1 120px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Clickable box — name only, opens a detail popup (Completed Projects,
    Completed Tasks in the History tab). */
@@ -1782,6 +1821,11 @@ html.page-exit .content-area, html.page-exit .page-center {
 .admin-detail-group:first-of-type { margin-top: 16px; }
 .admin-detail-group-title { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
 .admin-detail-group-meta { font-size: 12px; color: var(--muted); }
+.admin-member-ratings { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--panel-border); }
+.admin-member-rating-row { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 3px 0; }
+.admin-member-rating-name { font-weight: 600; }
+.admin-member-rating-score { color: var(--blue); font-weight: 600; white-space: nowrap; }
+.admin-member-rating-note { font-size: 11.5px; color: var(--muted); font-style: italic; padding: 0 0 4px 4px; }
 
 /* ── Admin: Active Events ─────────────────────────────────────── */
 .admin-event-box {

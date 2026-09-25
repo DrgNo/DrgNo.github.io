@@ -524,6 +524,41 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="modal-task-edit" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-task-edit" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Edit Task</p>
+        <p class="fine-print" id="taskedit-scope-note" style="text-align:left; margin:0 0 16px;"></p>
+        <form id="form-task-edit">
+          <input type="hidden" id="taskedit-id">
+          <input type="hidden" id="taskedit-groupid">
+
+          <label for="taskedit-name">Task Name</label>
+          <input type="text" id="taskedit-name" required>
+
+          <label for="taskedit-description">Description</label>
+          <textarea id="taskedit-description" rows="3"></textarea>
+
+          <label for="taskedit-difficulty">Difficulty</label>
+          <select id="taskedit-difficulty">
+            <option value="easy">Easy</option>
+            <option value="medium">Medium</option>
+            <option value="hard">Hard</option>
+            <option value="nightmare">Nightmare</option>
+          </select>
+
+          <label for="taskedit-duedate">Due Date (optional)</label>
+          <input type="date" id="taskedit-duedate">
+
+          <button type="submit" class="btn-primary">Save Changes</button>
+        </form>
+        <p class="error-msg" id="taskedit-error" hidden></p>
+        <p class="success-msg" id="taskedit-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="modal-badges" hidden>
     <div class="modal-box">
       <button class="modal-close" data-close-modal="modal-badges" aria-label="Close">✕</button>

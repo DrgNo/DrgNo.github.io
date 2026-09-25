@@ -2282,8 +2282,32 @@ async function renderGroupRatingArea(container, project, groupIndex, group) {
   progress.className = "fine-print";
   progress.style.textAlign = "left";
   progress.style.margin = "10px 0 0";
-  progress.textContent = `${submittedUids.size} of ${roster.length} have rated.`;
+  progress.textContent = `${submittedUids.size} of ${roster.length} have rated. `;
+
+  const whoToggle = document.createElement("button");
+  whoToggle.type = "button";
+  whoToggle.className = "rating-roster-toggle";
+  whoToggle.textContent = "Who?";
+  progress.appendChild(whoToggle);
   container.appendChild(progress);
+
+  // Small, collapsed-by-default chip list — who's rated vs. still pending —
+  // so it doesn't take up space until someone actually taps to check.
+  const rosterMini = document.createElement("div");
+  rosterMini.className = "rating-roster-mini";
+  rosterMini.hidden = true;
+  roster.forEach((person) => {
+    const rated = submittedUids.has(person.uid);
+    const chip = document.createElement("span");
+    chip.className = "rating-roster-chip " + (rated ? "rated" : "pending");
+    chip.textContent = (rated ? "✓ " : "… ") + person.name;
+    rosterMini.appendChild(chip);
+  });
+  container.appendChild(rosterMini);
+  whoToggle.addEventListener("click", () => {
+    rosterMini.hidden = !rosterMini.hidden;
+    whoToggle.textContent = rosterMini.hidden ? "Who?" : "Hide";
+  });
 
   const isLeader = group.leaderUid === uid;
   const everyoneRated = submittedUids.size >= roster.length && roster.every((p) => submittedUids.has(p.uid));
@@ -2979,6 +3003,7 @@ async function initAdminPage(isAdmin) {
   await renderAdminActiveTasks();
   document.getElementById("refresh-active-tasks").addEventListener("click", () => renderAdminActiveTasks());
   document.getElementById("active-tasks-filter").addEventListener("change", (e) => renderActiveTasksList(e.target.value));
+  wireTaskEditModal();
 
   // Completed Tasks panel
   await renderAdminCompletedTasks();
@@ -3766,24 +3791,13 @@ function renderActiveTasksList(filterUid) {
     const right = document.createElement("div");
     right.className = "admin-task-member-right";
 
-    const ratingSelect = document.createElement("select");
-    ratingSelect.className = "task-rating-select";
-    const blankOpt = document.createElement("option");
-    blankOpt.value = "";
-    blankOpt.textContent = "Rate…";
-    ratingSelect.appendChild(blankOpt);
-    for (let i = 1; i <= 10; i++) {
-      const opt = document.createElement("option");
-      opt.value = String(i);
-      opt.textContent = String(i);
-      ratingSelect.appendChild(opt);
-    }
+    const ratingPicker = buildRatingBoxPicker();
 
     const verifyBtn = document.createElement("button");
     verifyBtn.className = "admin-task-verify-btn";
     verifyBtn.textContent = "Verify";
     verifyBtn.addEventListener("click", async () => {
-      const rating = Number(ratingSelect.value);
+      const rating = Number(ratingPicker.dataset.value);
       if (!rating) {
         alert("Pick a rating (1-10) before verifying — it always contributes prestige points.");
         return;
@@ -3800,7 +3814,7 @@ function renderActiveTasksList(filterUid) {
       }
     });
 
-    right.appendChild(ratingSelect);
+    right.appendChild(ratingPicker);
     right.appendChild(verifyBtn);
     row.appendChild(left);
     row.appendChild(right);
@@ -3830,6 +3844,12 @@ function renderActiveTasksList(filterUid) {
     progress.className = "admin-task-group-progress";
     progress.textContent = `${members.length} of ${first.groupSize || members.length} still active`;
     header.appendChild(progress);
+    const groupEditBtn = document.createElement("button");
+    groupEditBtn.type = "button";
+    groupEditBtn.className = "ghost-btn admin-task-edit-btn";
+    groupEditBtn.textContent = "Edit";
+    groupEditBtn.addEventListener("click", () => openTaskEditModal(first, true));
+    header.appendChild(groupEditBtn);
     box.appendChild(header);
 
     if (first.description) {
@@ -3888,25 +3908,15 @@ function renderActiveTasksList(filterUid) {
     right.style.display = "flex";
     right.style.alignItems = "center";
     right.style.gap = "8px";
+    right.style.flexWrap = "wrap";
 
-    const ratingSelect = document.createElement("select");
-    ratingSelect.className = "task-rating-select";
-    const blankOpt = document.createElement("option");
-    blankOpt.value = "";
-    blankOpt.textContent = "Rate…";
-    ratingSelect.appendChild(blankOpt);
-    for (let i = 1; i <= 10; i++) {
-      const opt = document.createElement("option");
-      opt.value = String(i);
-      opt.textContent = String(i);
-      ratingSelect.appendChild(opt);
-    }
+    const ratingPicker = buildRatingBoxPicker();
 
     const verifyBtn = document.createElement("button");
     verifyBtn.className = "admin-task-verify-btn";
     verifyBtn.textContent = "Verify";
     verifyBtn.addEventListener("click", async () => {
-      const rating = Number(ratingSelect.value);
+      const rating = Number(ratingPicker.dataset.value);
       if (!rating) {
         alert("Pick a rating (1-10) before verifying — it always contributes prestige points.");
         return;
@@ -3924,11 +3934,99 @@ function renderActiveTasksList(filterUid) {
       }
     });
 
-    right.appendChild(ratingSelect);
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "ghost-btn admin-task-edit-btn";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", () => openTaskEditModal(task, false));
+
+    right.appendChild(editBtn);
+    right.appendChild(ratingPicker);
     right.appendChild(verifyBtn);
     box.appendChild(left);
     box.appendChild(right);
     container.appendChild(box);
+  });
+}
+
+// ── Admin: Edit Active Task ─────────────────────────────────────
+// A solo task edits just its own doc (taskedit-id). A group task (one
+// created for several assignees at once, sharing a groupTaskId) edits
+// the shared fields — name/description/difficulty/dueDate — across
+// every still-active doc in that group in one go, since those fields
+// are duplicated per-assignee rather than stored once.
+function openTaskEditModal(task, isGroupEdit) {
+  const overlay = document.getElementById("modal-task-edit");
+  const errorEl = document.getElementById("taskedit-error");
+  const successEl = document.getElementById("taskedit-success");
+  const noteEl = document.getElementById("taskedit-scope-note");
+  if (!overlay) return;
+  errorEl.hidden = true;
+  successEl.hidden = true;
+
+  document.getElementById("taskedit-id").value = isGroupEdit ? "" : task.id;
+  document.getElementById("taskedit-groupid").value = isGroupEdit ? task.groupTaskId : "";
+  document.getElementById("taskedit-name").value = task.taskName || "";
+  document.getElementById("taskedit-description").value = task.description || "";
+  document.getElementById("taskedit-difficulty").value = task.difficulty || "medium";
+  document.getElementById("taskedit-duedate").value = task.dueDate || "";
+  noteEl.textContent = isGroupEdit
+    ? "This task was assigned to several people at once — saving will update it for everyone still active on it."
+    : `Assigned to: ${task.assignedToName || "Unknown batchmate"}`;
+
+  overlay.hidden = false;
+}
+
+function wireTaskEditModal() {
+  const form = document.getElementById("form-task-edit");
+  if (!form) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById("taskedit-error");
+    const successEl = document.getElementById("taskedit-success");
+    errorEl.hidden = true;
+    successEl.hidden = true;
+
+    const soloId = document.getElementById("taskedit-id").value;
+    const groupTaskId = document.getElementById("taskedit-groupid").value;
+    const submitBtn = form.querySelector('button[type="submit"]');
+    const originalLabel = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Saving…";
+
+    const updates = {
+      taskName: document.getElementById("taskedit-name").value.trim(),
+      description: document.getElementById("taskedit-description").value.trim(),
+      difficulty: document.getElementById("taskedit-difficulty").value,
+      dueDate: document.getElementById("taskedit-duedate").value
+    };
+
+    try {
+      if (soloId) {
+        await updateDoc(doc(db, "tasks", soloId), updates);
+      } else if (groupTaskId) {
+        const q = query(
+          collection(db, "tasks"),
+          where("groupTaskId", "==", groupTaskId),
+          where("status", "in", ["ongoing", "pending"])
+        );
+        const snap = await getDocs(q);
+        const writes = [];
+        snap.forEach((docSnap) => writes.push(updateDoc(doc(db, "tasks", docSnap.id), updates)));
+        await Promise.all(writes);
+      }
+      successEl.textContent = "Task updated.";
+      successEl.hidden = false;
+      await renderAdminActiveTasks();
+      setTimeout(() => { document.getElementById("modal-task-edit").hidden = true; }, 700);
+    } catch (err) {
+      errorEl.textContent = "Could not save changes. Please try again.";
+      errorEl.hidden = false;
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalLabel;
+    }
   });
 }
 
@@ -4771,13 +4869,13 @@ function renderAdminProjectRatingControls(container, p) {
     awarded.textContent = `Awarded: ${p.overallRating.value}/10 to everyone`;
     overallRow.appendChild(awarded);
   } else {
-    const select = buildRatingSelect();
+    const picker = buildRatingBoxPicker();
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "admin-task-verify-btn";
     btn.textContent = "Award to All";
     btn.addEventListener("click", async () => {
-      const value = Number(select.value);
+      const value = Number(picker.dataset.value);
       if (!value) { alert("Pick a rating (1-10) first."); return; }
       btn.disabled = true;
       try {
@@ -4788,7 +4886,7 @@ function renderAdminProjectRatingControls(container, p) {
         alert("Could not award this rating. Please try again.");
       }
     });
-    overallRow.appendChild(select);
+    overallRow.appendChild(picker);
     overallRow.appendChild(btn);
   }
   container.appendChild(overallRow);
@@ -4807,13 +4905,13 @@ function renderAdminProjectRatingControls(container, p) {
       awarded.textContent = `Awarded: ${g.rating.value}/10`;
       row.appendChild(awarded);
     } else {
-      const select = buildRatingSelect();
+      const picker = buildRatingBoxPicker();
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "admin-task-verify-btn";
       btn.textContent = "Award to Group";
       btn.addEventListener("click", async () => {
-        const value = Number(select.value);
+        const value = Number(picker.dataset.value);
         if (!value) { alert("Pick a rating (1-10) first."); return; }
         btn.disabled = true;
         try {
@@ -4824,7 +4922,7 @@ function renderAdminProjectRatingControls(container, p) {
           alert("Could not award this rating. Please try again.");
         }
       });
-      row.appendChild(select);
+      row.appendChild(picker);
       row.appendChild(btn);
     }
 
@@ -4839,21 +4937,31 @@ function renderAdminProjectRatingControls(container, p) {
   });
 }
 
-function buildRatingSelect() {
-  const select = document.createElement("select");
-  select.className = "task-rating-select";
-  const blank = document.createElement("option");
-  blank.value = "";
-  blank.textContent = "Rate…";
-  select.appendChild(blank);
+// Box-type 1-10 picker for the admin's Overall/Group rating rows — same
+// visual design as the home page's group-project peer rating picker
+// (.rate-star-picker / .rate-star-btn), used here instead of a native
+// <select> so the admin taps a number box rather than opening the
+// browser's default dropdown. The chosen value is read from
+// picker.dataset.value (set on click), same contract buildRatingSelect's
+// callers used to read from select.value.
+function buildRatingBoxPicker() {
+  const picker = document.createElement("div");
+  picker.className = "rate-star-picker admin-rating-picker";
+  picker.dataset.value = "";
   for (let i = 1; i <= 10; i++) {
-    const opt = document.createElement("option");
-    opt.value = String(i);
-    opt.textContent = String(i);
-    select.appendChild(opt);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "rate-star-btn";
+    btn.textContent = String(i);
+    btn.addEventListener("click", () => {
+      picker.dataset.value = String(i);
+      picker.querySelectorAll(".rate-star-btn").forEach((b) => b.classList.toggle("selected", b === btn));
+    });
+    picker.appendChild(btn);
   }
-  return select;
+  return picker;
 }
+
 
 async function awardOverallProjectRating(p, value) {
   const groups = Array.isArray(p.groups) ? p.groups : [];
@@ -4956,11 +5064,17 @@ function renderCompletedProjectsList(sortMode) {
 
 // Detail popup for a completed project — reuses #modal-project-detail.
 // Shows the top-level project info plus a per-group breakdown (leader,
-// members, and that group's individual rating if the admin ever set one).
-function openProjectDetailModal(p) {
+// members, that group's individual rating if the admin ever set one,
+// and — since this is history, only ever seen for finished projects —
+// each member's peer/leader rating average plus any notes left about
+// them, pulled from groupProjectRatings the same way finalizeGroupRatings()
+// scores a group, just displayed instead of paid out.
+async function openProjectDetailModal(p) {
   const body = document.getElementById("project-detail-body");
   const overlay = document.getElementById("modal-project-detail");
   if (!body || !overlay) return;
+  overlay.hidden = false;
+  body.innerHTML = "Loading…";
 
   const groups = Array.isArray(p.groups) ? p.groups : [];
   const overall = p.overallRating && typeof p.overallRating.value === "number" ? p.overallRating.value + "/10" : "—";
@@ -4988,7 +5102,8 @@ function openProjectDetailModal(p) {
     none.textContent = "No groups were recorded for this project.";
     body.appendChild(none);
   } else {
-    groups.forEach((g, i) => {
+    for (let i = 0; i < groups.length; i++) {
+      const g = groups[i];
       const wrap = document.createElement("div");
       wrap.className = "admin-detail-group";
       const title = document.createElement("div");
@@ -5001,11 +5116,59 @@ function openProjectDetailModal(p) {
       meta.textContent = `Leader: ${g.leader || "—"} · Members: ${members || "—"}${groupRating}`;
       wrap.appendChild(title);
       wrap.appendChild(meta);
-      body.appendChild(wrap);
-    });
-  }
 
-  overlay.hidden = false;
+      const roster = getGroupRoster(g);
+      if (roster.length > 0) {
+        const submissions = await getGroupRatingSubmissions(p.id, i);
+        const ratingsWrap = document.createElement("div");
+        ratingsWrap.className = "admin-member-ratings";
+
+        roster.forEach((person) => {
+          let weightedSum = 0;
+          let weightTotal = 0;
+          const notes = [];
+
+          submissions.forEach((sub) => {
+            if (sub.raterUid === person.uid) return; // no self-ratings
+            const value = sub.ratings ? sub.ratings[person.uid] : undefined;
+            if (typeof value === "number") {
+              const weight = (!person.isLeader && sub.raterUid === g.leaderUid) ? LEADER_RATING_WEIGHT : 1;
+              weightedSum += value * weight;
+              weightTotal += weight;
+            }
+            const noteText = sub.notes ? sub.notes[person.uid] : undefined;
+            if (noteText) {
+              const rater = roster.find((r) => r.uid === sub.raterUid);
+              notes.push({ from: rater ? rater.name : "Unknown", text: noteText });
+            }
+          });
+
+          const row = document.createElement("div");
+          row.className = "admin-member-rating-row";
+          const nameEl = document.createElement("span");
+          nameEl.className = "admin-member-rating-name";
+          nameEl.textContent = person.name + (person.isLeader ? " (Leader)" : "");
+          const scoreEl = document.createElement("span");
+          scoreEl.className = "admin-member-rating-score";
+          scoreEl.textContent = weightTotal > 0 ? `Avg: ${(weightedSum / weightTotal).toFixed(1)}/10` : "Not rated";
+          row.appendChild(nameEl);
+          row.appendChild(scoreEl);
+          ratingsWrap.appendChild(row);
+
+          notes.forEach((n) => {
+            const noteEl = document.createElement("div");
+            noteEl.className = "admin-member-rating-note";
+            noteEl.textContent = `${n.from}: "${n.text}"`;
+            ratingsWrap.appendChild(noteEl);
+          });
+        });
+
+        wrap.appendChild(ratingsWrap);
+      }
+
+      body.appendChild(wrap);
+    }
+  }
 }
 
 // ── Admin: Detail Change Requests ───────────────────────────────
