@@ -22,14 +22,22 @@
         <span class="brand-mark">◆</span>
         <span class="brand-name">Portal<span class="accent"> Management</span></span>
       </div>
-      <nav class="side-nav">
+            <nav class="side-nav">
         <a href="home.html" class="side-link">Home</a>
         <a href="dashboard.html" class="side-link">Dashboard</a>
+        <a href="timetable.html" class="side-link">Timetable</a>
+        <a href="requests.html" class="side-link">Requests</a>
         <a href="fund.html" class="side-link">Fund</a>
-        <a href="wall.html" class="side-link">Wall of Fame</a>
-        <a href="badges.html" class="side-link">Badges</a>
-        <a href="settings.html" class="side-link">Settings</a>
-        <a href="admin.html" class="side-link active" id="admin-nav-link" hidden>Admin</a>
+        <button type="button" class="side-link side-submenu-toggle open" id="side-more-toggle">
+          <span>More</span>
+          <span class="side-submenu-chevron">▾</span>
+        </button>
+        <div class="side-submenu open" id="side-submenu">
+          <a href="wall.html" class="side-link">Wall of Fame</a>
+          <a href="badges.html" class="side-link">Badges</a>
+          <a href="settings.html" class="side-link">Settings</a>
+          <a href="admin.html" class="side-link active" id="admin-nav-link" hidden>Admin</a>
+        </div>
       </nav>
       <div class="sidebar-footer">
         <span id="user-email" class="user-email" hidden></span>
@@ -48,12 +56,12 @@
           <div class="admin-tab-panel" data-tab-panel="add">
             <p class="section-label" style="margin-bottom:16px;">Add Records</p>
             <div class="admin-btn-grid">
-              <button type="button" class="admin-section-btn" data-modal="modal-fund">Add Fund Transaction</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-event">Add Event</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-eventlabel">Add Event Label</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-task">Assign Task</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-project">Add Group Project</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-announcement">Add Announcement</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-fund" data-perm="fund">Add Fund Transaction</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-event" data-perm="events">Add Event</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-task" data-perm="tasks">Assign Task</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-timetable" data-perm="timetable">Add Timetable Slot</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-project" data-perm="projects">Add Group Project</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-announcement" data-perm="announcements">Add Announcement</button>
             </div>
           </div>
 
@@ -93,24 +101,6 @@
               </div>
               <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tap a project for full details.</p>
               <div id="admin-completed-projects" class="admin-scroll-list"></div>
-            </div>
-
-            <div class="card full-span">
-              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
-                <p class="section-label" style="margin:0;">Prestige Leaderboard</p>
-                <button type="button" id="refresh-leaderboard" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
-              </div>
-              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Every batchmate, ranked by total prestige points.</p>
-              <div id="admin-leaderboard" class="admin-scroll-list"></div>
-            </div>
-
-            <div class="card full-span">
-              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
-                <p class="section-label" style="margin:0;">Fund Contribution Leaderboard</p>
-                <button type="button" id="refresh-fund-leaderboard" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
-              </div>
-              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Every batchmate, ranked by total Rs. donated to the batch fund.</p>
-              <div id="admin-fund-leaderboard" class="admin-scroll-list"></div>
             </div>
 
             <div class="card full-span">
@@ -174,6 +164,15 @@
 
             <div class="card full-span">
               <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <p class="section-label" style="margin:0;">Active Timetable</p>
+                <button type="button" id="refresh-timetable" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+              </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Edit changes the recurring weekly slot permanently. Override changes just one date's occurrence (time, lecturer, venue, or cancels it) without touching future weeks.</p>
+              <div id="admin-timetable-list" class="admin-scroll-list"></div>
+            </div>
+
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
                 <p class="section-label" style="margin:0;">Detail Change Requests</p>
                 <button type="button" id="refresh-change-requests" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
               </div>
@@ -187,15 +186,40 @@
           <div class="admin-tab-panel" data-tab-panel="danger" hidden>
             <p class="section-label" style="margin-bottom:16px;">Danger Zone - sensitive & batch-wide actions</p>
             <div class="admin-btn-grid">
-              <button type="button" class="admin-section-btn" data-modal="modal-wall">Add Wall of Fame Entry</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-leader">Add Batch Leadership</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-badges">Manage Student Badges</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-badbehavior">Manage Bad Behavior Records</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-bulkfield">Add/Remove Field (All Batchmates)</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-fieldmanager">Manage Profile Fields</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-admindirectory">Batchmate Directory</button>
-              <button type="button" class="admin-section-btn" data-modal="modal-settingsfields">Settings Change-Request Fields</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-wall" data-perm="wallOfFame">Add Wall of Fame Entry</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-badges" data-perm="badges">Manage Student Badges</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-badbehavior" data-perm="badBehavior">Manage Bad Behavior Records</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-bulkfield" data-perm="bulkField">Add/Remove Field (All Batchmates)</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-fieldmanager" data-perm="fieldManager">Manage Profile Fields</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-settingsfields" data-perm="settingsFields">Settings Change-Request Fields</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-dbstorage" data-perm="dbStorage">Database Storage</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-manageadmins" id="manage-admins-btn" hidden>Manage Admin Access</button>
             </div>
+          </div>
+
+          <!-- ══ DATA ══════════════════════════════════════════════ -->
+          <div class="admin-tab-panel" data-tab-panel="data" hidden>
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; gap:10px; flex-wrap:wrap;">
+              <p class="section-label" style="margin:0;">Data Table</p>
+              <div class="admin-list-controls">
+                <select id="datatable-filter-field">
+                  <option value="">Filter: All records</option>
+                </select>
+                <button type="button" id="datatable-filter-values-btn" class="ghost-btn" style="padding:6px 12px; font-size:12px;" hidden>Any value</button>
+                <button type="button" id="datatable-columns-btn" class="ghost-btn admin-section-btn" data-modal="modal-datatable-columns" data-perm="dataTable" style="padding:6px 12px; font-size:12px;">Columns</button>
+                <button type="button" id="datatable-excel-btn" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Download Excel</button>
+                <button type="button" id="datatable-pdf-btn" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Download PDF</button>
+                <button type="button" id="datatable-refresh-btn" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+              </div>
+            </div>
+            <p class="fine-print" style="text-align:left; margin:0 0 14px;">Every batchmate's full record, laid out as a table. Tap "Columns" to add or remove fields, tap a column header to sort by it, pick a field above to filter, then tap the values button to tick one or more values to match (e.g. Blood Type → A+ or B-), scroll sideways for more.</p>
+            <div id="datatable-wrap" class="datatable-wrap" hidden>
+              <table class="data-table" id="datatable">
+                <thead><tr id="datatable-head"></tr></thead>
+                <tbody id="datatable-body"></tbody>
+              </table>
+            </div>
+            <p class="fine-print" id="datatable-empty" style="text-align:center; margin-top:18px;" hidden>No columns selected yet — tap "Columns" to add some.</p>
           </div>
 
         </div>
@@ -216,6 +240,7 @@
       <button type="button" class="admin-tab-pill" data-tab="active">Active</button>
       <button type="button" class="admin-tab-pill" data-tab="history">History</button>
       <button type="button" class="admin-tab-pill" data-tab="danger">Danger</button>
+      <button type="button" class="admin-tab-pill" data-tab="data" data-perm="dataTable">Data</button>
     </nav>
   </div>
 
@@ -268,6 +293,156 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="modal-timetable" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-timetable" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Add Timetable Slot</p>
+        <p class="fine-print" style="text-align:left; margin:0 0 16px;">This repeats every week on the day you pick. To change just one occurrence later (a one-off time/venue/lecturer swap or cancellation), use "Override a Date" from the Active tab instead of editing this.</p>
+        <form id="form-timetable">
+          <label for="tt-module">Module Name</label>
+          <input type="text" id="tt-module" required>
+
+          <label for="tt-day">Day of Week</label>
+          <select id="tt-day" required>
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+            <option value="0">Sunday</option>
+          </select>
+
+          <label for="tt-start">Start Time</label>
+          <input type="time" id="tt-start" required>
+
+          <label for="tt-end">End Time</label>
+          <input type="time" id="tt-end" required>
+
+          <label for="tt-lecturer">Lecturer</label>
+          <input type="text" id="tt-lecturer" required>
+
+          <label for="tt-venue">Venue</label>
+          <input type="text" id="tt-venue" required>
+
+          <label for="tt-color">Card Color</label>
+          <input type="color" id="tt-color" value="#4C8DFF" style="height:42px; padding:4px; cursor:pointer;">
+
+          <label for="tt-startdate">Starts From</label>
+          <input type="date" id="tt-startdate" required>
+          <p class="fine-print" style="text-align:left; margin:-12px 0 14px;">First date this schedule takes effect — used to calculate attendance percentages fairly.</p>
+
+          <button type="submit" class="btn-primary">Add Slot</button>
+        </form>
+        <p class="error-msg" id="tt-error" hidden></p>
+        <p class="success-msg" id="tt-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-timetable-edit" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-timetable-edit" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Edit Timetable Slot</p>
+        <form id="form-timetable-edit">
+          <input type="hidden" id="ttedit-id">
+          <label for="ttedit-module">Module Name</label>
+          <input type="text" id="ttedit-module" required>
+
+          <label for="ttedit-day">Day of Week</label>
+          <select id="ttedit-day" required>
+            <option value="1">Monday</option>
+            <option value="2">Tuesday</option>
+            <option value="3">Wednesday</option>
+            <option value="4">Thursday</option>
+            <option value="5">Friday</option>
+            <option value="6">Saturday</option>
+            <option value="0">Sunday</option>
+          </select>
+
+          <label for="ttedit-start">Start Time</label>
+          <input type="time" id="ttedit-start" required>
+
+          <label for="ttedit-end">End Time</label>
+          <input type="time" id="ttedit-end" required>
+
+          <label for="ttedit-lecturer">Lecturer</label>
+          <input type="text" id="ttedit-lecturer" required>
+
+          <label for="ttedit-venue">Venue</label>
+          <input type="text" id="ttedit-venue" required>
+
+          <label for="ttedit-color">Card Color</label>
+          <input type="color" id="ttedit-color" style="height:42px; padding:4px; cursor:pointer;">
+
+          <label for="ttedit-startdate">Starts From</label>
+          <input type="date" id="ttedit-startdate" required>
+
+          <button type="submit" class="btn-primary">Save Changes</button>
+        </form>
+        <button type="button" id="ttedit-delete-btn" class="danger-btn">Delete This Slot</button>
+        <p class="error-msg" id="ttedit-error" hidden></p>
+        <p class="success-msg" id="ttedit-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Override a single occurrence of a slot — doesn't touch the
+       recurring slot itself, just adds/replaces a timetableOverrides
+       doc keyed to slotId + that one date. -->
+  <div class="modal-overlay" id="modal-timetable-override" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-timetable-override" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Override a Date</p>
+        <p class="fine-print" id="ttoverride-slot-label" style="text-align:left; margin:0 0 16px;"></p>
+        <form id="form-timetable-override">
+          <input type="hidden" id="ttoverride-slotid">
+
+          <label for="ttoverride-date">Which Date</label>
+          <input type="date" id="ttoverride-date" required>
+
+          <label style="display:flex; align-items:center; gap:8px; margin:6px 0 14px; cursor:pointer;">
+            <input type="checkbox" id="ttoverride-cancel" style="width:auto; margin:0;">
+            <span style="font-size:13px;">Cancel this occurrence entirely</span>
+          </label>
+
+          <div id="ttoverride-fields">
+            <label for="ttoverride-module">Module Name (leave blank to keep as scheduled)</label>
+            <input type="text" id="ttoverride-module" placeholder="Keep original">
+
+            <label for="ttoverride-start">Start Time</label>
+            <input type="time" id="ttoverride-start">
+
+            <label for="ttoverride-end">End Time</label>
+            <input type="time" id="ttoverride-end">
+
+            <label for="ttoverride-lecturer">Lecturer</label>
+            <input type="text" id="ttoverride-lecturer" placeholder="Keep original">
+
+            <label for="ttoverride-venue">Venue</label>
+            <input type="text" id="ttoverride-venue" placeholder="Keep original">
+
+            <label for="ttoverride-newdate">Move To a Different Date (optional)</label>
+            <input type="date" id="ttoverride-newdate">
+
+            <label for="ttoverride-note">Note to Students (optional)</label>
+            <input type="text" id="ttoverride-note" placeholder="e.g. Moved due to lecturer availability">
+          </div>
+
+          <button type="submit" class="btn-primary">Save Override</button>
+        </form>
+        <p class="error-msg" id="ttoverride-error" hidden></p>
+        <p class="success-msg" id="ttoverride-success" hidden></p>
+
+        <p class="section-label" style="margin-top:20px;">Existing Overrides For This Slot</p>
+        <div id="ttoverride-existing-list"></div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="modal-wall" hidden>
     <div class="modal-box">
       <button class="modal-close" data-close-modal="modal-wall" aria-label="Close">✕</button>
@@ -313,38 +488,6 @@
         </form>
         <p class="error-msg" id="ann-error" hidden></p>
         <p class="success-msg" id="ann-success" hidden></p>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal-overlay" id="modal-leader" hidden>
-    <div class="modal-box">
-      <button class="modal-close" data-close-modal="modal-leader" aria-label="Close">✕</button>
-      <div class="admin-modal-body">
-        <p class="section-label">Add Batch Leadership</p>
-        <form id="form-leader">
-          <label for="leader-name">Full Name</label>
-          <input type="text" id="leader-name" required>
-
-          <label for="leader-designation">Designation</label>
-          <input type="text" id="leader-designation" placeholder="e.g. Batch President" required>
-
-          <label for="leader-title">Title / Company</label>
-          <input type="text" id="leader-title">
-
-          <label for="leader-photo">Photo URL</label>
-          <input type="text" id="leader-photo" placeholder="https://...">
-
-          <label for="leader-responsibility">Responsibility (1 line)</label>
-          <input type="text" id="leader-responsibility" placeholder="Manages reunion planning & logistics">
-
-          <label for="leader-order">Order (optional — lower shows first)</label>
-          <input type="number" id="leader-order">
-
-          <button type="submit" class="btn-primary">Add Leader</button>
-        </form>
-        <p class="error-msg" id="leader-error" hidden></p>
-        <p class="success-msg" id="leader-success" hidden></p>
       </div>
     </div>
   </div>
@@ -422,37 +565,6 @@
         </form>
         <p class="error-msg" id="projectedit-error" hidden></p>
         <p class="success-msg" id="projectedit-success" hidden></p>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal-overlay" id="modal-eventlabel" hidden>
-    <div class="modal-box">
-      <button class="modal-close" data-close-modal="modal-eventlabel" aria-label="Close">✕</button>
-      <div class="admin-modal-body">
-        <p class="section-label">Add Event Label</p>
-        <form id="form-eventlabel">
-          <label for="eventlabel-name">Label Name</label>
-          <input type="text" id="eventlabel-name" placeholder="e.g. Mandatory" required>
-
-          <label for="eventlabel-description">Description</label>
-          <textarea id="eventlabel-description" rows="2" placeholder="Shown when someone taps this label" required></textarea>
-
-          <label for="eventlabel-color">Color</label>
-          <select id="eventlabel-color">
-            <option value="blue">Blue</option>
-            <option value="violet">Violet</option>
-            <option value="teal">Teal</option>
-            <option value="amber">Amber</option>
-            <option value="rose">Rose</option>
-            <option value="cyan">Cyan</option>
-            <option value="lime">Lime</option>
-          </select>
-
-          <button type="submit" class="btn-primary">Add Label</button>
-        </form>
-        <p class="error-msg" id="eventlabel-error" hidden></p>
-        <p class="success-msg" id="eventlabel-success" hidden></p>
       </div>
     </div>
   </div>
@@ -665,20 +777,9 @@
     </div>
   </div>
 
-  <!-- Batchmate Directory (Danger tab) — every batchmate's complete
-       record, admin-only. Click a card to see everything the site
-       currently holds on that person. -->
-  <div class="modal-overlay" id="modal-admindirectory" hidden>
-    <div class="modal-box admindir-box">
-      <button class="modal-close" data-close-modal="modal-admindirectory" aria-label="Close">✕</button>
-      <div class="admin-modal-body admindir-body">
-        <p class="section-label">Batchmate Directory</p>
-        <input type="text" id="admindir-search" placeholder="Search name or index number…" style="margin-bottom:14px;">
-        <div id="admindir-grid" class="admindir-grid"></div>
-      </div>
-    </div>
-  </div>
-
+  <!-- Batchmate full-record detail modal — reused by the Data tab table
+       row click (see renderDataTable() in app.js). Shows everything the
+       site holds on one batchmate. -->
   <div class="modal-overlay" id="modal-admindirectory-detail" hidden>
     <div class="modal-box admindir-box">
       <button class="modal-close" data-close-modal="modal-admindirectory-detail" aria-label="Close">✕</button>
@@ -806,6 +907,104 @@
     </div>
   </div>
 
+  <!-- Database Storage (Danger tab) — client-side estimate only. The
+       Firestore client SDK has no API for actual billed storage (that
+       lives in the Firebase Console / Cloud Monitoring); this reads
+       every known collection and sizes each document the same way
+       Firestore's own billing formula does, which gets close but
+       excludes index storage. See app.js's dbDocSize()/runDbStorageScan(). -->
+  <div class="modal-overlay" id="modal-dbstorage" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-dbstorage" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Database Storage</p>
+        <p class="fine-print" style="text-align:left; margin:0 0 16px;">An estimate of Firestore data size, computed by reading every collection and sizing each document's fields the way Firestore itself does. It excludes index storage, which Firestore keeps on top of your data — so actual billed usage will run a bit higher than this number. For the exact figure, check Usage in the Firebase Console.</p>
+        <button type="button" id="dbstorage-scan-btn" class="btn-primary" style="width:100%; margin-bottom:16px;">Scan Now</button>
+        <p class="error-msg" id="dbstorage-status" hidden></p>
+
+        <div class="dbstorage-total-row">
+          <span class="dbstorage-total-value" id="dbstorage-total">—</span>
+          <span class="fine-print" style="margin:0;">estimated total</span>
+        </div>
+        <div class="attend-bar-track" style="margin:10px 0 4px;">
+          <div class="attend-bar-fill" id="dbstorage-bar-fill" style="width:0%; background:var(--blue);"></div>
+        </div>
+        <p class="fine-print" id="dbstorage-bar-label" style="text-align:left; margin:0 0 18px;">Tap "Scan Now" to measure.</p>
+
+        <p class="section-label" style="margin-top:6px;">By Collection</p>
+        <div id="dbstorage-results" class="admin-scroll-list" style="max-height:320px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data Table column picker (Data tab) — tick which fields from the
+       full /batchmates record show up as table columns. Selection is
+       remembered per-browser (localStorage), not shared between admins. -->
+  <div class="modal-overlay" id="modal-datatable-columns" hidden>
+    <div class="modal-box admindir-box">
+      <button class="modal-close" data-close-modal="modal-datatable-columns" aria-label="Close">✕</button>
+      <div class="admin-modal-body admindir-body">
+        <p class="section-label">Table Columns</p>
+        <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tick the fields you want shown as columns. Includes every field on the full batchmate record, custom fields included.</p>
+        <input type="text" id="datatable-columns-search" placeholder="Search fields…" style="margin-bottom:12px;">
+        <div id="datatable-columns-list" class="member-checklist" style="max-height:360px;"></div>
+        <button type="button" id="datatable-columns-apply-btn" class="btn-primary" style="margin-top:16px;">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data Table filter-value picker (Data tab) — once a field is chosen in
+       "Filter: ...", tick one or more values here; rows matching ANY of the
+       ticked values show (e.g. Blood Type: A+ or B-). Not persisted. -->
+  <div class="modal-overlay" id="modal-datatable-filter-values" hidden>
+    <div class="modal-box admindir-box">
+      <button class="modal-close" data-close-modal="modal-datatable-filter-values" aria-label="Close">✕</button>
+      <div class="admin-modal-body admindir-body">
+        <p class="section-label" id="datatable-filter-values-title">Filter Values</p>
+        <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tick one or more values — rows matching any of them will show.</p>
+        <div id="datatable-filter-values-list" class="member-checklist" style="max-height:360px;"></div>
+        <button type="button" id="datatable-filter-values-apply-btn" class="btn-primary" style="margin-top:16px;">Apply</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Manage Admin Access (Danger tab, super admin only) — lists every
+       admin doc and lets a super admin toggle exactly which functions
+       each one can use, or add a new admin. Hidden from regular admins
+       both by the button's `hidden` attribute and, more importantly, by
+       the Firestore rule on /admins/{id}, which only lets a super admin
+       read the collection or write anyone's doc. -->
+  <div class="modal-overlay" id="modal-manageadmins" hidden>
+    <div class="modal-box admindir-box">
+      <button class="modal-close" data-close-modal="modal-manageadmins" aria-label="Close">✕</button>
+      <div class="admin-modal-body admindir-body">
+        <p class="section-label">Manage Admin Access</p>
+        <p class="fine-print" style="text-align:left; margin:0 0 14px;">Toggle exactly which functions each admin can use. Buttons and tabs still show for every admin — unchecked functions are blocked both in the UI and, independently, by Firestore itself.</p>
+
+        <div id="manageadmins-list" class="admin-scroll-list" style="margin-bottom:22px;"></div>
+
+        <p class="section-label" style="margin-top:6px;">Add New Admin</p>
+        <input type="text" id="manageadmins-search" placeholder="Search batchmate by name…" style="margin-bottom:10px;">
+        <div id="manageadmins-search-results" class="leader-picker-list" style="max-height:160px; overflow-y:auto; margin-bottom:12px;"></div>
+        <p class="fine-print" id="manageadmins-selected" style="text-align:left; margin:0 0 10px;"></p>
+        <div id="manageadmins-new-perms" class="member-checklist" style="max-height:220px; overflow-y:auto; margin-bottom:14px;"></div>
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+          <input type="checkbox" id="manageadmins-new-super"> <span>Super Admin (all permissions, can manage other admins)</span>
+        </label>
+        <button type="button" id="manageadmins-add-btn" class="btn-primary">Add as Admin</button>
+        <p class="error-msg" id="manageadmins-error" hidden></p>
+        <p class="success-msg" id="manageadmins-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Used only by the Data tab's "Download PDF" / "Download Excel" buttons
+       (renderDataTablePdf / renderDataTableExcel in app.js) to export the
+       currently shown/filtered/sorted columns. All three are free, static
+       libraries loaded from cdnjs — no paid service or API key involved. -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

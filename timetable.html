@@ -8,7 +8,7 @@
 <link rel="manifest" href="./fav-con/site.webmanifest" />
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Legends' Row</title>
+<title>Timetable</title>
 <script>(function(){try{var m=localStorage.getItem("theme-mode")||"dark";var p=localStorage.getItem("theme-palette")||"blue";var d=localStorage.getItem("theme-design")||"default";document.documentElement.setAttribute("data-mode",m);document.documentElement.setAttribute("data-palette",p);document.documentElement.setAttribute("data-design",d);}catch(e){}})();</script>
 <link rel="stylesheet" href="style.css">
 </head>
@@ -20,20 +20,20 @@
     <aside class="sidebar" id="sidebar">
       <div class="brand small sidebar-brand">
         <span class="brand-mark">◆</span>
-        <span class="brand-name">Legends<span class="accent"> Row</span></span>
+        <span class="brand-name">My<span class="accent"> Timetable</span></span>
       </div>
             <nav class="side-nav">
         <a href="home.html" class="side-link">Home</a>
         <a href="dashboard.html" class="side-link">Dashboard</a>
-        <a href="timetable.html" class="side-link">Timetable</a>
+        <a href="timetable.html" class="side-link active">Timetable</a>
         <a href="requests.html" class="side-link">Requests</a>
         <a href="fund.html" class="side-link">Fund</a>
-        <button type="button" class="side-link side-submenu-toggle open" id="side-more-toggle">
+        <button type="button" class="side-link side-submenu-toggle" id="side-more-toggle">
           <span>More</span>
           <span class="side-submenu-chevron">▾</span>
         </button>
-        <div class="side-submenu open" id="side-submenu">
-          <a href="wall.html" class="side-link active">Wall of Fame</a>
+        <div class="side-submenu" id="side-submenu">
+          <a href="wall.html" class="side-link">Wall of Fame</a>
           <a href="badges.html" class="side-link">Badges</a>
           <a href="settings.html" class="side-link">Settings</a>
           <a href="admin.html" class="side-link" id="admin-nav-link" hidden>Admin</a>
@@ -46,26 +46,39 @@
     </aside>
 
     <main class="content-area">
-      <div class="dash-wrap" id="wall-page">
+      <div class="dash-wrap" id="timetable-page">
         <div id="loading-state" class="state-msg">Loading…</div>
         <div id="error-state" class="state-msg error-msg" hidden></div>
 
-        <div id="wall-content" hidden>
-          <p class="section-label" style="margin-bottom:14px;">Wall of Fame</p>
-          <div class="wall-grid" id="wall-grid"></div>
+        <div id="timetable-content" hidden>
+          <h1 class="welcome-heading" style="margin-bottom:4px;">Timetable</h1>
+          <p class="welcome-sub" style="margin-bottom:18px;">Your weekly schedule and attendance.</p>
+
+          <div class="tt-tabs" id="tt-tabs">
+            <button type="button" class="tt-tab-pill active" data-tt-view="week">This Week</button>
+            <button type="button" class="tt-tab-pill" data-tt-view="next">Next Week</button>
+            <button type="button" class="tt-tab-pill" data-tt-view="attendance">My Attendance</button>
+          </div>
+
+          <div class="tt-view" id="tt-view-week">
+            <div id="tt-week-days"></div>
+          </div>
+
+          <div class="tt-view" id="tt-view-next" hidden>
+            <div id="tt-next-days"></div>
+          </div>
+
+          <div class="tt-view" id="tt-view-attendance" hidden>
+            <div class="attend-overall-card">
+              <div class="attend-overall-value" id="attend-overall-pct">—</div>
+              <div class="attend-overall-label">Overall attendance</div>
+              <div class="attend-overall-sub" id="attend-overall-sub"></div>
+            </div>
+            <div class="attend-list" id="attend-module-list"></div>
+          </div>
         </div>
       </div>
     </main>
-  </div>
-
-  <!-- Popup shown when a Wall of Fame box is tapped -->
-  <div class="modal-overlay" id="wall-modal-overlay" hidden>
-    <div class="modal-box">
-      <button class="modal-close" id="modal-close" aria-label="Close">✕</button>
-      <img id="modal-image" class="modal-image" alt="" hidden>
-      <h2 id="modal-title" class="modal-title"></h2>
-      <p id="modal-desc" class="modal-desc"></p>
-    </div>
   </div>
 
   <script type="module" src="app.js"></script>

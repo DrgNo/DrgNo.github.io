@@ -46,6 +46,17 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+// ── Profile photo hosting (Cloudinary, free tier) ──────────────────
+// Photos are uploaded straight from the browser to Cloudinary, not to
+// Firestore/Storage — only the returned link (a short string) is saved on
+// the user's own /batchmates doc as photoUrl, so this never grows database
+// usage. To enable: create a free account at cloudinary.com, then under
+// Settings → Upload → Upload presets, add a preset with Signing Mode set
+// to "Unsigned" (required — it lets the browser upload without exposing a
+// secret key), and fill in both values below.
+const CLOUDINARY_CLOUD_NAME = "ptabi2yz";
+const CLOUDINARY_UPLOAD_PRESET = "21st_FST_Profiles";
+
 // ── Push notifications (Cloudflare Worker + Web Push) ─────────────
 // Fill these in after you deploy the Worker and generate VAPID keys —
 // see the setup guide you were given alongside this file. Until
@@ -339,6 +350,21 @@ function closeMenu() {
 
   logoutBtn?.addEventListener("click", () => signOut(auth));
 
+  // "More" submenu — collapsed by default, expands on click; auto-opens
+  // on load if the current page's own nav link happens to be inside it
+  // (so a visit to, say, Settings doesn't look like nothing is active).
+  const moreToggle = document.getElementById("side-more-toggle");
+  const submenu = document.getElementById("side-submenu");
+  if (moreToggle && submenu) {
+    function setSubmenuOpen(open) {
+      submenu.classList.toggle("open", open);
+      moreToggle.classList.toggle("open", open);
+    }
+    moreToggle.addEventListener("click", () => {
+      setSubmenuOpen(!submenu.classList.contains("open"));
+    });
+  }
+
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
       window.location.href = "index.html";
@@ -354,7 +380,14 @@ function closeMenu() {
     const adminNavLink = document.getElementById("admin-nav-link");
     if (adminNavLink) adminNavLink.hidden = !isAdmin;
 
+    // Sidebar nav indicators — don't block the current page's own load
+    // on these; they just decorate the menu once they resolve.
+    updateHomeNavIndicator(user.uid);
+    updateDashboardNavBadge(user.uid);
+
     if (document.getElementById("home-content")) await initHomePage(user);
+    if (document.getElementById("timetable-content")) await initTimetablePage(user);
+    if (document.getElementById("requests-content")) await initRequestsPage(user, isAdmin);
     if (document.getElementById("wall-content")) await initWallPage();
     if (document.getElementById("badges-content")) await initBadgesPage(user);
     if (document.getElementById("record")) await initDashboardPage(user);
@@ -364,17 +397,385 @@ function closeMenu() {
   });
 }
 
-// Checks whether the signed-in user has a document in /admins — this is
-// the "passkey" collection. Existence of the doc = admin, nothing else
-// needed. The real enforcement is in Firestore rules, not this check —
-// this just controls what the UI shows.
+// Checks whether the signed-in user has a document in /admins, and if so
+// caches its contents in ADMIN_INFO (shape: { superAdmin: bool,
+// permissions: { key: bool, ... } }) for hasAdminPerm() to read. Existence
+// of the doc = "is an admin at all"; the permissions map controls which
+// specific functions they can use. The real enforcement is in Firestore
+// rules (hasPerm() there), not this check — this just controls what the
+// UI shows and pre-empts doomed writes with a friendly message instead of
+// a raw permission-denied error.
+let ADMIN_INFO = null;
 async function checkIsAdmin(uid) {
   try {
     const snap = await getDoc(doc(db, "admins", uid));
-    return snap.exists();
+    if (!snap.exists()) { ADMIN_INFO = null; return false; }
+    ADMIN_INFO = snap.data() || {};
+    return true;
   } catch (err) {
+    ADMIN_INFO = null;
     return false; // no admin doc, or read denied — treat as not-admin
   }
+}
+
+// True if the signed-in admin can use this specific function. A super
+// admin passes every check. Everyone else needs permissions[key] === true.
+function hasAdminPerm(key) {
+  if (!ADMIN_INFO) return false;
+  if (ADMIN_INFO.superAdmin === true) return true;
+  return !!(ADMIN_INFO.permissions && ADMIN_INFO.permissions[key] === true);
+}
+
+// Convenience for gating a UI action: returns true and does nothing if the
+// admin has `key`; otherwise shows the red "no access" banner naming
+// `label` and returns false, so the caller can just `if (!guardPerm(...))
+// return;`.
+function guardPerm(key, label) {
+  if (hasAdminPerm(key)) return true;
+  showPermDenied(label);
+  return false;
+}
+
+// Shows a brief red "you don't have access" banner. Reuses the page's own
+// #admin-perm-banner element if it has one; otherwise creates a floating
+// one on the fly, so this works on any page (admin.html, requests.html,
+// etc.) without needing markup added everywhere.
+let _permBannerTimer = null;
+function showPermDenied(label) {
+  let banner = document.getElementById("admin-perm-banner");
+  if (!banner) {
+    banner = document.createElement("div");
+    banner.id = "admin-perm-banner";
+    banner.className = "admin-perm-banner";
+    document.body.appendChild(banner);
+  }
+  banner.textContent = `⚠ You don't have access to ${label ? `"${label}"` : "this section"}.`;
+  banner.classList.add("show");
+  clearTimeout(_permBannerTimer);
+  _permBannerTimer = setTimeout(() => banner.classList.remove("show"), 3500);
+}
+
+// Every individually-toggleable admin permission, in the order shown on
+// the Manage Admin Access screen. Keys here must match hasPerm() calls
+// throughout this file and the Firestore rules' permissions map exactly.
+const ADMIN_PERMISSION_LIST = [
+  ["fund", "Fund Transactions (add/edit)"],
+  ["events", "Events & Event Labels (add/edit)"],
+  ["tasks", "Tasks (assign/verify/edit)"],
+  ["timetable", "Timetable (add/edit/override)"],
+  ["projects", "Group Projects (add/edit)"],
+  ["announcements", "Announcements (add)"],
+  ["changeRequests", "Detail Change Requests (approve/reject)"],
+  ["memberRequests", "Member Requests page (resolve)"],
+  ["wallOfFame", "Wall of Fame"],
+  ["badges", "Student Badges"],
+  ["badBehavior", "Bad Behavior Records"],
+  ["bulkField", "Add/Remove Field (All Batchmates)"],
+  ["fieldManager", "Manage Profile Fields"],
+  ["settingsFields", "Settings Change-Request Fields"],
+  ["dbStorage", "Database Storage"],
+  ["dataTable", "Data Table (full data)"]
+];
+
+// Manage Admin Access (Danger tab, super-admin only). Lists every existing
+// /admins doc with a permission checklist + Save/Remove, and lets a super
+// admin search a batchmate by name and add them as a new admin with a
+// chosen set of permissions. Reading every admin doc, and writing any of
+// them, only actually works for a super admin — the Firestore rules on
+// /admins/{id} enforce that regardless of what this panel shows.
+function initManageAdminsPanel() {
+  const listEl = document.getElementById("manageadmins-list");
+  const searchInput = document.getElementById("manageadmins-search");
+  const resultsEl = document.getElementById("manageadmins-search-results");
+  const selectedEl = document.getElementById("manageadmins-selected");
+  const newPermsEl = document.getElementById("manageadmins-new-perms");
+  const newSuperCb = document.getElementById("manageadmins-new-super");
+  const addBtn = document.getElementById("manageadmins-add-btn");
+  const errorEl = document.getElementById("manageadmins-error");
+  const successEl = document.getElementById("manageadmins-success");
+  if (!listEl || !searchInput || !addBtn) return;
+
+  let selectedNewAdmin = null; // { uid, fullName }
+
+  function buildPermChecklist(container, checkedKeys) {
+    container.innerHTML = "";
+    ADMIN_PERMISSION_LIST.forEach(([key, label]) => {
+      const row = document.createElement("label");
+      row.className = "member-check-row";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.dataset.permKey = key;
+      cb.checked = !!(checkedKeys && checkedKeys[key]);
+      const span = document.createElement("span");
+      span.textContent = label;
+      row.appendChild(cb);
+      row.appendChild(span);
+      container.appendChild(row);
+    });
+  }
+
+  function readPermChecklist(container) {
+    const out = {};
+    container.querySelectorAll('input[type="checkbox"][data-perm-key]').forEach((cb) => {
+      out[cb.dataset.permKey] = cb.checked;
+    });
+    return out;
+  }
+
+  async function renderExistingAdmins() {
+    listEl.innerHTML = '<p class="info-text" style="color:var(--muted)">Loading…</p>';
+    let snap;
+    try {
+      snap = await getDocs(collection(db, "admins"));
+    } catch (err) {
+      listEl.innerHTML = '<p class="info-text" style="color:var(--muted)">Could not load admins.</p>';
+      return;
+    }
+    listEl.innerHTML = "";
+    const docs = [];
+    snap.forEach((docSnap) => docs.push({ uid: docSnap.id, ...docSnap.data() }));
+    if (docs.length === 0) {
+      listEl.innerHTML = '<p class="info-text" style="color:var(--muted)">No admins yet.</p>';
+      return;
+    }
+
+    docs.forEach((a) => {
+      const card = document.createElement("div");
+      card.className = "leader-picker-selected";
+      card.style.flexDirection = "column";
+      card.style.alignItems = "stretch";
+      card.style.gap = "10px";
+
+      const header = document.createElement("div");
+      header.style.display = "flex";
+      header.style.justifyContent = "space-between";
+      header.style.alignItems = "center";
+      const nameEl = document.createElement("div");
+      nameEl.className = "leader-picker-selected-name";
+      nameEl.textContent = a.name || a.uid;
+      header.appendChild(nameEl);
+
+      const superLabel = document.createElement("label");
+      superLabel.style.display = "flex";
+      superLabel.style.alignItems = "center";
+      superLabel.style.gap = "6px";
+      superLabel.style.fontSize = "12.5px";
+      const superCb = document.createElement("input");
+      superCb.type = "checkbox";
+      superCb.checked = a.superAdmin === true;
+      superLabel.appendChild(superCb);
+      superLabel.append(" Super Admin");
+      header.appendChild(superLabel);
+      card.appendChild(header);
+
+      const permsBox = document.createElement("div");
+      permsBox.className = "member-checklist";
+      buildPermChecklist(permsBox, a.permissions || {});
+      card.appendChild(permsBox);
+
+      const btnRow = document.createElement("div");
+      btnRow.style.display = "flex";
+      btnRow.style.gap = "10px";
+      const saveBtn = document.createElement("button");
+      saveBtn.type = "button";
+      saveBtn.className = "btn-primary";
+      saveBtn.style.margin = "0";
+      saveBtn.textContent = "Save Changes";
+      saveBtn.addEventListener("click", async () => {
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving…";
+        try {
+          await setDoc(doc(db, "admins", a.uid), {
+            name: a.name || a.uid,
+            superAdmin: superCb.checked,
+            permissions: readPermChecklist(permsBox)
+          });
+          if (a.uid === auth.currentUser?.uid) {
+            // Refresh our own cached permissions if we just edited ourselves.
+            await checkIsAdmin(a.uid);
+          }
+        } catch (err) {
+          alert("Could not save — please try again.");
+        } finally {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save Changes";
+        }
+      });
+
+      const removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "ghost-btn";
+      removeBtn.style.margin = "0";
+      removeBtn.textContent = "Remove Admin";
+      removeBtn.addEventListener("click", async () => {
+        if (!confirm(`Remove admin access for ${a.name || a.uid}? This deletes all their permissions.`)) return;
+        removeBtn.disabled = true;
+        try {
+          await deleteDoc(doc(db, "admins", a.uid));
+          card.remove();
+        } catch (err) {
+          alert("Could not remove — please try again.");
+          removeBtn.disabled = false;
+        }
+      });
+
+      btnRow.appendChild(saveBtn);
+      btnRow.appendChild(removeBtn);
+      card.appendChild(btnRow);
+
+      listEl.appendChild(card);
+    });
+  }
+
+  buildPermChecklist(newPermsEl, {});
+
+  searchInput.addEventListener("input", async () => {
+    const term = searchInput.value.trim().toLowerCase();
+    resultsEl.innerHTML = "";
+    if (!term) return;
+    const people = await getBatchmatesPublicList();
+    const matches = people.filter((p) => p.fullName.toLowerCase().includes(term)).slice(0, 15);
+    matches.forEach((p) => {
+      const row = document.createElement("div");
+      row.className = "leader-picker-row";
+      row.textContent = `${p.fullName}${p.campusIndexNumber ? " — " + p.campusIndexNumber : ""}`;
+      row.style.cursor = "pointer";
+      row.style.padding = "8px 10px";
+      row.addEventListener("click", () => {
+        selectedNewAdmin = p;
+        selectedEl.textContent = `Selected: ${p.fullName}`;
+        resultsEl.innerHTML = "";
+        searchInput.value = "";
+      });
+      resultsEl.appendChild(row);
+    });
+  });
+
+  addBtn.addEventListener("click", async () => {
+    errorEl.hidden = true;
+    successEl.hidden = true;
+    if (!selectedNewAdmin) {
+      errorEl.textContent = "Search for and select a batchmate first.";
+      errorEl.hidden = false;
+      return;
+    }
+    addBtn.disabled = true;
+    addBtn.textContent = "Adding…";
+    try {
+      await setDoc(doc(db, "admins", selectedNewAdmin.uid), {
+        name: selectedNewAdmin.fullName,
+        superAdmin: newSuperCb.checked,
+        permissions: readPermChecklist(newPermsEl)
+      });
+      successEl.textContent = `${selectedNewAdmin.fullName} is now an admin.`;
+      successEl.hidden = false;
+      selectedNewAdmin = null;
+      selectedEl.textContent = "";
+      newSuperCb.checked = false;
+      buildPermChecklist(newPermsEl, {});
+      await renderExistingAdmins();
+    } catch (err) {
+      errorEl.textContent = "Could not add this admin — please try again.";
+      errorEl.hidden = false;
+    } finally {
+      addBtn.disabled = false;
+      addBtn.textContent = "Add as Admin";
+    }
+  });
+
+  renderExistingAdmins();
+}
+
+// ── Sidebar nav indicators ───────────────────────────────────────
+// Two small decorations on the sidebar, refreshed on every page load:
+//  - a blinking dot on "Home" while the user is on the roster of an
+//    ongoing project's group and hasn't submitted their own rating yet
+//  - a count badge on "Dashboard" for tasks assigned since they last
+//    actually opened that page
+// Looked up by href rather than an id, so no per-page HTML edits are
+// needed to wire this up.
+function getNavLinkByHref(href) {
+  return document.querySelector(`.side-link[href="${href}"]`);
+}
+
+function setNavDot(link, show) {
+  if (!link) return;
+  let dot = link.querySelector(".side-link-dot");
+  if (show) {
+    if (!dot) {
+      dot = document.createElement("span");
+      dot.className = "status-dot side-link-dot";
+      link.appendChild(dot);
+    }
+  } else if (dot) {
+    dot.remove();
+  }
+}
+
+function setNavCount(link, count) {
+  if (!link) return;
+  let badge = link.querySelector(".side-link-badge");
+  if (count > 0) {
+    if (!badge) {
+      badge = document.createElement("span");
+      badge.className = "side-link-badge";
+      link.appendChild(badge);
+    }
+    badge.textContent = count > 99 ? "99+" : String(count);
+  } else if (badge) {
+    badge.remove();
+  }
+}
+
+async function updateHomeNavIndicator(uid) {
+  const link = getNavLinkByHref("home.html");
+  if (!link) return;
+  try {
+    const snap = await getDocs(collection(db, "groupProjects"));
+    let needsRating = false;
+    outer:
+    for (const docSnap of snap.docs) {
+      const p = docSnap.data();
+      if (p.status !== "ongoing") continue;
+      const groups = Array.isArray(p.groups) ? p.groups : [];
+      for (let i = 0; i < groups.length; i++) {
+        const g = groups[i];
+        if (g.ratingsFinalized) continue;
+        const roster = getGroupRoster(g);
+        if (!roster.some((person) => person.uid === uid)) continue;
+        const subs = await getGroupRatingSubmissions(docSnap.id, i);
+        if (!subs.some((s) => s.raterUid === uid)) { needsRating = true; break outer; }
+      }
+    }
+    setNavDot(link, needsRating);
+  } catch (err) { /* leave the nav as-is on failure */ }
+}
+
+// Last time this browser actually opened the Dashboard, per-account —
+// there's no server-side "seen" flag for tasks, so this is tracked
+// locally and reset every time initDashboardPage runs.
+function tasksSeenStorageKey(uid) { return `tasksSeenAt:${uid}`; }
+function getTasksSeenAt(uid) {
+  try { return parseInt(localStorage.getItem(tasksSeenStorageKey(uid)) || "0", 10); } catch (err) { return 0; }
+}
+function markTasksSeenNow(uid) {
+  try { localStorage.setItem(tasksSeenStorageKey(uid), String(Date.now())); } catch (err) { /* ignore */ }
+}
+
+async function updateDashboardNavBadge(uid) {
+  const link = getNavLinkByHref("dashboard.html");
+  if (!link) return;
+  try {
+    const seenAt = getTasksSeenAt(uid);
+    const snap = await getDocs(query(collection(db, "tasks"), where("assignedToUid", "==", uid)));
+    let count = 0;
+    snap.forEach((d) => {
+      const t = d.data();
+      const ms = t.createdAt && t.createdAt.toMillis ? t.createdAt.toMillis() : 0;
+      if (ms > seenAt) count++;
+    });
+    setNavCount(link, count);
+  } catch (err) { /* leave the nav as-is on failure */ }
 }
 
 // ── Field render helpers (shared by dashboard) ───────────────────
@@ -1092,6 +1493,8 @@ async function initDashboardPage(user) {
     const fieldSchema = await getDirectoryFieldSchema();
     renderRecord(snap.data(), fieldSchema);
     await loadAndRenderTasks(user.uid);
+    markTasksSeenNow(user.uid);
+    setNavCount(getNavLinkByHref("dashboard.html"), 0);
     await loadAndRenderPrestige(user.uid, snap.data());
     await loadAndRenderFundLog(user.uid);
     wireTaskModal();
@@ -1347,6 +1750,10 @@ function initSettingsPage(user) {
     });
   }
 
+  // Profile Photo — uploads to Cloudinary (free image host), then writes
+  // only the resulting link to the user's own /batchmates doc.
+  initProfilePhotoSection(user);
+
   // Directory Privacy toggle — writes the user's own doc in
   // /directoryPrivacy/{uid}: { hidden: true|false }. No doc, or
   // hidden === false, means visible (the default).
@@ -1355,6 +1762,131 @@ function initSettingsPage(user) {
   // Request to Change Details — writes a doc to /changeRequests for an
   // admin to review; never writes to /batchmates directly.
   initChangeRequestSection(user);
+}
+
+// Resizes/compresses an image file in-browser (max 512px on the long edge,
+// JPEG @ 0.82 quality) before it's uploaded, so photos stay small and fast
+// to upload/display regardless of what the user picked. Returns a Blob.
+function downscaleImageForUpload(file, maxDim = 512, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not process image"))), "image/jpeg", quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error("Could not read image")); };
+    img.src = url;
+  });
+}
+
+// Uploads a blob to Cloudinary's unsigned upload endpoint and resolves with
+// its permanent, direct HTTPS link (secure_url). Nothing but this link is
+// ever sent to Firestore. Each upload gets its own unique public_id
+// (uid + timestamp) rather than trying to reuse/overwrite one shared ID —
+// overwrite-on-same-public-id turned out to be unreliable with unsigned
+// uploads on this account (Cloudinary was returning success without
+// actually replacing the asset). A fresh ID every time guarantees a
+// genuinely new asset/URL, so the new photo always shows correctly; it
+// just means the old (orphaned) photo is left behind in Cloudinary rather
+// than being deleted automatically. At ~50-80KB per compressed photo and
+// occasional re-uploads, that's a negligible amount of storage even after
+// many changes — if it's ever worth tidying up, the "profile-photos"
+// folder in the Cloudinary Media Library can be filtered/bulk-deleted by
+// hand.
+async function uploadPhotoToCloudinary(blob, uid) {
+  const formData = new FormData();
+  formData.append("file", blob);
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  formData.append("folder", "profile-photos");
+  formData.append("public_id", `${uid}-${Date.now()}`);
+  const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
+    method: "POST",
+    body: formData
+  });
+  if (!res.ok) {
+    // Surface Cloudinary's own error text (e.g. a misconfigured preset) in
+    // the console to make this easier to diagnose than a bare "failed".
+    try { console.error("Cloudinary upload error:", await res.json()); } catch (err) { /* ignore */ }
+    throw new Error("Upload failed");
+  }
+  const data = await res.json();
+  if (!data.secure_url) throw new Error("Upload failed");
+  // Cloudinary embeds a version number (v12345...) in the URL that should
+  // change on every overwrite — but browsers can still cache the bare
+  // pathname aggressively, so a cache-busting param forces a fresh fetch
+  // instead of a stale copy of the old photo.
+  return `${data.secure_url}?v=${Date.now()}`;
+}
+
+async function initProfilePhotoSection(user) {
+  const avatarSlot = document.getElementById("photo-current-avatar");
+  const fileInput = document.getElementById("photo-file-input");
+  const uploadBtn = document.getElementById("photo-upload-btn");
+  const statusEl = document.getElementById("photo-status");
+  if (!avatarSlot || !fileInput || !uploadBtn) return;
+
+  let fullName = "", photoUrl = "";
+  try {
+    const snap = await getDoc(doc(db, "batchmates", user.uid));
+    if (snap.exists()) {
+      fullName = snap.data().fullName || "";
+      photoUrl = snap.data().photoUrl || "";
+    }
+  } catch (err) { /* leave blank, still lets the user try uploading */ }
+
+  function renderAvatar() {
+    avatarSlot.innerHTML = "";
+    avatarSlot.appendChild(buildAvatar(fullName, photoUrl).firstChild);
+  }
+  renderAvatar();
+
+  const configured = CLOUDINARY_CLOUD_NAME !== "YOUR_CLOUD_NAME" && CLOUDINARY_UPLOAD_PRESET !== "YOUR_UNSIGNED_UPLOAD_PRESET";
+  if (!configured) {
+    uploadBtn.disabled = true;
+    if (statusEl) statusEl.textContent = "Photo uploads aren't set up yet — see the CLOUDINARY_CLOUD_NAME / CLOUDINARY_UPLOAD_PRESET comment near the top of app.js.";
+  }
+
+  uploadBtn.addEventListener("click", () => fileInput.click());
+
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      if (statusEl) statusEl.textContent = "Please choose an image file.";
+      return;
+    }
+
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = "Uploading…";
+    if (statusEl) statusEl.textContent = "";
+
+    try {
+      const blob = await downscaleImageForUpload(file);
+      const url = await uploadPhotoToCloudinary(blob, user.uid);
+      // Firestore rules allow a batchmate to self-write ONLY photoUrl, and
+      // only on their own doc, on both collections — see firestore.txt.
+      await updateDoc(doc(db, "batchmates", user.uid), { photoUrl: url });
+      try {
+        await updateDoc(doc(db, "batchmatesPublic", user.uid), { photoUrl: url });
+      } catch (err) { /* directory copy may not exist yet for a brand-new batchmate; ignore */ }
+      photoUrl = url;
+      renderAvatar();
+      if (statusEl) statusEl.textContent = "Photo updated.";
+    } catch (err) {
+      if (statusEl) statusEl.textContent = "Couldn't update your photo — check your connection and try again.";
+    } finally {
+      uploadBtn.disabled = false;
+      uploadBtn.textContent = "Change Photo";
+    }
+  });
 }
 
 async function initPrivacyToggle(user) {
@@ -1795,9 +2327,9 @@ async function initChangeRequestSection(user) {
 
 // ── Home page ─────────────────────────────────────────────────────
 // Pulls together: the signed-in user's own name (for the welcome message),
-// and three shared, read-only collections: "announcements", "batchLeadership",
-// and "groupProjects". All three are batch-wide — every signed-in batchmate
-// sees the same content, nobody writes to them from the app itself.
+// and shared, read-only collections: "announcements" and "groupProjects".
+// Both are batch-wide — every signed-in batchmate sees the same content,
+// nobody writes to them from the app itself.
 async function initHomePage(user) {
   const loadingState = document.getElementById("loading-state");
   const errorState = document.getElementById("error-state");
@@ -1809,7 +2341,6 @@ async function initHomePage(user) {
       renderAnnouncements(),
       renderEvents(),
       renderBatchmateDirectory(),
-      renderLeadership(),
       renderProjects()
     ]);
 
@@ -1886,80 +2417,6 @@ async function renderAnnouncements() {
     li.appendChild(titleRow);
     li.appendChild(message);
     list.appendChild(li);
-  });
-}
-
-async function renderLeadership() {
-  const grid = document.getElementById("leader-grid");
-  grid.innerHTML = "";
-
-  const snap = await getDocs(collection(db, "batchLeadership"));
-
-  if (snap.empty) {
-    grid.innerHTML = '<p class="info-text" style="color:var(--muted)">Batch leadership hasn\'t been set up yet.</p>';
-    return;
-  }
-
-  // Sorted client-side (not via Firestore orderBy) so a leader doc with no
-  // "order" field still shows up — it just falls to the end — instead of
-  // being silently excluded, which is what Firestore's orderBy would do.
-  const leaders = [];
-  snap.forEach((docSnap) => leaders.push(docSnap.data()));
-  leaders.sort((a, b) => (a.order ?? Infinity) - (b.order ?? Infinity));
-
-  leaders.forEach((p) => {
-    const card = document.createElement("div");
-    card.className = "leader-card";
-
-    const top = document.createElement("div");
-    top.className = "leader-top";
-
-    const avatarSlot = document.createElement("div");
-    avatarSlot.className = "avatar-slot";
-    const photoUrl = (p.photoUrl || "").trim();
-    if (photoUrl) {
-      const img = document.createElement("img");
-      img.className = "avatar-photo";
-      img.alt = "";
-      img.src = photoUrl;
-      img.onerror = () => { img.hidden = true; };
-      avatarSlot.appendChild(img);
-    } else {
-      const initial = document.createElement("div");
-      initial.className = "avatar";
-      initial.textContent = (p.fullName || "?").charAt(0).toUpperCase();
-      avatarSlot.appendChild(initial);
-    }
-
-    const nameBlock = document.createElement("div");
-    const name = document.createElement("div");
-    name.className = "leader-name";
-    name.textContent = p.fullName || "Unnamed";
-    const role = document.createElement("div");
-    role.className = "leader-role";
-    role.textContent = p.designation || "";
-    nameBlock.appendChild(name);
-    nameBlock.appendChild(role);
-
-    top.appendChild(avatarSlot);
-    top.appendChild(nameBlock);
-    card.appendChild(top);
-
-    if (p.title) {
-      const company = document.createElement("div");
-      company.className = "leader-company";
-      company.textContent = p.title;
-      card.appendChild(company);
-    }
-
-    if (p.responsibility) {
-      const desc = document.createElement("p");
-      desc.className = "leader-desc";
-      desc.textContent = p.responsibility;
-      card.appendChild(desc);
-    }
-
-    grid.appendChild(card);
   });
 }
 
@@ -2705,7 +3162,11 @@ function wireAdminModals() {
   document.querySelectorAll(".admin-section-btn[data-modal]").forEach((btn) => {
     const overlay = document.getElementById(btn.dataset.modal);
     if (!overlay) return;
-    btn.addEventListener("click", () => { overlay.hidden = false; });
+    btn.addEventListener("click", () => {
+      const perm = btn.dataset.perm;
+      if (perm && !guardPerm(perm, btn.textContent.trim())) return;
+      overlay.hidden = false;
+    });
   });
 
   document.querySelectorAll(".modal-close[data-close-modal]").forEach((closeBtn) => {
@@ -2736,6 +3197,8 @@ function wireAdminTabBar() {
   bar.addEventListener("click", (e) => {
     const btn = e.target.closest(".admin-tab-pill");
     if (!btn) return;
+    const perm = btn.dataset.perm;
+    if (perm && !guardPerm(perm, btn.textContent.trim())) return;
     const tab = btn.dataset.tab;
     bar.querySelectorAll(".admin-tab-pill").forEach((b) => b.classList.toggle("active", b === btn));
     panels.forEach((p) => { p.hidden = p.dataset.tabPanel !== tab; });
@@ -2774,14 +3237,16 @@ async function initAdminPage(isAdmin) {
   // pushInfo is given, it's called with the saved data to build a
   // {title, message, url} broadcast push notification sent to every
   // batchmate after the write succeeds.
-  function wireForm(formId, collectionName, errorId, successId, buildData, pushInfo) {
+  function wireForm(formId, collectionName, errorId, successId, buildData, pushInfo, permKey) {
     const form = document.getElementById(formId);
     const errorEl = document.getElementById(errorId);
     const successEl = document.getElementById(successId);
     const submitBtn = form.querySelector("button[type=submit]");
+    const perm = permKey || collectionName;
 
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
+      if (!guardPerm(perm, form.dataset.originalLabel || submitBtn.textContent)) return;
       errorEl.hidden = true;
       successEl.hidden = true;
       submitBtn.disabled = true;
@@ -2842,58 +3307,10 @@ async function initAdminPage(isAdmin) {
     })
   );
 
-  // Batch Leadership — no push
-  wireForm("form-leader", "batchLeadership", "leader-error", "leader-success", () => {
-    const data = {
-      fullName: document.getElementById("leader-name").value.trim(),
-      designation: document.getElementById("leader-designation").value.trim(),
-      title: document.getElementById("leader-title").value.trim(),
-      photoUrl: document.getElementById("leader-photo").value.trim(),
-      responsibility: document.getElementById("leader-responsibility").value.trim()
-    };
-    const orderVal = document.getElementById("leader-order").value;
-    if (orderVal !== "") data.order = Number(orderVal);
-    return data;
-  });
-
   // Group Project — dynamic groups with cross-group member exclusion
   await initProjectForm();
   initProjectEditForm();
   await initFundTransactionForm();
-
-  // Event Label — no push
-  const eventLabelForm = document.getElementById("form-eventlabel");
-  const eventLabelErrorEl = document.getElementById("eventlabel-error");
-  const eventLabelSuccessEl = document.getElementById("eventlabel-success");
-  const eventLabelBtn = eventLabelForm.querySelector("button[type=submit]");
-  const eventLabelOriginalLabel = eventLabelBtn.textContent;
-
-  eventLabelForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    eventLabelErrorEl.hidden = true;
-    eventLabelSuccessEl.hidden = true;
-    eventLabelBtn.disabled = true;
-    eventLabelBtn.textContent = "Adding…";
-
-    try {
-      await addDoc(collection(db, "eventLabels"), {
-        name: document.getElementById("eventlabel-name").value.trim(),
-        description: document.getElementById("eventlabel-description").value.trim(),
-        color: document.getElementById("eventlabel-color").value
-      });
-      eventLabelSuccessEl.textContent = "Label added.";
-      eventLabelSuccessEl.hidden = false;
-      eventLabelForm.reset();
-      eventLabelsCache = null; // invalidate so the home page re-fetches fresh labels
-      await populateEventLabelSelect(); // refresh the multi-select immediately
-    } catch (err) {
-      eventLabelErrorEl.textContent = "Could not add this label — check the fields and try again.";
-      eventLabelErrorEl.hidden = false;
-    } finally {
-      eventLabelBtn.disabled = false;
-      eventLabelBtn.textContent = eventLabelOriginalLabel;
-    }
-  });
 
   // Event
   wireForm(
@@ -2926,6 +3343,7 @@ async function initAdminPage(isAdmin) {
 
   taskForm.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (!guardPerm('tasks', 'Assign Task')) return;
     taskErrorEl.hidden = true;
     taskSuccessEl.hidden = true;
 
@@ -2946,7 +3364,8 @@ async function initAdminPage(isAdmin) {
         description: document.getElementById("task-description").value.trim(),
         difficulty: document.getElementById("task-difficulty").value,
         dueDate: document.getElementById("task-duedate").value,
-        status: "ongoing"
+        status: "ongoing",
+        createdAt: serverTimestamp()
       };
 
       // More than one person picked → the same task for a group. Each
@@ -3011,14 +3430,6 @@ async function initAdminPage(isAdmin) {
   document.getElementById("completed-tasks-sort").addEventListener("change", () => renderCompletedTasksList());
   document.getElementById("completed-tasks-filter").addEventListener("change", () => renderCompletedTasksList());
 
-  // Prestige Leaderboard panel
-  await renderPrestigeLeaderboard();
-  document.getElementById("refresh-leaderboard").addEventListener("click", renderPrestigeLeaderboard);
-
-  // Fund Contribution Leaderboard panel
-  await renderFundLeaderboard();
-  document.getElementById("refresh-fund-leaderboard").addEventListener("click", renderFundLeaderboard);
-
   // Fund Transaction History panel
   await renderAdminFundTransactions();
   document.getElementById("refresh-fund-transactions").addEventListener("click", renderAdminFundTransactions);
@@ -3050,9 +3461,6 @@ async function initAdminPage(isAdmin) {
   // Manage Profile Fields (Dashboard sections + directory "public" flags)
   initFieldManagerPanel();
 
-  // Batchmate Directory (full-record admin view)
-  initAdminDirectoryPanel();
-
   // Settings Change-Request Fields (tick list)
   initSettingsFieldsPanel();
 
@@ -3061,6 +3469,26 @@ async function initAdminPage(isAdmin) {
 
   // Manage Bad Behavior Records
   await initBadBehaviorPanel();
+
+  // Timetable — Add Slot form, Active Timetable panel, Edit + Override modals
+  initTimetableForm();
+  await renderAdminTimetable();
+  document.getElementById("refresh-timetable").addEventListener("click", renderAdminTimetable);
+  wireTimetableEditModal();
+  wireTimetableOverrideModal();
+
+  // Database Storage (estimate)
+  initDbStoragePanel();
+
+  // Data Table (Data tab) — pick-your-columns view over /batchmates
+  await initDataTablePanel();
+
+  // Manage Admin Access (Danger tab, super admin only)
+  if (ADMIN_INFO && ADMIN_INFO.superAdmin === true) {
+    const manageBtn = document.getElementById("manage-admins-btn");
+    if (manageBtn) manageBtn.hidden = false;
+    initManageAdminsPanel();
+  }
 
 }
 
@@ -3143,6 +3571,7 @@ async function initBadBehaviorPanel() {
   if (select.value) await renderListFor(select.value);
 
   form.addEventListener("submit", async (e) => {
+    if (!guardPerm('badBehavior', 'Bad Behavior Record')) return;
     e.preventDefault();
     errorEl.hidden = true;
     successEl.hidden = true;
@@ -3225,6 +3654,7 @@ async function initBadgeAssignmentPanel() {
       label.textContent = badge.name || "Unnamed badge";
 
       cb.addEventListener("change", async () => {
+        if (!guardPerm('badges', 'Manage Student Badges')) { cb.checked = !cb.checked; return; }
         cb.disabled = true;
         statusEl.textContent = "Saving…";
         try {
@@ -3263,7 +3693,7 @@ async function getBatchmatesPublicList() {
   const list = [];
   snap.forEach((docSnap) => {
     const d = docSnap.data();
-    list.push({ uid: docSnap.id, fullName: d.fullName || "Unnamed", campusIndexNumber: d.campusIndexNumber || "" });
+    list.push({ uid: docSnap.id, fullName: d.fullName || "Unnamed", campusIndexNumber: d.campusIndexNumber || "", photoUrl: d.photoUrl || "" });
   });
   list.sort((a, b) => a.fullName.localeCompare(b.fullName));
   batchmatesPublicListCache = list;
@@ -3297,6 +3727,7 @@ async function initProjectForm() {
   await createGroupBlock(); // start with exactly one empty group block
 
   projectForm.addEventListener("submit", async (e) => {
+    if (!guardPerm('projects', 'Add Group Project')) return;
     e.preventDefault();
     errorEl.hidden = true;
     successEl.hidden = true;
@@ -3418,6 +3849,7 @@ async function initFundTransactionForm() {
   });
 
   form.addEventListener("submit", async (e) => {
+    if (!guardPerm('fund', 'Add Fund Transaction')) return;
     e.preventDefault();
     errorEl.hidden = true;
     successEl.hidden = true;
@@ -3810,7 +4242,7 @@ function renderActiveTasksList(filterUid) {
       } catch (err) {
         verifyBtn.disabled = false;
         verifyBtn.textContent = "Verify";
-        alert("Could not verify this task. Please try again.");
+        if (!err || err.message !== "no-permission") alert("Could not verify this task. Please try again.");
       }
     });
 
@@ -3930,7 +4362,7 @@ function renderActiveTasksList(filterUid) {
       } catch (err) {
         verifyBtn.disabled = false;
         verifyBtn.textContent = "Verify";
-        alert("Could not verify this task. Please try again.");
+        if (!err || err.message !== "no-permission") alert("Could not verify this task. Please try again.");
       }
     });
 
@@ -3956,6 +4388,7 @@ function renderActiveTasksList(filterUid) {
 // every still-active doc in that group in one go, since those fields
 // are duplicated per-assignee rather than stored once.
 function openTaskEditModal(task, isGroupEdit) {
+  if (!guardPerm('tasks', 'Edit Task')) return;
   const overlay = document.getElementById("modal-task-edit");
   const errorEl = document.getElementById("taskedit-error");
   const successEl = document.getElementById("taskedit-success");
@@ -3982,6 +4415,7 @@ function wireTaskEditModal() {
   if (!form) return;
 
   form.addEventListener("submit", async (e) => {
+    if (!guardPerm('tasks', 'Edit Task')) return;
     e.preventDefault();
     const errorEl = document.getElementById("taskedit-error");
     const successEl = document.getElementById("taskedit-success");
@@ -4037,6 +4471,7 @@ function wireTaskEditModal() {
 // hit "Notify me") if present, falling back to today for older tasks
 // that predate that field.
 async function adminVerifyTask(taskId, task, rating) {
+  if (!guardPerm('tasks', 'Verify Task')) throw new Error("no-permission");
   const dueDate = task.dueDate || "";
   const doneDate = task.completionRequestedAt || new Date().toISOString().slice(0, 10);
   const onTime = !dueDate || doneDate <= dueDate;
@@ -4173,91 +4608,6 @@ function openTaskDetailModal(task) {
   overlay.hidden = false;
 }
 
-// ── Admin: Prestige Leaderboard ─────────────────────────────────
-// Reads /batchmates directly (via the admin-read bypass), NOT
-// batchmatesPublic — prestige totals are deliberately not mirrored
-// into the public collection, so a batchmate can see their own total
-// on their Dashboard but never anyone else's. This panel is the only
-// place the full ranking is visible, and only admins can open it.
-async function renderPrestigeLeaderboard() {
-  const container = document.getElementById("admin-leaderboard");
-  if (!container) return;
-  container.innerHTML = "Loading…";
-
-  const snap = await getDocs(collection(db, "batchmates"));
-  const list = [];
-  snap.forEach((docSnap) => {
-    const d = docSnap.data();
-    list.push({ fullName: d.fullName || "Unnamed", points: Number(d.prestigePoints) || 0 });
-  });
-  list.sort((a, b) => b.points - a.points);
-
-  if (list.length === 0) {
-    container.innerHTML = '<p class="info-text" style="color:var(--muted)">No batchmates found.</p>';
-    return;
-  }
-
-  container.innerHTML = "";
-  list.forEach((p, index) => {
-    const row = document.createElement("div");
-    row.className = "prestige-log-item";
-
-    const left = document.createElement("div");
-    left.className = "prestige-log-note";
-    left.textContent = `${index + 1}. ${p.fullName}`;
-
-    const right = document.createElement("div");
-    right.className = "prestige-log-amount prestige-positive";
-    right.textContent = p.points.toLocaleString();
-
-    row.appendChild(left);
-    row.appendChild(right);
-    container.appendChild(row);
-  });
-}
-
-// ── Admin: Fund Contribution Leaderboard ────────────────────────
-// Same shape as the Prestige Leaderboard above, ranked by `fundDonated`
-// instead. Reads the admin-only `batchmates` collection (not
-// `batchmatesPublic`) for the same privacy reason prestige points were
-// moved off `batchmatesPublic` — donation totals are admin-only too.
-async function renderFundLeaderboard() {
-  const container = document.getElementById("admin-fund-leaderboard");
-  if (!container) return;
-  container.innerHTML = "Loading…";
-
-  const snap = await getDocs(collection(db, "batchmates"));
-  const list = [];
-  snap.forEach((docSnap) => {
-    const d = docSnap.data();
-    list.push({ fullName: d.fullName || "Unnamed", donated: Number(d.fundDonated) || 0 });
-  });
-  list.sort((a, b) => b.donated - a.donated);
-
-  if (list.length === 0) {
-    container.innerHTML = '<p class="info-text" style="color:var(--muted)">No batchmates found.</p>';
-    return;
-  }
-
-  container.innerHTML = "";
-  list.forEach((p, index) => {
-    const row = document.createElement("div");
-    row.className = "prestige-log-item";
-
-    const left = document.createElement("div");
-    left.className = "prestige-log-note";
-    left.textContent = `${index + 1}. ${p.fullName}`;
-
-    const right = document.createElement("div");
-    right.className = "prestige-log-amount prestige-positive";
-    right.textContent = "Rs. " + p.donated.toLocaleString();
-
-    row.appendChild(left);
-    row.appendChild(right);
-    container.appendChild(row);
-  });
-}
-
 // ── Admin: Fund Transaction History ──────────────────────────────
 // Every fundTransactions doc, editable/deletable after the fact — unlike
 // the read-only history a batchmate sees on fund.html. Two shapes exist
@@ -4345,6 +4695,7 @@ function renderFundTransactionsList() {
 }
 
 function openFundTransactionEditModal(tx) {
+  if (!guardPerm('fund', 'Edit Fund Transaction')) return;
   document.getElementById("fundtx-id").value = tx.id;
   document.getElementById("fundtx-mode").value = tx.mode || "lump";
   document.getElementById("fundtx-type").value = (tx.type || "income").toLowerCase();
@@ -4398,6 +4749,7 @@ function wireFundTransactionEditModal() {
   if (!form || !deleteBtn) return;
 
   form.addEventListener("submit", async (e) => {
+    if (!guardPerm('fund', 'Edit Fund Transaction')) return;
     e.preventDefault();
     const id = document.getElementById("fundtx-id").value;
     const mode = document.getElementById("fundtx-mode").value;
@@ -4470,7 +4822,6 @@ function wireFundTransactionEditModal() {
       successEl.textContent = "Transaction updated.";
       successEl.hidden = false;
       await renderAdminFundTransactions();
-      await renderFundLeaderboard();
       setTimeout(() => { document.getElementById("modal-fundtx-edit").hidden = true; }, 700);
     } catch (err) {
       errorEl.textContent = err.message || "Could not save changes. Please try again.";
@@ -4512,7 +4863,6 @@ function wireFundTransactionEditModal() {
       await deleteDoc(doc(db, "fundTransactions", id));
       document.getElementById("modal-fundtx-edit").hidden = true;
       await renderAdminFundTransactions();
-      await renderFundLeaderboard();
     } catch (err) {
       errorEl.textContent = "Could not delete this transaction. Please try again.";
       errorEl.hidden = false;
@@ -4559,6 +4909,7 @@ async function renderAdminActiveEvents() {
 }
 
 async function openEventEditModal(ev) {
+  if (!guardPerm('events', 'Edit Event')) return;
   document.getElementById("eventedit-id").value = ev.id;
   document.getElementById("eventedit-name").value = ev.name || "";
   document.getElementById("eventedit-datetime").value = ev.date || "";
@@ -4581,6 +4932,7 @@ function wireEventEditModal() {
   if (!form || !deleteBtn) return;
 
   form.addEventListener("submit", async (e) => {
+    if (!guardPerm('events', 'Edit Event')) return;
     e.preventDefault();
     const id = document.getElementById("eventedit-id").value;
     const errorEl = document.getElementById("eventedit-error");
@@ -4750,6 +5102,7 @@ async function renderAdminActiveProjects() {
 // pre-filled with the project's current title/description/status/order
 // and each group's name/leader/due date/members.
 async function openProjectEditModal(p) {
+  if (!guardPerm('projects', 'Edit Group Project')) return;
   const overlay = document.getElementById("modal-project-edit");
   const errorEl = document.getElementById("projectedit-error");
   const successEl = document.getElementById("projectedit-success");
@@ -4801,6 +5154,7 @@ function initProjectEditForm() {
   addGroupBtn.addEventListener("click", () => createGroupBlock("projectedit-groups-container"));
 
   form.addEventListener("submit", async (e) => {
+    if (!guardPerm('projects', 'Edit Group Project')) return;
     e.preventDefault();
     errorEl.hidden = true;
     successEl.hidden = true;
@@ -5273,11 +5627,12 @@ async function renderAdminChangeRequests() {
         approveBtn.disabled = false;
         rejectBtn.disabled = false;
         approveBtn.textContent = "Approve";
-        alert("Could not approve this request. Please try again.");
+        if (!err || err.message !== "no-permission") alert("Could not approve this request. Please try again.");
       }
     });
 
     rejectBtn.addEventListener("click", async () => {
+      if (!guardPerm('changeRequests', 'Reject Change Request')) return;
       const confirmed = confirm(`Reject ${req.requesterName || "this batchmate"}'s requested changes? Nothing will be saved to their profile.`);
       if (!confirmed) return;
       approveBtn.disabled = true;
@@ -5309,6 +5664,7 @@ async function renderAdminChangeRequests() {
 // the request approved. batchmatesPublicListCache is invalidated so the
 // directory, task-assignee dropdown, etc. pick up the change right away.
 async function approveChangeRequest(req) {
+  if (!guardPerm('changeRequests', 'Approve Change Request')) throw new Error("no-permission");
   const changes = req.changes || {};
   if (Object.keys(changes).length === 0) {
     await updateDoc(doc(db, "changeRequests", req.id), { status: "approved", reviewedAt: serverTimestamp() });
@@ -5352,6 +5708,7 @@ function initBulkFieldForm() {
   syncValueRow();
 
   form.addEventListener("submit", async (e) => {
+    if (!guardPerm('bulkField', 'Bulk Field Edit')) return;
     e.preventDefault();
     errorEl.hidden = true;
     successEl.hidden = true;
@@ -5608,6 +5965,7 @@ function initFieldManagerPanel() {
   });
 
   saveBtn.addEventListener("click", async () => {
+    if (!guardPerm('fieldManager', 'Manage Profile Fields')) return;
     errorEl.hidden = true;
     successEl.hidden = true;
 
@@ -5652,6 +6010,7 @@ function initFieldManagerPanel() {
   });
 
   resyncBtn.addEventListener("click", async () => {
+    if (!guardPerm('fieldManager', 'Manage Profile Fields')) return;
     errorEl.hidden = true;
     successEl.hidden = true;
     resyncBtn.disabled = true;
@@ -5754,74 +6113,415 @@ async function renderAdminDirectoryDetail(d) {
   }
 }
 
-let adminDirectoryCache = null;
-function initAdminDirectoryPanel() {
-  const openBtn = document.querySelector('.admin-section-btn[data-modal="modal-admindirectory"]');
-  const grid = document.getElementById("admindir-grid");
-  const searchInput = document.getElementById("admindir-search");
-  if (!openBtn || !grid || !searchInput) return;
+// ── Admin: Data Table (Data tab) ─────────────────────────────────────
+// A pick-your-columns table over the full /batchmates collection —
+// admin-only, includes every private field (NIC, medical, etc.), reusing
+// the same admin read-bypass the removed Batchmate Directory panel used to.
+// Column choice is remembered per-browser (localStorage) — it's a view
+// preference, not shared batch data, so it isn't written to Firestore.
+// Tapping a column header sorts the rows alphabetically (numeric-aware,
+// so index numbers sort sensibly) by that column, ascending then descending.
+const DATATABLE_COLUMNS_KEY = "adminDataTableColumns";
+let dataTableRows = [];       // every batchmate doc, full record
+let dataTableFieldKeys = [];  // every known field key across all docs
+let dataTableColumns = [];    // currently selected column keys, in order
+let dataTableSort = { key: null, dir: "asc" };
+let dataTableFilter = { key: "", values: [] }; // field key + set of values to filter rows by (row matches if its value is ANY of these); "" key or empty values = no filter
+let dataTableFilterValueOptions = []; // every distinct value the current filter field actually has, for the values picker
 
-  function renderGrid(list) {
-    grid.innerHTML = "";
-    if (list.length === 0) {
-      grid.innerHTML = '<p class="info-text" style="color:var(--muted)">No matches found.</p>';
-      return;
+function loadDataTableColumns() {
+  try {
+    const raw = localStorage.getItem(DATATABLE_COLUMNS_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return Array.isArray(parsed) && parsed.length ? parsed : ["fullName", "campusIndexNumber"];
+  } catch (err) {
+    return ["fullName", "campusIndexNumber"];
+  }
+}
+function saveDataTableColumns() {
+  try { localStorage.setItem(DATATABLE_COLUMNS_KEY, JSON.stringify(dataTableColumns)); } catch (err) { /* ignore */ }
+}
+
+// Returns dataTableRows narrowed to the active field/values filter (if any).
+// A row matches if its value is ANY of the ticked values (e.g. Blood Type:
+// A+ or B-). Matching is on the same formatted display string shown in the
+// table, so "Female" matches however gender is actually stored (string, etc.).
+function getFilteredDataTableRows() {
+  if (!dataTableFilter.key || dataTableFilter.values.length === 0) return dataTableRows;
+  const key = dataTableFilter.key;
+  const wanted = new Set(dataTableFilter.values);
+  return dataTableRows.filter((r) => wanted.has(formatAdminDirValue(r[key])));
+}
+
+// Fills the "Filter" field dropdown with every known field key (same list
+// the Columns picker uses), independent of which columns are shown.
+function populateDataTableFilterField() {
+  const sel = document.getElementById("datatable-filter-field");
+  if (!sel) return;
+  const current = dataTableFilter.key;
+  sel.innerHTML = '<option value="">Filter: All records</option>';
+  dataTableFieldKeys.forEach((key) => {
+    const opt = document.createElement("option");
+    opt.value = key;
+    opt.textContent = humanizeKey(key);
+    sel.appendChild(opt);
+  });
+  if (current && dataTableFieldKeys.includes(current)) {
+    sel.value = current;
+  } else {
+    dataTableFilter = { key: "", values: [] };
+    sel.value = "";
+  }
+}
+
+// Recomputes every distinct value the current filter field actually has
+// across all batchmates (blank/"—" entries excluded), drops any previously
+// ticked values that no longer exist, and updates the "values" button's
+// label/visibility to reflect the current selection.
+function refreshDataTableFilterValues() {
+  const btn = document.getElementById("datatable-filter-values-btn");
+  if (!btn) return;
+  if (!dataTableFilter.key) {
+    btn.hidden = true;
+    dataTableFilterValueOptions = [];
+    dataTableFilter.values = [];
+    return;
+  }
+  const key = dataTableFilter.key;
+  dataTableFilterValueOptions = Array.from(new Set(
+    dataTableRows.map((r) => formatAdminDirValue(r[key])).filter((v) => v !== "—")
+  )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+
+  dataTableFilter.values = dataTableFilter.values.filter((v) => dataTableFilterValueOptions.includes(v));
+  btn.hidden = false;
+  btn.textContent = dataTableFilter.values.length === 0
+    ? "Any value"
+    : dataTableFilter.values.length === 1
+      ? dataTableFilter.values[0]
+      : `${dataTableFilter.values.length} values`;
+}
+
+// Fills the filter-values modal with one checkbox per distinct value for
+// the currently chosen field, ticking whichever are already selected.
+function renderDataTableFilterValuePicker() {
+  const list = document.getElementById("datatable-filter-values-list");
+  const title = document.getElementById("datatable-filter-values-title");
+  if (!list) return;
+  if (title) title.textContent = dataTableFilter.key ? `Filter: ${humanizeKey(dataTableFilter.key)}` : "Filter Values";
+  list.innerHTML = "";
+  if (dataTableFilterValueOptions.length === 0) {
+    list.innerHTML = '<p class="leader-picker-empty">No values found.</p>';
+    return;
+  }
+  dataTableFilterValueOptions.forEach((v) => {
+    const row = document.createElement("label");
+    row.className = "member-check-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = v;
+    cb.checked = dataTableFilter.values.includes(v);
+    const span = document.createElement("span");
+    span.textContent = v;
+    row.appendChild(cb);
+    row.appendChild(span);
+    list.appendChild(row);
+  });
+}
+
+function renderDataTable() {
+  const head = document.getElementById("datatable-head");
+  const body = document.getElementById("datatable-body");
+  const empty = document.getElementById("datatable-empty");
+  const wrap = document.getElementById("datatable-wrap");
+  if (!head || !body) return;
+  head.innerHTML = "";
+  body.innerHTML = "";
+
+  if (dataTableColumns.length === 0) {
+    wrap.hidden = true;
+    empty.hidden = false;
+    return;
+  }
+  wrap.hidden = false;
+  empty.hidden = true;
+
+  dataTableColumns.forEach((key) => {
+    const th = document.createElement("th");
+    th.textContent = humanizeKey(key);
+    if (dataTableSort.key === key) {
+      th.classList.add("sorted");
+      const arrow = document.createElement("span");
+      arrow.className = "sort-arrow";
+      arrow.textContent = dataTableSort.dir === "asc" ? "↑" : "↓";
+      th.appendChild(arrow);
     }
-    list.forEach((b) => {
-      const card = document.createElement("div");
-      card.className = "admindir-card";
-      card.appendChild(buildAvatar(b.fullName, b.photoUrl));
+    th.addEventListener("click", () => {
+      if (dataTableSort.key === key) {
+        dataTableSort.dir = dataTableSort.dir === "asc" ? "desc" : "asc";
+      } else {
+        dataTableSort = { key, dir: "asc" };
+      }
+      renderDataTable();
+    });
+    head.appendChild(th);
+  });
 
-      const name = document.createElement("div");
-      name.className = "admindir-card-name";
-      name.textContent = (b.fullName || "Unnamed").split(" ")[0];
-
-      const index = document.createElement("div");
-      index.className = "admindir-card-index";
-      index.textContent = b.campusIndexNumber || "—";
-
-      card.appendChild(name);
-      card.appendChild(index);
-
-      card.addEventListener("click", async () => {
-        const avatarEl = document.getElementById("admindir-detail-avatar");
-        avatarEl.innerHTML = "";
-        avatarEl.appendChild(buildAvatar(b.fullName, b.photoUrl).firstChild);
-        document.getElementById("admindir-detail-name").textContent = b.fullName || "Unnamed";
-        document.getElementById("admindir-detail-index").textContent = b.campusIndexNumber || "—";
-        await renderAdminDirectoryDetail(b);
-        document.getElementById("modal-admindirectory-detail").hidden = false;
-      });
-
-      grid.appendChild(card);
+  let rows = getFilteredDataTableRows();
+  if (dataTableSort.key) {
+    const sortKey = dataTableSort.key;
+    rows = [...rows].sort((a, b) => {
+      const av = formatAdminDirValue(a[sortKey]);
+      const bv = formatAdminDirValue(b[sortKey]);
+      const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" });
+      return dataTableSort.dir === "asc" ? cmp : -cmp;
     });
   }
 
-  openBtn.addEventListener("click", async () => {
-    grid.innerHTML = '<p class="info-text" style="color:var(--muted)">Loading…</p>';
-    searchInput.value = "";
-    const snap = await getDocs(collection(db, "batchmates"));
-    const list = [];
-    snap.forEach((docSnap) => list.push({ uid: docSnap.id, ...docSnap.data() }));
-    // Sorted by campus index number, same numeric-aware sort as the Home
-    // directory (so e.g. AS2025701..AS2025768 land in order).
-    list.sort((a, b) =>
-      (a.campusIndexNumber || "").localeCompare(b.campusIndexNumber || "", undefined, { numeric: true, sensitivity: "base" })
-    );
-    adminDirectoryCache = list;
-    renderGrid(list);
+  if (rows.length === 0) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = dataTableColumns.length;
+    td.textContent = "No records match this filter.";
+    td.style.textAlign = "center";
+    td.style.color = "var(--muted)";
+    td.style.padding = "20px 10px";
+    tr.appendChild(td);
+    body.appendChild(tr);
+    return;
+  }
+
+  rows.forEach((r) => {
+    const tr = document.createElement("tr");
+    tr.classList.add("data-table-row");
+    dataTableColumns.forEach((key) => {
+      const td = document.createElement("td");
+      const val = formatAdminDirValue(r[key]);
+      td.textContent = val;
+      td.title = val;
+      tr.appendChild(td);
+    });
+    tr.addEventListener("click", async () => {
+      const avatarEl = document.getElementById("admindir-detail-avatar");
+      avatarEl.innerHTML = "";
+      avatarEl.appendChild(buildAvatar(r.fullName, r.photoUrl).firstChild);
+      document.getElementById("admindir-detail-name").textContent = r.fullName || "Unnamed";
+      document.getElementById("admindir-detail-index").textContent = r.campusIndexNumber || "—";
+      await renderAdminDirectoryDetail(r);
+      document.getElementById("modal-admindirectory-detail").hidden = false;
+    });
+    body.appendChild(tr);
+  });
+}
+
+// Exports exactly what the Data tab table is currently showing — the
+// selected columns, in their current order, for whatever rows survive the
+// active filter, in the current sort order — as a downloadable PDF. Uses
+// jsPDF + its autoTable plugin (loaded via <script> tags in admin.html);
+// bails out with a message if those scripts failed to load (e.g. offline).
+function renderDataTablePdf() {
+  if (dataTableColumns.length === 0) {
+    alert("Pick at least one column first.");
+    return;
+  }
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    alert("PDF export isn't available right now — check your connection and try again.");
+    return;
+  }
+
+  let rows = getFilteredDataTableRows();
+  if (dataTableSort.key) {
+    const sortKey = dataTableSort.key;
+    rows = [...rows].sort((a, b) => {
+      const av = formatAdminDirValue(a[sortKey]);
+      const bv = formatAdminDirValue(b[sortKey]);
+      const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" });
+      return dataTableSort.dir === "asc" ? cmp : -cmp;
+    });
+  }
+
+  const head = [dataTableColumns.map((key) => humanizeKey(key))];
+  const body = rows.map((r) => dataTableColumns.map((key) => formatAdminDirValue(r[key])));
+
+  const { jsPDF } = window.jspdf;
+  const wide = dataTableColumns.length > 5;
+  const docPdf = new jsPDF({ orientation: wide ? "landscape" : "portrait" });
+
+  docPdf.setFontSize(13);
+  docPdf.text("Batchmate Data", 14, 15);
+  docPdf.setFontSize(9);
+  const filterNote = dataTableFilter.key && dataTableFilter.values.length
+    ? `Filtered: ${humanizeKey(dataTableFilter.key)} = ${dataTableFilter.values.join(" or ")}`
+    : "All records";
+  docPdf.text(`${filterNote} · ${rows.length} row(s) · ${new Date().toLocaleDateString()}`, 14, 21);
+
+  docPdf.autoTable({
+    head,
+    body,
+    startY: 26,
+    styles: { fontSize: 8, cellPadding: 3 },
+    headStyles: { fillColor: [76, 141, 255] },
+    margin: { left: 10, right: 10 }
   });
 
-  searchInput.addEventListener("input", () => {
-    if (!adminDirectoryCache) return;
-    const term = searchInput.value.trim().toLowerCase();
-    if (!term) { renderGrid(adminDirectoryCache); return; }
-    renderGrid(adminDirectoryCache.filter((b) => {
-      const name = (b.fullName || "").toLowerCase();
-      const idx = (b.campusIndexNumber || "").toLowerCase();
-      return name.includes(term) || idx.includes(term);
-    }));
+  docPdf.save(`batchmate-data-${new Date().toISOString().slice(0, 10)}.pdf`);
+}
+
+// Exports exactly what the Data tab table is currently showing — same
+// columns/filter/sort as renderDataTablePdf above — as a downloadable
+// .xlsx file. Uses SheetJS (loaded via <script> tag in admin.html), a free
+// client-side library — no server, account or API key involved. The .xlsx
+// file opens directly in Excel and can also be dropped straight into
+// Google Sheets (File → Import), so this one export covers both.
+function renderDataTableExcel() {
+  if (dataTableColumns.length === 0) {
+    alert("Pick at least one column first.");
+    return;
+  }
+  if (!window.XLSX) {
+    alert("Excel export isn't available right now — check your connection and try again.");
+    return;
+  }
+
+  let rows = getFilteredDataTableRows();
+  if (dataTableSort.key) {
+    const sortKey = dataTableSort.key;
+    rows = [...rows].sort((a, b) => {
+      const av = formatAdminDirValue(a[sortKey]);
+      const bv = formatAdminDirValue(b[sortKey]);
+      const cmp = av.localeCompare(bv, undefined, { numeric: true, sensitivity: "base" });
+      return dataTableSort.dir === "asc" ? cmp : -cmp;
+    });
+  }
+
+  const header = dataTableColumns.map((key) => humanizeKey(key));
+  const body = rows.map((r) => dataTableColumns.map((key) => formatAdminDirValue(r[key])));
+  const sheet = XLSX.utils.aoa_to_sheet([header, ...body]);
+  sheet["!cols"] = dataTableColumns.map((key) => ({ wch: Math.max(humanizeKey(key).length + 2, 12) }));
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, "Batchmate Data");
+  XLSX.writeFile(workbook, `batchmate-data-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+function renderDataTableColumnPicker(filterTerm) {
+  const list = document.getElementById("datatable-columns-list");
+  list.innerHTML = "";
+  const term = (filterTerm || "").trim().toLowerCase();
+  const keys = dataTableFieldKeys.filter((key) =>
+    !term || key.toLowerCase().includes(term) || humanizeKey(key).toLowerCase().includes(term)
+  );
+
+  if (keys.length === 0) {
+    list.innerHTML = '<p class="leader-picker-empty">No matching fields.</p>';
+    return;
+  }
+
+  keys.forEach((key) => {
+    const row = document.createElement("label");
+    row.className = "member-check-row";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.value = key;
+    cb.checked = dataTableColumns.includes(key);
+    const span = document.createElement("span");
+    span.textContent = humanizeKey(key);
+    row.appendChild(cb);
+    row.appendChild(span);
+    list.appendChild(row);
   });
+}
+
+async function initDataTablePanel() {
+  const columnsBtn = document.getElementById("datatable-columns-btn");
+  const refreshBtn = document.getElementById("datatable-refresh-btn");
+  const columnsModal = document.getElementById("modal-datatable-columns");
+  const columnsSearch = document.getElementById("datatable-columns-search");
+  const applyBtn = document.getElementById("datatable-columns-apply-btn");
+  const filterFieldSel = document.getElementById("datatable-filter-field");
+  const filterValuesBtn = document.getElementById("datatable-filter-values-btn");
+  const filterValuesModal = document.getElementById("modal-datatable-filter-values");
+  const filterValuesApplyBtn = document.getElementById("datatable-filter-values-apply-btn");
+  const pdfBtn = document.getElementById("datatable-pdf-btn");
+  const excelBtn = document.getElementById("datatable-excel-btn");
+  if (!columnsBtn || !refreshBtn || !columnsModal) return;
+
+  dataTableColumns = loadDataTableColumns();
+
+  async function loadData() {
+    const body = document.getElementById("datatable-body");
+    if (!hasAdminPerm('dataTable')) {
+      if (body) body.innerHTML = "";
+      const empty = document.getElementById("datatable-empty");
+      if (empty) { empty.hidden = false; empty.textContent = "⚠ You don't have access to this section."; }
+      return;
+    }
+    if (body) body.innerHTML = "";
+    const snap = await getDocs(collection(db, "batchmates"));
+    dataTableRows = [];
+    const keySet = new Set(["fullName", "campusIndexNumber", "photoUrl"]);
+    snap.forEach((docSnap) => {
+      const d = { uid: docSnap.id, ...docSnap.data() };
+      dataTableRows.push(d);
+      Object.keys(d).forEach((k) => { if (k !== "uid") keySet.add(k); });
+    });
+    // Drop any previously-picked column that no longer exists on any doc.
+    dataTableColumns = dataTableColumns.filter((k) => keySet.has(k));
+    if (dataTableSort.key && !keySet.has(dataTableSort.key)) dataTableSort = { key: null, dir: "asc" };
+
+    dataTableFieldKeys = Array.from(keySet).sort((a, b) => humanizeKey(a).localeCompare(humanizeKey(b)));
+    dataTableRows.sort((a, b) =>
+      (a.fullName || "").localeCompare(b.fullName || "", undefined, { numeric: true, sensitivity: "base" })
+    );
+    populateDataTableFilterField();
+    refreshDataTableFilterValues();
+    renderDataTable();
+  }
+
+  columnsBtn.addEventListener("click", () => {
+    columnsSearch.value = "";
+    renderDataTableColumnPicker("");
+    columnsModal.hidden = false;
+  });
+  columnsSearch.addEventListener("input", () => renderDataTableColumnPicker(columnsSearch.value));
+  applyBtn.addEventListener("click", () => {
+    const checked = Array.from(document.querySelectorAll("#datatable-columns-list input[type=checkbox]:checked")).map((cb) => cb.value);
+    // Keep existing order for columns still checked, append newly-checked ones after.
+    const kept = dataTableColumns.filter((k) => checked.includes(k));
+    const added = checked.filter((k) => !kept.includes(k));
+    dataTableColumns = [...kept, ...added];
+    saveDataTableColumns();
+    if (dataTableSort.key && !dataTableColumns.includes(dataTableSort.key)) dataTableSort = { key: null, dir: "asc" };
+    columnsModal.hidden = true;
+    renderDataTable();
+  });
+  refreshBtn.addEventListener("click", loadData);
+  if (pdfBtn) pdfBtn.addEventListener("click", renderDataTablePdf);
+  if (excelBtn) excelBtn.addEventListener("click", renderDataTableExcel);
+
+  if (filterFieldSel) {
+    filterFieldSel.addEventListener("change", () => {
+      dataTableFilter = { key: filterFieldSel.value, values: [] };
+      refreshDataTableFilterValues();
+      renderDataTable();
+    });
+  }
+  if (filterValuesBtn && filterValuesModal) {
+    filterValuesBtn.addEventListener("click", () => {
+      renderDataTableFilterValuePicker();
+      filterValuesModal.hidden = false;
+    });
+  }
+  if (filterValuesApplyBtn && filterValuesModal) {
+    filterValuesApplyBtn.addEventListener("click", () => {
+      const checked = Array.from(document.querySelectorAll("#datatable-filter-values-list input[type=checkbox]:checked")).map((cb) => cb.value);
+      dataTableFilter.values = checked;
+      refreshDataTableFilterValues();
+      filterValuesModal.hidden = true;
+      renderDataTable();
+    });
+  }
+
+  await loadData();
 }
 
 // ── Admin: Settings Change-Request Fields (Danger tab) ──────────────
@@ -5868,6 +6568,7 @@ function initSettingsFieldsPanel() {
   });
 
   saveBtn.addEventListener("click", async () => {
+    if (!guardPerm('settingsFields', 'Settings Change-Request Fields')) return;
     errorEl.hidden = true;
     successEl.hidden = true;
     const checked = Array.from(sectionsEl.querySelectorAll('input[type="checkbox"]'))
@@ -6378,5 +7079,1159 @@ function wireBatchmateModal() {
   overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !overlay.hidden) closeModal();
+  });
+}
+
+// ══ Timetable + Attendance ═══════════════════════════════════════
+// Two collections: timetableSlots (the recurring weekly schedule —
+// module, dayOfWeek 0-6, startTime/endTime "HH:MM", lecturer, venue,
+// color, startDate) and timetableOverrides (a one-off change to a
+// single occurrence, keyed by slotId + that occurrence's original
+// date — can override any field, move the occurrence to a different
+// date, or cancel it outright, without touching the recurring slot).
+// attendance holds one doc per student per occurrence
+// (`${uid}_${slotId}_${date}`); its mere existence means "present".
+
+const TT_DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+function ttPad(n) { return String(n).padStart(2, "0"); }
+
+// Local (not UTC) YYYY-MM-DD for a Date object — avoids the timezone
+// day-shift that toISOString() would introduce.
+function ttDateStr(d) {
+  return `${d.getFullYear()}-${ttPad(d.getMonth() + 1)}-${ttPad(d.getDate())}`;
+}
+function ttToday() { return ttDateStr(new Date()); }
+function ttAddDays(dateStr, n) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + n);
+  return ttDateStr(dt);
+}
+function ttDayOfWeek(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).getDay();
+}
+function ttFormatTime(hhmm) {
+  if (!hhmm) return "";
+  const [h, m] = hhmm.split(":").map(Number);
+  const d = new Date(2000, 0, 1, h, m);
+  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+}
+function ttFormatDateLabel(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "short" });
+}
+
+let ttSlotsCache = null;
+let ttOverridesCache = null;
+async function fetchTimetableData(forceRefresh) {
+  if (ttSlotsCache && ttOverridesCache && !forceRefresh) {
+    return { slots: ttSlotsCache, overrides: ttOverridesCache };
+  }
+  const [slotsSnap, overridesSnap] = await Promise.all([
+    getDocs(collection(db, "timetableSlots")),
+    getDocs(collection(db, "timetableOverrides"))
+  ]);
+  ttSlotsCache = [];
+  slotsSnap.forEach((d) => ttSlotsCache.push({ id: d.id, ...d.data() }));
+  ttOverridesCache = [];
+  overridesSnap.forEach((d) => ttOverridesCache.push({ id: d.id, ...d.data() }));
+  return { slots: ttSlotsCache, overrides: ttOverridesCache };
+}
+
+// Builds every class occurrence falling between startDateStr and
+// endDateStr (inclusive), applying overrides (field changes, moves,
+// cancellations). Returns a flat array sorted by date then startTime,
+// each item: {date, slotId, module, startTime, endTime, lecturer,
+// venue, color, cancelled, moved, note}.
+function ttBuildOccurrences(slots, overrides, startDateStr, endDateStr) {
+  const overrideByKey = new Map();
+  overrides.forEach((o) => overrideByKey.set(`${o.slotId}_${o.date}`, o));
+
+  const occurrences = [];
+
+  // Natural weekly occurrences, minus ones cancelled or moved away.
+  let cursor = startDateStr;
+  while (cursor <= endDateStr) {
+    const dow = ttDayOfWeek(cursor);
+    slots.forEach((slot) => {
+      if (Number(slot.dayOfWeek) !== dow) return;
+      if (slot.startDate && cursor < slot.startDate) return;
+      const ov = overrideByKey.get(`${slot.id}_${cursor}`);
+      if (ov && ov.newDate && ov.newDate !== cursor) return; // moved away — added below instead
+      if (ov && ov.cancelled) {
+        occurrences.push({
+          date: cursor, slotId: slot.id,
+          module: slot.module, startTime: slot.startTime, endTime: slot.endTime,
+          lecturer: slot.lecturer, venue: slot.venue, color: slot.color,
+          cancelled: true, moved: false, note: ov.note || ""
+        });
+        return;
+      }
+      occurrences.push({
+        date: cursor, slotId: slot.id,
+        module: (ov && ov.module) || slot.module,
+        startTime: (ov && ov.startTime) || slot.startTime,
+        endTime: (ov && ov.endTime) || slot.endTime,
+        lecturer: (ov && ov.lecturer) || slot.lecturer,
+        venue: (ov && ov.venue) || slot.venue,
+        color: slot.color,
+        cancelled: false, moved: false,
+        note: (ov && ov.note) || ""
+      });
+    });
+    cursor = ttAddDays(cursor, 1);
+  }
+
+  // Occurrences moved INTO this range from a different original date.
+  overrides.forEach((ov) => {
+    if (!ov.newDate || ov.newDate < startDateStr || ov.newDate > endDateStr) return;
+    const slot = slots.find((s) => s.id === ov.slotId);
+    if (!slot) return;
+    occurrences.push({
+      date: ov.newDate, slotId: slot.id,
+      module: ov.module || slot.module,
+      startTime: ov.startTime || slot.startTime,
+      endTime: ov.endTime || slot.endTime,
+      lecturer: ov.lecturer || slot.lecturer,
+      venue: ov.venue || slot.venue,
+      color: slot.color,
+      cancelled: false, moved: true,
+      note: ov.note || `Moved from ${ttFormatDateLabel(ov.date)}`
+    });
+  });
+
+  occurrences.sort((a, b) => (a.date + a.startTime).localeCompare(b.date + b.startTime));
+  return occurrences;
+}
+
+// Same generation logic, but bounded to [slot.startDate, today] and
+// used only to compute "how many times was this slot legitimately
+// scheduled so far" for the attendance percentage.
+function ttOccurrencesToDate(slot, overrides) {
+  const today = ttToday();
+  const from = slot.startDate && slot.startDate > "2000-01-01" ? slot.startDate : today;
+  if (from > today) return [];
+  return ttBuildOccurrences([slot], overrides, from, today).filter((o) => !o.cancelled);
+}
+
+async function initTimetablePage(user) {
+  const loadingState = document.getElementById("loading-state");
+  const errorState = document.getElementById("error-state");
+  const content = document.getElementById("timetable-content");
+
+  try {
+    const { slots, overrides } = await fetchTimetableData();
+
+    const today = ttToday();
+    const thisWeekStart = today;
+    const thisWeekEnd = ttAddDays(today, 6);
+    const nextWeekStart = ttAddDays(today, 7);
+    const nextWeekEnd = ttAddDays(today, 13);
+
+    // Which attendance docs already exist for this user, for the dates
+    // we're about to render (this week only — attendance can only be
+    // marked for today anyway, but we still need to know today's state).
+    const attendSnap = await getDocs(query(collection(db, "attendance"), where("uid", "==", user.uid)));
+    const myAttendance = new Set();
+    attendSnap.forEach((d) => myAttendance.add(`${d.data().slotId}_${d.data().date}`));
+
+    renderTtWeek("tt-week-days", ttBuildOccurrences(slots, overrides, thisWeekStart, thisWeekEnd), today, myAttendance, user.uid);
+    renderTtWeek("tt-next-days", ttBuildOccurrences(slots, overrides, nextWeekStart, nextWeekEnd), today, myAttendance, user.uid);
+    renderMyAttendance(slots, overrides, myAttendance);
+
+    wireTtTabs();
+
+    loadingState.hidden = true;
+    content.hidden = false;
+  } catch (err) {
+    loadingState.hidden = true;
+    errorState.hidden = false;
+    errorState.textContent = "Could not load the timetable. Please try again later.";
+  }
+}
+
+function wireTtTabs() {
+  const tabs = document.getElementById("tt-tabs");
+  if (!tabs || tabs.dataset.wired) return;
+  tabs.dataset.wired = "1";
+  const views = {
+    week: document.getElementById("tt-view-week"),
+    next: document.getElementById("tt-view-next"),
+    attendance: document.getElementById("tt-view-attendance")
+  };
+  tabs.addEventListener("click", (e) => {
+    const btn = e.target.closest(".tt-tab-pill");
+    if (!btn) return;
+    tabs.querySelectorAll(".tt-tab-pill").forEach((b) => b.classList.toggle("active", b === btn));
+    Object.entries(views).forEach(([key, el]) => { el.hidden = key !== btn.dataset.ttView; });
+  });
+}
+
+// Groups a flat occurrence list by date and renders one day-block per
+// date in range, oldest first, each with its own card list. Days with
+// nothing scheduled still get a heading + an empty-state line, so the
+// week reads as complete rather than looking broken.
+function renderTtWeek(containerId, occurrences, today, myAttendance, uid) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = "";
+
+  const byDate = new Map();
+  occurrences.forEach((o) => {
+    if (!byDate.has(o.date)) byDate.set(o.date, []);
+    byDate.get(o.date).push(o);
+  });
+
+  const dates = Array.from(byDate.keys()).sort();
+  if (dates.length === 0 && occurrences.length === 0) {
+    // Still show 7 empty day headings so the week isn't just blank —
+    // fall through to the loop below with whatever dates exist.
+  }
+
+  // Ensure every date in the visible span shows up even with 0 classes.
+  // The caller already generated only in-range dates for occurrences,
+  // so we reconstruct the span from the first/last occurrence date if
+  // present, otherwise just render nothing extra.
+  const allDates = dates.length ? dates : [];
+
+  const block = document.createElement("div");
+  allDates.forEach((dateStr) => {
+    const dayBlock = document.createElement("div");
+    dayBlock.className = "tt-day-block";
+
+    const heading = document.createElement("p");
+    const isToday = dateStr === today;
+    heading.className = "tt-day-heading" + (isToday ? " tt-day-today" : "");
+    const label = isToday ? "Today" : (dateStr === ttAddDays(today, 1) ? "Tomorrow" : TT_DAY_NAMES[ttDayOfWeek(dateStr)]);
+    heading.innerHTML = `${label} <span class="tt-day-date">${ttFormatDateLabel(dateStr)}</span>`;
+    dayBlock.appendChild(heading);
+
+    const list = document.createElement("div");
+    list.className = "tt-card-list";
+    const dayItems = byDate.get(dateStr) || [];
+
+    if (dayItems.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "tt-empty-day";
+      empty.textContent = "No classes scheduled.";
+      list.appendChild(empty);
+    } else {
+      dayItems.forEach((o) => list.appendChild(buildTtCard(o, isToday, myAttendance, uid)));
+    }
+
+    dayBlock.appendChild(list);
+    block.appendChild(dayBlock);
+  });
+
+  if (allDates.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "tt-empty-state";
+    empty.textContent = "No classes scheduled for this period.";
+    block.appendChild(empty);
+  }
+
+  container.appendChild(block);
+}
+
+function buildTtCard(o, isToday, myAttendance, uid) {
+  const card = document.createElement("div");
+  card.className = "tt-card" + (o.cancelled ? " tt-cancelled" : "");
+  card.style.setProperty("--tt-color", o.color || "#4C8DFF");
+
+  const timeCol = document.createElement("div");
+  timeCol.className = "tt-card-time-col";
+  timeCol.innerHTML = `<span class="tt-card-time">${ttFormatTime(o.startTime)}</span><span class="tt-card-time-end">${ttFormatTime(o.endTime)}</span>`;
+
+  const body = document.createElement("div");
+  body.className = "tt-card-body";
+
+  const topRow = document.createElement("div");
+  topRow.className = "tt-card-top-row";
+  const moduleEl = document.createElement("p");
+  moduleEl.className = "tt-card-module";
+  moduleEl.textContent = o.module || "Untitled module";
+  topRow.appendChild(moduleEl);
+  if (o.cancelled) {
+    const badge = document.createElement("span");
+    badge.className = "tt-card-badge";
+    badge.textContent = "Cancelled";
+    topRow.appendChild(badge);
+  } else if (o.moved) {
+    const badge = document.createElement("span");
+    badge.className = "tt-card-badge";
+    badge.textContent = "Rescheduled";
+    topRow.appendChild(badge);
+  }
+  body.appendChild(topRow);
+
+  const meta = document.createElement("p");
+  meta.className = "tt-card-meta";
+  const lecturerEl = document.createElement("span");
+  lecturerEl.textContent = `👤 ${o.lecturer || "TBA"}`;
+  const venueEl = document.createElement("span");
+  venueEl.textContent = `📍 ${o.venue || "TBA"}`;
+  meta.appendChild(lecturerEl);
+  meta.appendChild(venueEl);
+  body.appendChild(meta);
+
+  if (o.note) {
+    const note = document.createElement("p");
+    note.className = "tt-card-note";
+    note.textContent = o.note;
+    body.appendChild(note);
+  }
+
+  if (isToday && !o.cancelled) {
+    const key = `${o.slotId}_${o.date}`;
+    const attendBtn = document.createElement("button");
+    attendBtn.type = "button";
+    attendBtn.className = "tt-attend-btn" + (myAttendance.has(key) ? " marked" : "");
+    attendBtn.textContent = myAttendance.has(key) ? "✓ Attended" : "Mark Attendance";
+    attendBtn.addEventListener("click", async () => {
+      attendBtn.disabled = true;
+      try {
+        if (myAttendance.has(key)) {
+          await deleteDoc(doc(db, "attendance", `${uid}_${key}`));
+          myAttendance.delete(key);
+          attendBtn.classList.remove("marked");
+          attendBtn.textContent = "Mark Attendance";
+        } else {
+          await setDoc(doc(db, "attendance", `${uid}_${key}`), {
+            uid, slotId: o.slotId, date: o.date, module: o.module || "",
+            markedAt: serverTimestamp()
+          });
+          myAttendance.add(key);
+          attendBtn.classList.add("marked");
+          attendBtn.textContent = "✓ Attended";
+        }
+      } catch (err) {
+        // leave state as-is; button re-enables below so they can retry
+      } finally {
+        attendBtn.disabled = false;
+      }
+    });
+    body.appendChild(attendBtn);
+  }
+
+  card.appendChild(timeCol);
+  card.appendChild(body);
+  return card;
+}
+
+// Aggregates attendance by module name (a module can have more than
+// one weekly slot — e.g. lecture + lab — and both should count toward
+// the same module's percentage).
+function renderMyAttendance(slots, overrides, myAttendance) {
+  const overallEl = document.getElementById("attend-overall-pct");
+  const overallSubEl = document.getElementById("attend-overall-sub");
+  const listEl = document.getElementById("attend-module-list");
+  if (!listEl) return;
+
+  const byModule = new Map(); // module -> {attended, total, color}
+  slots.forEach((slot) => {
+    const occ = ttOccurrencesToDate(slot, overrides);
+    const key = slot.module || "Untitled module";
+    if (!byModule.has(key)) byModule.set(key, { attended: 0, total: 0, color: slot.color || "#4C8DFF" });
+    const entry = byModule.get(key);
+    entry.total += occ.length;
+    occ.forEach((o) => { if (myAttendance.has(`${o.slotId}_${o.date}`)) entry.attended += 1; });
+  });
+
+  let grandAttended = 0, grandTotal = 0;
+  byModule.forEach((v) => { grandAttended += v.attended; grandTotal += v.total; });
+
+  if (grandTotal === 0) {
+    overallEl.textContent = "—";
+    overallSubEl.textContent = "No classes have happened yet.";
+  } else {
+    const pct = Math.round((grandAttended / grandTotal) * 100);
+    overallEl.textContent = `${pct}%`;
+    overallSubEl.textContent = `${grandAttended} of ${grandTotal} classes attended`;
+  }
+
+  listEl.innerHTML = "";
+  if (byModule.size === 0) {
+    listEl.innerHTML = '<p class="info-text" style="color:var(--muted)">No timetable set up yet.</p>';
+    return;
+  }
+
+  Array.from(byModule.entries())
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .forEach(([module, v]) => {
+      const pct = v.total > 0 ? Math.round((v.attended / v.total) * 100) : 0;
+      const card = document.createElement("div");
+      card.className = "attend-stat-card";
+      card.style.setProperty("--tt-color", v.color);
+      card.innerHTML = `
+        <div class="attend-stat-top">
+          <span class="attend-stat-module">${module}</span>
+          <span class="attend-stat-pct">${v.total > 0 ? pct + "%" : "—"}</span>
+        </div>
+        <div class="attend-bar-track"><div class="attend-bar-fill" style="width:${pct}%"></div></div>
+        <div class="attend-stat-fraction">${v.attended} of ${v.total} classes</div>
+      `;
+      listEl.appendChild(card);
+    });
+}
+
+// ── Admin: Timetable management ─────────────────────────────────
+function initTimetableForm() {
+  const form = document.getElementById("form-timetable");
+  if (!form || form.dataset.wired) return;
+  form.dataset.wired = "1";
+  const errorEl = document.getElementById("tt-error");
+  const successEl = document.getElementById("tt-success");
+  const btn = form.querySelector("button[type=submit]");
+  const originalLabel = btn.textContent;
+  document.getElementById("tt-startdate").value = ttToday();
+
+  form.addEventListener("submit", async (e) => {
+    if (!guardPerm('timetable', 'Add Timetable Slot')) return;
+    e.preventDefault();
+    errorEl.hidden = true;
+    successEl.hidden = true;
+    btn.disabled = true;
+    btn.textContent = "Adding…";
+    try {
+      await addDoc(collection(db, "timetableSlots"), {
+        module: document.getElementById("tt-module").value.trim(),
+        dayOfWeek: Number(document.getElementById("tt-day").value),
+        startTime: document.getElementById("tt-start").value,
+        endTime: document.getElementById("tt-end").value,
+        lecturer: document.getElementById("tt-lecturer").value.trim(),
+        venue: document.getElementById("tt-venue").value.trim(),
+        color: document.getElementById("tt-color").value,
+        startDate: document.getElementById("tt-startdate").value
+      });
+      successEl.textContent = "Timetable slot added.";
+      successEl.hidden = false;
+      form.reset();
+      document.getElementById("tt-startdate").value = ttToday();
+      ttSlotsCache = null;
+      await renderAdminTimetable();
+    } catch (err) {
+      errorEl.textContent = "Could not add this slot — check the fields and try again.";
+      errorEl.hidden = false;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+    }
+  });
+}
+
+async function renderAdminTimetable() {
+  const container = document.getElementById("admin-timetable-list");
+  if (!container) return;
+  container.innerHTML = "Loading…";
+
+  const { slots } = await fetchTimetableData(true);
+
+  if (slots.length === 0) {
+    container.innerHTML = '<p class="info-text" style="color:var(--muted)">No timetable slots yet.</p>';
+    return;
+  }
+
+  slots.sort((a, b) => (Number(a.dayOfWeek) - Number(b.dayOfWeek)) || (a.startTime || "").localeCompare(b.startTime || ""));
+
+  container.innerHTML = "";
+  slots.forEach((slot) => {
+    const box = document.createElement("div");
+    box.className = "admin-tt-box";
+    box.style.setProperty("--tt-color", slot.color || "#4C8DFF");
+    box.innerHTML = `
+      <div class="admin-tt-top">
+        <span class="admin-tt-name"><span class="tt-color-dot" style="background:${slot.color || "#4C8DFF"}"></span>${slot.module || "Untitled module"}</span>
+      </div>
+      <div class="admin-tt-meta">${TT_DAY_NAMES[Number(slot.dayOfWeek)] || ""} · ${ttFormatTime(slot.startTime)}–${ttFormatTime(slot.endTime)} · ${slot.lecturer || "TBA"} · ${slot.venue || "TBA"}</div>
+    `;
+    const actions = document.createElement("div");
+    actions.className = "admin-tt-actions";
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", () => openTimetableEditModal(slot));
+    const overrideBtn = document.createElement("button");
+    overrideBtn.type = "button";
+    overrideBtn.textContent = "Override a Date";
+    overrideBtn.addEventListener("click", () => openTimetableOverrideModal(slot));
+    actions.appendChild(editBtn);
+    actions.appendChild(overrideBtn);
+    box.appendChild(actions);
+    container.appendChild(box);
+  });
+}
+
+function openTimetableEditModal(slot) {
+  if (!guardPerm('timetable', 'Edit Timetable')) return;
+  document.getElementById("ttedit-id").value = slot.id;
+  document.getElementById("ttedit-module").value = slot.module || "";
+  document.getElementById("ttedit-day").value = String(slot.dayOfWeek);
+  document.getElementById("ttedit-start").value = slot.startTime || "";
+  document.getElementById("ttedit-end").value = slot.endTime || "";
+  document.getElementById("ttedit-lecturer").value = slot.lecturer || "";
+  document.getElementById("ttedit-venue").value = slot.venue || "";
+  document.getElementById("ttedit-color").value = slot.color || "#4C8DFF";
+  document.getElementById("ttedit-startdate").value = slot.startDate || ttToday();
+  document.getElementById("ttedit-error").hidden = true;
+  document.getElementById("ttedit-success").hidden = true;
+  document.getElementById("modal-timetable-edit").hidden = false;
+}
+
+function wireTimetableEditModal() {
+  const form = document.getElementById("form-timetable-edit");
+  const deleteBtn = document.getElementById("ttedit-delete-btn");
+  if (!form || form.dataset.wired) return;
+  form.dataset.wired = "1";
+
+  form.addEventListener("submit", async (e) => {
+    if (!guardPerm('timetable', 'Edit Timetable')) return;
+    e.preventDefault();
+    const id = document.getElementById("ttedit-id").value;
+    const errorEl = document.getElementById("ttedit-error");
+    const successEl = document.getElementById("ttedit-success");
+    errorEl.hidden = true;
+    successEl.hidden = true;
+    try {
+      await updateDoc(doc(db, "timetableSlots", id), {
+        module: document.getElementById("ttedit-module").value.trim(),
+        dayOfWeek: Number(document.getElementById("ttedit-day").value),
+        startTime: document.getElementById("ttedit-start").value,
+        endTime: document.getElementById("ttedit-end").value,
+        lecturer: document.getElementById("ttedit-lecturer").value.trim(),
+        venue: document.getElementById("ttedit-venue").value.trim(),
+        color: document.getElementById("ttedit-color").value,
+        startDate: document.getElementById("ttedit-startdate").value
+      });
+      successEl.textContent = "Slot updated.";
+      successEl.hidden = false;
+      ttSlotsCache = null;
+      await renderAdminTimetable();
+      setTimeout(() => { document.getElementById("modal-timetable-edit").hidden = true; }, 700);
+    } catch (err) {
+      errorEl.textContent = "Could not save changes. Please try again.";
+      errorEl.hidden = false;
+    }
+  });
+
+  deleteBtn.addEventListener("click", async () => {
+    const id = document.getElementById("ttedit-id").value;
+    if (!id) return;
+    if (!confirm("Delete this timetable slot? This can't be undone. Any overrides tied to it will be orphaned but harmless.")) return;
+    try {
+      await deleteDoc(doc(db, "timetableSlots", id));
+      document.getElementById("modal-timetable-edit").hidden = true;
+      ttSlotsCache = null;
+      await renderAdminTimetable();
+    } catch (err) {
+      document.getElementById("ttedit-error").textContent = "Could not delete this slot. Please try again.";
+      document.getElementById("ttedit-error").hidden = false;
+    }
+  });
+}
+
+function openTimetableOverrideModal(slot) {
+  document.getElementById("ttoverride-slotid").value = slot.id;
+  document.getElementById("ttoverride-slot-label").textContent =
+    `${slot.module || "Untitled module"} — every ${TT_DAY_NAMES[Number(slot.dayOfWeek)]}, ${ttFormatTime(slot.startTime)}–${ttFormatTime(slot.endTime)}`;
+  document.getElementById("form-timetable-override").reset();
+  document.getElementById("ttoverride-date").value = ttToday();
+  document.getElementById("ttoverride-error").hidden = true;
+  document.getElementById("ttoverride-success").hidden = true;
+  renderExistingOverrides(slot.id);
+  document.getElementById("modal-timetable-override").hidden = false;
+}
+
+function renderExistingOverrides(slotId) {
+  const listEl = document.getElementById("ttoverride-existing-list");
+  const existing = (ttOverridesCache || []).filter((o) => o.slotId === slotId);
+  if (existing.length === 0) {
+    listEl.innerHTML = '<p class="info-text" style="color:var(--muted); font-size:12px;">None yet.</p>';
+    return;
+  }
+  existing.sort((a, b) => a.date.localeCompare(b.date));
+  listEl.innerHTML = "";
+  existing.forEach((o) => {
+    const row = document.createElement("div");
+    row.className = "admin-tt-override-item";
+    const desc = o.cancelled ? "Cancelled" : (o.newDate ? `Moved to ${ttFormatDateLabel(o.newDate)}` : "Changed details");
+    row.innerHTML = `<span>${ttFormatDateLabel(o.date)} — ${desc}</span>`;
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.textContent = "Remove";
+    removeBtn.className = "ghost-btn";
+    removeBtn.style.cssText = "padding:4px 10px; font-size:11px;";
+    removeBtn.addEventListener("click", async () => {
+      try {
+        await deleteDoc(doc(db, "timetableOverrides", o.id));
+        ttOverridesCache = null;
+        await fetchTimetableData(true);
+        renderExistingOverrides(slotId);
+      } catch (err) { /* leave the row as-is on failure */ }
+    });
+    row.appendChild(removeBtn);
+    listEl.appendChild(row);
+  });
+}
+
+function wireTimetableOverrideModal() {
+  const form = document.getElementById("form-timetable-override");
+  const cancelCheckbox = document.getElementById("ttoverride-cancel");
+  const fieldsWrap = document.getElementById("ttoverride-fields");
+  if (!form || form.dataset.wired) return;
+  form.dataset.wired = "1";
+
+  cancelCheckbox.addEventListener("change", () => {
+    fieldsWrap.style.display = cancelCheckbox.checked ? "none" : "";
+  });
+
+  form.addEventListener("submit", async (e) => {
+    if (!guardPerm('timetable', 'Timetable Override')) return;
+    e.preventDefault();
+    const slotId = document.getElementById("ttoverride-slotid").value;
+    const date = document.getElementById("ttoverride-date").value;
+    const errorEl = document.getElementById("ttoverride-error");
+    const successEl = document.getElementById("ttoverride-success");
+    errorEl.hidden = true;
+    successEl.hidden = true;
+    if (!slotId || !date) return;
+
+    const data = {
+      slotId, date,
+      cancelled: cancelCheckbox.checked,
+      module: document.getElementById("ttoverride-module").value.trim(),
+      startTime: document.getElementById("ttoverride-start").value,
+      endTime: document.getElementById("ttoverride-end").value,
+      lecturer: document.getElementById("ttoverride-lecturer").value.trim(),
+      venue: document.getElementById("ttoverride-venue").value.trim(),
+      newDate: document.getElementById("ttoverride-newdate").value || null,
+      note: document.getElementById("ttoverride-note").value.trim()
+    };
+
+    try {
+      await setDoc(doc(db, "timetableOverrides", `${slotId}_${date}`), data);
+      successEl.textContent = "Override saved.";
+      successEl.hidden = false;
+      ttOverridesCache = null;
+      await fetchTimetableData(true);
+      renderExistingOverrides(slotId);
+    } catch (err) {
+      errorEl.textContent = "Could not save this override — check the fields and try again.";
+      errorEl.hidden = false;
+    }
+  });
+}
+
+// ══ Admin: Database Storage estimate ═════════════════════════════
+// The Firestore client SDK has no API for actual billed storage —
+// that number only lives in the Firebase Console / Cloud Monitoring,
+// reachable via the Admin SDK or gcloud, not from a signed-in user's
+// browser. This instead reads every collection the site uses and
+// sizes each document the same way Firestore's own storage-size
+// formula works (documented under "Understanding Cloud Firestore
+// billing"): a fixed per-document overhead, plus each field's name
+// and value encoded by type. It deliberately excludes index storage
+// (Firestore automatically indexes most fields, and that costs extra
+// space on top of the raw data) — so it undercounts the real billed
+// total, but tracks it closely enough to spot growth over time or
+// see which collection is the heaviest.
+//
+// Note: /admins is left out of the scan on purpose. Its Firestore
+// rule only lets an admin read their OWN doc there (self-uid only,
+// not "any admin"), so a collection-wide query against it would
+// silently return just 1 document regardless of how many admins
+// actually exist — including it would make the total look right but
+// be quietly wrong. Every other collection's rules give an admin a
+// full-collection read, so those are all measured completely.
+const DB_STORAGE_COLLECTIONS = [
+  "batchmates", "batchmatesPublic", "changeRequests", "fundTransactions",
+  "announcements", "groupProjects", "wallOfFame",
+  "events", "eventLabels", "badges", "badgeAssignments", "tasks",
+  "directoryPrivacy", "pushSubscriptions", "prestigeLog", "groupProjectRatings",
+  "config", "timetableSlots", "timetableOverrides", "attendance"
+];
+
+const dbTextEncoder = new TextEncoder();
+function dbUtf8Len(str) { return dbTextEncoder.encode(String(str)).length; }
+
+function dbValueSize(value) {
+  if (value === null || value === undefined) return 1;
+  if (typeof value === "boolean") return 1;
+  if (typeof value === "number") return 8; // Firestore treats both integer and double as 8 bytes
+  if (typeof value === "string") return dbUtf8Len(value) + 1;
+  if (typeof value.toDate === "function" || (typeof value.seconds === "number" && typeof value.nanoseconds === "number")) {
+    return 8; // Firestore Timestamp (serverTimestamp() results land here)
+  }
+  if (Array.isArray(value)) return value.reduce((sum, v) => sum + dbValueSize(v), 0);
+  if (typeof value === "object") {
+    // Map value: same per-field accounting as a document, plus a
+    // smaller fixed overhead than a top-level document gets.
+    return 16 + Object.entries(value).reduce((sum, [k, v]) => sum + dbFieldSize(k, v), 0);
+  }
+  return 8; // fallback for anything unrecognized
+}
+function dbFieldSize(name, value) { return 1 + dbUtf8Len(name) + dbValueSize(value); }
+function dbDocSize(path, data) {
+  let size = 32 + dbUtf8Len(path); // fixed per-document overhead + resource path
+  Object.entries(data || {}).forEach(([k, v]) => { size += dbFieldSize(k, v); });
+  return size;
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function initDbStoragePanel() {
+  const scanBtn = document.getElementById("dbstorage-scan-btn");
+  if (!scanBtn || scanBtn.dataset.wired) return;
+  scanBtn.dataset.wired = "1";
+  scanBtn.addEventListener("click", runDbStorageScan);
+}
+
+async function runDbStorageScan() {
+  if (!guardPerm('dbStorage', 'Database Storage')) return;
+  const scanBtn = document.getElementById("dbstorage-scan-btn");
+  const statusEl = document.getElementById("dbstorage-status");
+  const resultsEl = document.getElementById("dbstorage-results");
+  const totalEl = document.getElementById("dbstorage-total");
+  const barFill = document.getElementById("dbstorage-bar-fill");
+  const barLabel = document.getElementById("dbstorage-bar-label");
+
+  scanBtn.disabled = true;
+  scanBtn.textContent = "Scanning…";
+  statusEl.hidden = true;
+  resultsEl.innerHTML = "";
+
+  try {
+    const rows = [];
+    let grandTotal = 0;
+
+    for (const colName of DB_STORAGE_COLLECTIONS) {
+      const snap = await getDocs(collection(db, colName));
+      let colBytes = 0;
+      snap.forEach((d) => { colBytes += dbDocSize(`${colName}/${d.id}`, d.data()); });
+      rows.push({ name: colName, count: snap.size, bytes: colBytes });
+      grandTotal += colBytes;
+    }
+
+    rows.sort((a, b) => b.bytes - a.bytes);
+    resultsEl.innerHTML = "";
+    rows.forEach((r) => {
+      const row = document.createElement("div");
+      row.className = "admin-detail-row";
+      row.innerHTML = `<span class="admin-detail-label">${r.name} <span style="color:var(--muted);">(${r.count} doc${r.count === 1 ? "" : "s"})</span></span><span class="admin-detail-value">${formatBytes(r.bytes)}</span>`;
+      resultsEl.appendChild(row);
+    });
+
+    totalEl.textContent = formatBytes(grandTotal);
+    const FREE_TIER_BYTES = 1024 * 1024 * 1024; // Firestore Spark plan: 1 GiB stored
+    const pctOfFree = (grandTotal / FREE_TIER_BYTES) * 100;
+    barFill.style.width = `${Math.min(100, pctOfFree)}%`;
+    barLabel.textContent = `${pctOfFree < 0.01 ? "<0.01" : pctOfFree.toFixed(2)}% of Firestore's 1 GiB free-tier storage (data only, not counting indexes)`;
+  } catch (err) {
+    statusEl.textContent = "Could not complete the scan — a collection may have failed to read. Try again.";
+    statusEl.hidden = false;
+  } finally {
+    scanBtn.disabled = false;
+    scanBtn.textContent = "Scan Now";
+  }
+}
+
+// ══ Requests (batchmates ↔ admins) ═══════════════════════════════
+// memberRequests/{id}: a formal message from a batchmate to admins
+// (requesterUid, requesterName, anonymous, visibility "public"/
+// "private", subject, message, status "pending"/"completed"/
+// "rejected"/"dropped", createdAt, resolvedAt, resolvedNote,
+// agreeCount, disagreeCount). Security rules already filter list
+// queries down to what each viewer is allowed to see (public, their
+// own, or — for an admin — everything), so a plain getDocs() over
+// the whole collection returns exactly the right set.
+// memberRequests/{id}/votes/{uid}: one doc per voter, {choice,
+// votedAt} — its mere existence + choice is the vote; agreeCount/
+// disagreeCount on the parent are the denormalized totals, kept in
+// sync via writeBatch() + increment() so any signed-in batchmate can
+// update just those two fields without touching anything else.
+
+let reqCurrentUser = null;
+let reqIsAdmin = false;
+let reqMyFullName = "";
+
+async function initRequestsPage(user, isAdmin) {
+  const loadingState = document.getElementById("loading-state");
+  const errorState = document.getElementById("error-state");
+  const content = document.getElementById("requests-content");
+  reqCurrentUser = user;
+  reqIsAdmin = isAdmin;
+
+  try {
+    const bmSnap = await getDoc(doc(db, "batchmates", user.uid));
+    reqMyFullName = bmSnap.exists() ? (bmSnap.data().fullName || "") : "";
+
+    wireNewRequestModal();
+    wireResolveModal();
+    await renderRequestsList();
+
+    loadingState.hidden = true;
+    content.hidden = false;
+  } catch (err) {
+    loadingState.hidden = true;
+    errorState.hidden = false;
+    errorState.textContent = "Could not load requests. Please try again later.";
+  }
+}
+
+function wireNewRequestModal() {
+  const openBtn = document.getElementById("req-open-new");
+  const overlay = document.getElementById("modal-request");
+  const closeBtn = document.getElementById("req-modal-close");
+  const form = document.getElementById("form-request");
+  const errorEl = document.getElementById("req-error");
+  if (openBtn.dataset.wired) return;
+  openBtn.dataset.wired = "1";
+
+  function closeModal() { overlay.hidden = true; }
+  openBtn.addEventListener("click", () => {
+    form.reset();
+    errorEl.hidden = true;
+    overlay.hidden = false;
+  });
+  closeBtn.addEventListener("click", closeModal);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorEl.hidden = true;
+    const submitBtn = form.querySelector("button[type=submit]");
+    const originalLabel = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Sending…";
+    try {
+      const visibility = document.querySelector('input[name="req-visibility"]:checked').value;
+      const anonymous = document.querySelector('input[name="req-identity"]:checked').value === "anonymous";
+      await addDoc(collection(db, "memberRequests"), {
+        requesterUid: reqCurrentUser.uid,
+        requesterName: reqMyFullName || "",
+        anonymous,
+        visibility,
+        subject: document.getElementById("req-subject").value.trim(),
+        message: document.getElementById("req-message").value.trim(),
+        status: "pending",
+        createdAt: serverTimestamp(),
+        resolvedAt: null,
+        resolvedNote: "",
+        notifiedAt: null,
+        agreeCount: 0,
+        disagreeCount: 0
+      });
+      closeModal();
+      await renderRequestsList();
+    } catch (err) {
+      errorEl.textContent = "Could not send your request. Please try again.";
+      errorEl.hidden = false;
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalLabel;
+    }
+  });
+}
+
+async function renderRequestsList() {
+  const pendingList = document.getElementById("req-pending-list");
+  const resolvedList = document.getElementById("req-resolved-list");
+  pendingList.innerHTML = "Loading…";
+  resolvedList.innerHTML = "";
+
+  // An admin's Firestore rule allows a plain read of the whole
+  // collection, but a normal batchmate's rule is per-document
+  // (visibility == "public" OR they're the requester) — Firestore
+  // rejects an unfiltered collection query for them outright, since it
+  // can't prove every possible result satisfies the rule, which is what
+  // was keeping this page from ever loading for non-admins. So a
+  // non-admin instead runs two scoped queries — public requests, and
+  // their own regardless of visibility — and the results are merged.
+  const all = [];
+  if (reqIsAdmin) {
+    const snap = await getDocs(collection(db, "memberRequests"));
+    snap.forEach((d) => all.push({ id: d.id, ...d.data() }));
+  } else {
+    const publicQ = query(collection(db, "memberRequests"), where("visibility", "==", "public"));
+    const mineQ = query(collection(db, "memberRequests"), where("requesterUid", "==", reqCurrentUser.uid));
+    const [publicSnap, mineSnap] = await Promise.all([getDocs(publicQ), getDocs(mineQ)]);
+    const seen = new Set();
+    publicSnap.forEach((d) => { seen.add(d.id); all.push({ id: d.id, ...d.data() }); });
+    mineSnap.forEach((d) => { if (!seen.has(d.id)) all.push({ id: d.id, ...d.data() }); });
+  }
+  all.sort((a, b) => {
+    const at = a.createdAt && a.createdAt.toMillis ? a.createdAt.toMillis() : 0;
+    const bt = b.createdAt && b.createdAt.toMillis ? b.createdAt.toMillis() : 0;
+    return bt - at;
+  });
+
+  const pending = all.filter((r) => r.status === "pending");
+  const resolved = all.filter((r) => r.status !== "pending");
+
+  // My own vote choice per pending request — bounded to what's
+  // actually being rendered, not the whole history.
+  const myVotes = new Map();
+  await Promise.all(pending.map(async (r) => {
+    try {
+      const voteSnap = await getDoc(doc(db, "memberRequests", r.id, "votes", reqCurrentUser.uid));
+      if (voteSnap.exists()) myVotes.set(r.id, voteSnap.data().choice);
+    } catch (err) { /* no vote yet — leave unset */ }
+  }));
+
+  pendingList.innerHTML = "";
+  if (pending.length === 0) {
+    pendingList.innerHTML = '<p class="req-empty">No pending requests right now.</p>';
+  } else {
+    pending.forEach((r) => pendingList.appendChild(buildRequestCard(r, myVotes.get(r.id))));
+  }
+
+  resolvedList.innerHTML = "";
+  if (resolved.length === 0) {
+    resolvedList.innerHTML = '<p class="req-empty">Nothing resolved yet.</p>';
+  } else {
+    resolved.forEach((r) => resolvedList.appendChild(buildRequestCard(r, null)));
+  }
+}
+
+function buildRequestCard(r, myVote) {
+  const card = document.createElement("div");
+  card.className = "req-card" + (r.status !== "pending" ? " req-resolved" : "");
+
+  const badges = document.createElement("div");
+  badges.className = "req-badges";
+  if (r.visibility === "private") {
+    const b = document.createElement("span");
+    b.className = "req-badge private";
+    b.textContent = "🔒 Admins Only";
+    badges.appendChild(b);
+  }
+  if (r.status !== "pending") {
+    const b = document.createElement("span");
+    b.className = `req-badge status-${r.status}`;
+    b.textContent = r.status.charAt(0).toUpperCase() + r.status.slice(1);
+    badges.appendChild(b);
+  }
+  if (badges.children.length) card.appendChild(badges);
+
+  const subject = document.createElement("p");
+  subject.className = "req-subject";
+  subject.textContent = r.subject || "Untitled request";
+  card.appendChild(subject);
+
+  const meta = document.createElement("p");
+  meta.className = "req-meta";
+  const when = r.createdAt && r.createdAt.toDate ? r.createdAt.toDate().toLocaleDateString("en-US", { dateStyle: "medium" }) : "";
+  if (r.anonymous && reqIsAdmin) {
+    // Anonymous to other batchmates, but an admin still needs to know
+    // who to actually help — shown only to them, never in the public list.
+    meta.textContent = `by Anonymous${when ? " · " + when : ""} — `;
+    const hint = document.createElement("span");
+    hint.className = "req-meta-admin-hint";
+    hint.textContent = `really ${r.requesterName || "unknown"} (visible to admins only)`;
+    meta.appendChild(hint);
+  } else {
+    const who = r.anonymous ? "Anonymous" : (r.requesterName || "A batchmate");
+    meta.textContent = `by ${who}${when ? " · " + when : ""}`;
+  }
+  card.appendChild(meta);
+
+  const message = document.createElement("p");
+  message.className = "req-message";
+  message.textContent = r.message || "";
+  card.appendChild(message);
+
+  if (r.status !== "pending" && r.resolvedNote) {
+    const note = document.createElement("p");
+    note.className = "req-resolved-note";
+    note.textContent = `Admin note: ${r.resolvedNote}`;
+    card.appendChild(note);
+  }
+
+  const voteRow = document.createElement("div");
+  voteRow.className = "req-vote-row";
+  const agreeBtn = document.createElement("button");
+  agreeBtn.type = "button";
+  agreeBtn.className = "req-vote-btn agree" + (myVote === "agree" ? " mine" : "");
+  agreeBtn.textContent = `👍 Agree (${r.agreeCount || 0})`;
+  const disagreeBtn = document.createElement("button");
+  disagreeBtn.type = "button";
+  disagreeBtn.className = "req-vote-btn disagree" + (myVote === "disagree" ? " mine" : "");
+  disagreeBtn.textContent = `👎 Disagree (${r.disagreeCount || 0})`;
+
+  if (r.status !== "pending") {
+    agreeBtn.disabled = true;
+    disagreeBtn.disabled = true;
+  } else {
+    agreeBtn.addEventListener("click", () => castRequestVote(r.id, "agree", agreeBtn, disagreeBtn));
+    disagreeBtn.addEventListener("click", () => castRequestVote(r.id, "disagree", agreeBtn, disagreeBtn));
+  }
+  voteRow.appendChild(agreeBtn);
+  voteRow.appendChild(disagreeBtn);
+  card.appendChild(voteRow);
+
+  if (r.requesterUid === reqCurrentUser.uid) {
+    const delBtn = document.createElement("button");
+    delBtn.type = "button";
+    delBtn.className = "req-delete-btn";
+    delBtn.textContent = "Delete this request";
+    delBtn.addEventListener("click", async () => {
+      if (!confirm("Delete this request? This can't be undone.")) return;
+      try {
+        await deleteDoc(doc(db, "memberRequests", r.id));
+        await renderRequestsList();
+      } catch (err) { /* leave card as-is on failure */ }
+    });
+    card.appendChild(delBtn);
+  }
+
+  // Notifying the whole batch is an admin-only action, and only makes
+  // sense for a public request (a private one is admins-only anyway).
+  // Batchmates themselves have no way to broadcast to everyone — this
+  // button is the only path, and it's deliberately manual, not automatic
+  // on submit, so admins decide which requests are worth the ping.
+  if (reqIsAdmin && r.visibility === "public" && r.status === "pending") {
+    const notifyRow = document.createElement("div");
+    notifyRow.className = "req-notify-row";
+    const notifyBtn = document.createElement("button");
+    notifyBtn.type = "button";
+    notifyBtn.className = "req-notify-btn";
+    const notifiedWhen = r.notifiedAt && r.notifiedAt.toDate
+      ? r.notifiedAt.toDate().toLocaleDateString("en-US", { dateStyle: "medium" })
+      : null;
+    notifyBtn.textContent = notifiedWhen ? "🔔 Notify Again" : "🔔 Notify Everyone";
+    notifyBtn.addEventListener("click", () => notifyAboutRequest(r.id, r.subject, notifyBtn));
+    notifyRow.appendChild(notifyBtn);
+    if (notifiedWhen) {
+      const notifiedNote = document.createElement("span");
+      notifiedNote.className = "req-notified-note";
+      notifiedNote.textContent = `Last notified ${notifiedWhen}`;
+      notifyRow.appendChild(notifiedNote);
+    }
+    card.appendChild(notifyRow);
+  }
+
+  if (reqIsAdmin && r.status === "pending") {
+    const actions = document.createElement("div");
+    actions.className = "req-admin-actions";
+    [["Mark Completed", "completed", ""], ["Reject", "rejected", "req-reject-btn"], ["Drop", "dropped", "req-drop-btn"]]
+      .forEach(([label, status, cls]) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        if (cls) btn.className = cls;
+        btn.textContent = label;
+        btn.addEventListener("click", () => openResolveModal(r.id, status, r.subject));
+        actions.appendChild(btn);
+      });
+    card.appendChild(actions);
+  }
+
+  return card;
+}
+
+async function notifyAboutRequest(reqId, subject, btn) {
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = "Sending…";
+  try {
+    await sendPushNotification({
+      type: "memberRequests",
+      title: "New batch request",
+      message: subject || "A batchmate posted a new request — check it out.",
+      url: "requests.html"
+    });
+    await updateDoc(doc(db, "memberRequests", reqId), { notifiedAt: serverTimestamp() });
+    await renderRequestsList();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
+async function castRequestVote(reqId, choice, agreeBtn, disagreeBtn) {
+  agreeBtn.disabled = true;
+  disagreeBtn.disabled = true;
+  const voteRef = doc(db, "memberRequests", reqId, "votes", reqCurrentUser.uid);
+  const reqRef = doc(db, "memberRequests", reqId);
+  try {
+    const existing = await getDoc(voteRef);
+    const prevChoice = existing.exists() ? existing.data().choice : null;
+    const batch = writeBatch(db);
+
+    if (prevChoice === choice) {
+      batch.delete(voteRef);
+      batch.update(reqRef, { [`${choice}Count`]: increment(-1) });
+    } else if (prevChoice) {
+      batch.set(voteRef, { choice, votedAt: serverTimestamp() });
+      batch.update(reqRef, {
+        [`${prevChoice}Count`]: increment(-1),
+        [`${choice}Count`]: increment(1)
+      });
+    } else {
+      batch.set(voteRef, { choice, votedAt: serverTimestamp() });
+      batch.update(reqRef, { [`${choice}Count`]: increment(1) });
+    }
+    await batch.commit();
+    await renderRequestsList();
+  } catch (err) {
+    agreeBtn.disabled = false;
+    disagreeBtn.disabled = false;
+  }
+}
+
+const REQ_RESOLVE_LABELS = { completed: "Mark Completed", rejected: "Reject Request", dropped: "Drop Request" };
+
+function openResolveModal(reqId, status, subject) {
+  if (!guardPerm('memberRequests', 'Resolve Member Request')) return;
+  document.getElementById("req-resolve-id").value = reqId;
+  document.getElementById("req-resolve-status").value = status;
+  document.getElementById("req-resolve-note").value = "";
+  document.getElementById("req-resolve-error").hidden = true;
+  document.getElementById("req-resolve-title").textContent = REQ_RESOLVE_LABELS[status] || "Resolve Request";
+  document.getElementById("req-resolve-subject").textContent = subject || "";
+  document.getElementById("req-resolve-submit-btn").textContent = REQ_RESOLVE_LABELS[status] || "Confirm";
+  document.getElementById("modal-request-resolve").hidden = false;
+}
+
+function wireResolveModal() {
+  const overlay = document.getElementById("modal-request-resolve");
+  const closeBtn = document.getElementById("req-resolve-modal-close");
+  const form = document.getElementById("form-request-resolve");
+  const errorEl = document.getElementById("req-resolve-error");
+  if (form.dataset.wired) return;
+  form.dataset.wired = "1";
+
+  function closeModal() { overlay.hidden = true; }
+  closeBtn.addEventListener("click", closeModal);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
+
+  form.addEventListener("submit", async (e) => {
+    if (!guardPerm('memberRequests', 'Resolve Member Request')) return;
+    e.preventDefault();
+    errorEl.hidden = true;
+    const reqId = document.getElementById("req-resolve-id").value;
+    const status = document.getElementById("req-resolve-status").value;
+    const note = document.getElementById("req-resolve-note").value.trim();
+    const submitBtn = document.getElementById("req-resolve-submit-btn");
+    submitBtn.disabled = true;
+    try {
+      await updateDoc(doc(db, "memberRequests", reqId), {
+        status,
+        resolvedAt: serverTimestamp(),
+        resolvedNote: note
+      });
+      closeModal();
+      await renderRequestsList();
+    } catch (err) {
+      errorEl.textContent = "Could not resolve this request. Please try again.";
+      errorEl.hidden = false;
+    } finally {
+      submitBtn.disabled = false;
+    }
   });
 }

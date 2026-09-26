@@ -438,7 +438,9 @@ button {
 .sidebar-brand { margin-bottom: 30px; padding: 0 4px; }
 .side-nav { display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .side-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   color: var(--muted);
   text-decoration: none;
   font-size: 14px;
@@ -447,6 +449,26 @@ button {
   border: 1px solid transparent;
 }
 .side-link[hidden] { display: none; }
+.side-link-dot {
+  margin-left: 8px;
+  margin-right: 0;
+  color: var(--blue);
+}
+.side-link-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  margin-left: 8px;
+}
 .side-link:hover { background: var(--surface-hover); color: var(--text); }
 .side-link.active {
   background: var(--accent-soft-bg);
@@ -454,11 +476,35 @@ button {
   font-weight: 600;
   border-color: var(--accent-soft-border);
 }
+
+/* "More" submenu — keeps the always-visible nav capped at 5 lines;
+   the rest lives in this collapsible section, which auto-opens itself
+   (see app.js) if the current page happens to be inside it. */
+.side-submenu-toggle {
+  width: 100%;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
+}
+.side-submenu-chevron {
+  font-size: 10px;
+  color: var(--muted);
+  transition: transform .40s ease;
+}
+.side-submenu-toggle.open .side-submenu-chevron { transform: rotate(180deg); }
+.side-submenu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height .50s ease;
+}
+.side-submenu.open { max-height: 300px; }
 .sidebar-footer {
   border-top: 1px solid var(--panel-border);
   padding-top: 16px;
-  display: flex;
-  flex-direction: column;
+  display: flex;  flex-direction: column;
   gap: 10px;
 }
 .sidebar-footer .user-email { font-size: 12px; word-break: break-all; }
@@ -1455,28 +1501,10 @@ html.page-exit .content-area, html.page-exit .page-center {
 }
 .fieldmgr-add-field-btn:hover { border-color: var(--blue); color: var(--blue); }
 
-/* ── Admin: Batchmate Directory (Danger tab) ───────────────────────── */
+/* ── Admin: Batchmate detail modal (reused by Data tab row click, and
+   as a wide modal-box style for Manage Admin Access / Table Columns) ── */
 .admindir-box { max-width: 680px; }
 .admindir-body { max-width: none; }
-.admindir-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 12px;
-}
-.admindir-card {
-  background: var(--bg);
-  border: 1px solid var(--panel-border);
-  border-radius: 10px;
-  padding: 12px 8px;
-  text-align: center;
-  cursor: pointer;
-  transition: border-color .15s ease;
-}
-.admindir-card:hover { border-color: var(--blue); }
-.admindir-card .avatar-slot { width: 40px; height: 40px; margin: 0 auto 6px; }
-.admindir-card .avatar-photo, .admindir-card .avatar { width: 40px; height: 40px; font-size: 15px; }
-.admindir-card-name { font-size: 12px; font-weight: 600; }
-.admindir-card-index { font-size: 10.5px; color: var(--muted); margin-top: 2px; }
 .admindir-detail-group { margin-bottom: 18px; }
 .admindir-detail-group-title {
   font-size: 11.5px;
@@ -1489,7 +1517,6 @@ html.page-exit .content-area, html.page-exit .page-center {
 
 
 #modal-fund .modal-box, #modal-wall .modal-box, #modal-announcement .modal-box,
-#modal-leader .modal-box, #modal-eventlabel .modal-box,
 #modal-event .modal-box, #modal-task .modal-box, #modal-bulkfield .modal-box,
 #modal-task-detail .modal-box, #modal-project-detail .modal-box,
 #modal-event-edit .modal-box, #modal-eventleadership .modal-box,
@@ -1526,6 +1553,82 @@ html.page-exit .content-area, html.page-exit .page-center {
   margin: 0;
   accent-color: var(--blue);
 }
+
+/* ── Shared: Manage Admin Access reuses these for its admin cards and
+   "Add New Admin" batchmate search results ──────────────────────────── */
+.leader-picker-selected {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+.leader-picker-selected-name { font-weight: 600; font-size: 13.5px; }
+.leader-picker-list {
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--panel-border);
+  border-radius: 9px;
+  margin-bottom: 14px;
+  background: var(--surface);
+}
+.leader-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--panel-border);
+  transition: background .12s ease;
+}
+.leader-picker-row:last-child { border-bottom: none; }
+.leader-picker-row:hover { background: var(--bg); }
+.leader-picker-empty { padding: 14px 10px; font-size: 12.5px; color: var(--muted); text-align: center; }
+
+/* ── Admin: Data Table (Data tab) ──────────────────────────────────── */
+.datatable-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+}
+.data-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: max-content;
+  font-size: 12.5px;
+}
+.data-table th, .data-table td {
+  padding: 9px 14px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--panel-border);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.data-table thead th {
+  cursor: pointer;
+  user-select: none;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 10.5px;
+  letter-spacing: .04em;
+  background: var(--surface);
+  position: sticky;
+  top: 0;
+  white-space: nowrap;
+}
+.data-table thead th:hover { color: var(--text); }
+.data-table thead th.sorted { color: var(--blue); }
+.data-table thead th .sort-arrow { margin-left: 4px; }
+.data-table tbody tr:hover { background: var(--surface); }
+.data-table tbody tr.data-table-row { cursor: pointer; }
+.data-table tbody tr:last-child td { border-bottom: none; }
 
 /* ── Group boxes (home page, multi-group projects) ────────────────── */
 .group-box-grid {
@@ -1857,4 +1960,367 @@ html.page-exit .content-area, html.page-exit .page-center {
 @media (max-width: 560px) {
   .admin-tab-bar { bottom: 10px; padding: 4px; }
   .admin-tab-pill { padding: 9px 12px; font-size: 12px; }
+}
+
+/* ── Timetable page ───────────────────────────────────────────────
+   Mobile-first: a vertical stack of day sections, each holding a
+   stack of full-width class cards (not a grid) since a horizontally
+   scrolling week grid is hard to read on a phone. Each card takes an
+   admin-picked accent color (--tt-color, set inline per card, same
+   pattern as eventLabels' color field) as a left border + tinted
+   badge, so subjects stay visually distinct without a fixed palette. */
+.tt-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 18px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.tt-tabs::-webkit-scrollbar { display: none; }
+.tt-tab-pill {
+  padding: 9px 18px;
+  border-radius: 20px;
+  border: 1px solid var(--panel-border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all .15s ease;
+}
+.tt-tab-pill:hover { color: var(--text); }
+.tt-tab-pill.active {
+  background: var(--accent-soft-bg);
+  border-color: var(--accent-soft-border);
+  color: var(--accent-soft-text);
+}
+.tt-view[hidden] { display: none; }
+
+.tt-day-block { margin-bottom: 22px; }
+.tt-day-block:last-child { margin-bottom: 0; }
+.tt-day-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  margin: 0 0 10px;
+  font-family: 'Space Grotesk', sans-serif;
+}
+.tt-day-heading .tt-day-date { font-weight: 500; font-size: 12px; color: var(--muted); }
+.tt-day-heading.tt-day-today { color: var(--accent); }
+
+.tt-card-list { display: flex; flex-direction: column; gap: 10px; }
+.tt-card {
+  position: relative;
+  display: flex;
+  gap: 14px;
+  /* Only the left ribbon carries the subject's color now — the card
+     body itself stays neutral so a busy week doesn't turn into a wall
+     of tinted panels. */
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-left: 4px solid var(--tt-color, var(--blue));
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.tt-card.tt-cancelled { opacity: .55; }
+.tt-card.tt-cancelled .tt-card-time-col,
+.tt-card.tt-cancelled .tt-card-module { text-decoration: line-through; text-decoration-color: var(--danger); }
+.tt-card-time-col {
+  flex: 0 0 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding-top: 1px;
+}
+.tt-card-time { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.3; }
+.tt-card-time-end { font-size: 10.5px; color: var(--muted); }
+.tt-card-body { flex: 1; min-width: 0; }
+.tt-card-top-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.tt-card-module { font-size: 14.5px; font-weight: 700; margin: 0; }
+.tt-card-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  padding: 3px 9px;
+  border-radius: 20px;
+  background: var(--surface-hover);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.tt-card-meta { font-size: 12px; color: var(--muted); margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 3px 12px; }
+.tt-card-meta span { display: inline-flex; align-items: center; gap: 4px; }
+.tt-card-note {
+  font-size: 11.5px;
+  color: var(--accent);
+  margin-top: 6px;
+  font-style: italic;
+}
+.tt-attend-btn {
+  margin-top: 10px;
+  padding: 7px 16px;
+  font-size: 12.5px;
+  font-weight: 700;
+  border-radius: 20px;
+  border: 1px solid var(--panel-border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: all .18s ease;
+}
+.tt-attend-btn:hover { border-color: var(--tt-color, var(--blue)); }
+.tt-attend-btn.marked {
+  background: var(--success);
+  border-color: var(--success);
+  color: #06291a;
+}
+.tt-attend-btn:disabled { opacity: .5; cursor: not-allowed; }
+.tt-empty-day { font-size: 13px; color: var(--muted); padding: 4px 0 0; }
+.tt-empty-state { text-align: center; padding: 40px 16px; color: var(--muted); font-size: 13.5px; }
+
+/* My Attendance view */
+.attend-overall-card {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--blue) 16%, var(--panel)), var(--panel));
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 22px;
+  margin-bottom: 18px;
+  text-align: center;
+}
+.attend-overall-value { font-size: 38px; font-weight: 700; color: var(--accent); font-family: 'Space Grotesk', sans-serif; }
+.attend-overall-label { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+.attend-overall-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.attend-list { display: flex; flex-direction: column; gap: 12px; }
+.attend-stat-card {
+  background: color-mix(in srgb, var(--tt-color, var(--blue)) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--tt-color, var(--blue)) 24%, var(--panel-border));
+  border-left: 4px solid var(--tt-color, var(--blue));
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.attend-stat-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.attend-stat-module { font-size: 13.5px; font-weight: 700; }
+.attend-stat-pct { font-size: 15px; font-weight: 700; color: var(--tt-color, var(--blue)); white-space: nowrap; }
+.attend-bar-track { height: 8px; border-radius: 6px; background: var(--surface); overflow: hidden; }
+.attend-bar-fill { height: 100%; border-radius: 6px; background: var(--tt-color, var(--blue)); transition: width .5s ease; }
+.attend-stat-fraction { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+@media (max-width: 480px) {
+  .tt-card { padding: 12px 12px 12px 14px; gap: 10px; }
+  .tt-card-time-col { flex-basis: 52px; }
+}
+
+/* ── Admin: Timetable ─────────────────────────────────────────── */
+.admin-tt-box {
+  background: color-mix(in srgb, var(--tt-color, var(--blue)) 10%, var(--surface));
+  border: 1px solid var(--panel-border);
+  border-left: 4px solid var(--tt-color, var(--blue));
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+}
+.admin-tt-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.admin-tt-name { font-size: 13.5px; font-weight: 600; display: flex; align-items: center; }
+.tt-color-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; margin-right: 8px; flex-shrink: 0; }
+.admin-tt-meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.admin-tt-actions { display: flex; gap: 8px; margin-top: 10px; }
+.admin-tt-actions button {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.admin-tt-actions button:hover { border-color: var(--blue); }
+.admin-tt-override-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--panel-border);
+}
+.admin-tt-override-item:last-child { border-bottom: none; }
+
+/* ── Admin: Database Storage ─────────────────────────────────────── */
+.dbstorage-total-row { display: flex; align-items: baseline; gap: 8px; }
+.dbstorage-total-value { font-size: 28px; font-weight: 700; color: var(--accent); font-family: 'Space Grotesk', sans-serif; }
+
+/* ── Requests page ───────────────────────────────────────────────
+   Batchmates ask admins something formally instead of DMing them;
+   other members vote agree/disagree; admins resolve with a status.
+   Same card-stack, mobile-first layout as the timetable page. */
+.req-new-btn {
+  width: 100%;
+  margin-bottom: 22px;
+}
+
+/* Two-option segmented control (Public/Admins-only, Name/Anonymous) —
+   a pair of radios with their native box hidden, styled entirely via
+   the sibling label so no JS is needed to track which is selected. */
+.seg-toggle { display: flex; gap: 8px; margin-bottom: 18px; }
+.seg-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+}
+.seg-toggle label {
+  flex: 1;
+  text-align: center;
+  padding: 10px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--panel-border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  margin: 0;
+  transition: all .15s ease;
+}
+.seg-toggle input:checked + label {
+  background: var(--accent-soft-bg);
+  border-color: var(--accent-soft-border);
+  color: var(--accent-soft-text);
+}
+.seg-toggle input:focus-visible + label { box-shadow: 0 0 0 3px var(--focus-ring); }
+
+.req-section-sub { font-size: 12px; color: var(--muted); margin: -8px 0 14px; }
+
+.req-list { display: flex; flex-direction: column; }
+.req-empty { font-size: 13px; color: var(--muted); padding: 4px 0 20px; }
+
+.req-card {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.req-card.req-resolved { opacity: .58; }
+.req-card.req-resolved .req-subject { text-decoration: line-through; text-decoration-color: var(--muted); }
+
+.req-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.req-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  padding: 3px 9px;
+  border-radius: 20px;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+.req-badge.private { background: color-mix(in srgb, var(--muted) 22%, var(--panel)); color: var(--muted); }
+.req-badge.status-completed { background: color-mix(in srgb, var(--success) 24%, var(--panel)); color: var(--success); }
+.req-badge.status-rejected { background: color-mix(in srgb, var(--danger) 24%, var(--panel)); color: var(--danger); }
+.req-badge.status-dropped { background: color-mix(in srgb, var(--muted) 24%, var(--panel)); color: var(--muted); }
+
+.req-subject { font-size: 14.5px; font-weight: 700; margin: 0 0 4px; }
+.req-meta { font-size: 11.5px; color: var(--muted); margin: 0 0 10px; }
+.req-message { font-size: 13px; color: var(--text); line-height: 1.55; margin: 0 0 4px; white-space: pre-wrap; }
+.req-resolved-note { font-size: 12px; color: var(--muted); font-style: italic; margin: 8px 0 0; }
+
+.req-vote-row { display: flex; gap: 10px; margin-top: 12px; }
+.req-vote-btn {
+  flex: 1;
+  padding: 9px 10px;
+  border-radius: 9px;
+  border: 1px solid var(--panel-border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.req-vote-btn:hover { border-color: var(--blue); }
+.req-vote-btn.agree.mine { background: color-mix(in srgb, var(--success) 24%, var(--panel)); border-color: var(--success); color: var(--success); }
+.req-vote-btn.disagree.mine { background: color-mix(in srgb, var(--danger) 24%, var(--panel)); border-color: var(--danger); color: var(--danger); }
+.req-vote-btn:disabled { opacity: .55; cursor: default; }
+
+.req-delete-btn {
+  display: inline-block;
+  margin-top: 10px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+.req-delete-btn:hover { color: var(--danger); }
+
+.req-admin-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.req-admin-actions button {
+  flex: 1;
+  min-width: 88px;
+  padding: 7px 10px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid var(--panel-border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+.req-admin-actions button:hover { border-color: var(--blue); }
+.req-admin-actions .req-reject-btn:hover { border-color: var(--danger); color: var(--danger); }
+.req-admin-actions .req-drop-btn:hover { border-color: var(--muted); color: var(--muted); }
+
+.req-modal-body { padding: 20px; max-width: 440px; }
+
+.req-notify-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.req-notify-btn {
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  border: 1px solid var(--accent-soft-border);
+  background: var(--accent-soft-bg);
+  color: var(--accent-soft-text);
+  cursor: pointer;
+}
+.req-notify-btn:hover { filter: brightness(1.1); }
+.req-notify-btn:disabled { opacity: .6; cursor: default; }
+.req-notified-note { font-size: 11px; color: var(--muted); }
+.req-meta-admin-hint { color: var(--muted); font-style: italic; }
+
+/* ── Admin permission-denied banner ──────────────────────────────────
+   Shown when an admin clicks a tab, button, or form they don't have
+   permission for. Reused across every page (auto-created by JS if the
+   page doesn't already have #admin-perm-banner in its markup). */
+.admin-perm-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%) translateY(20px);
+  z-index: 9999;
+  max-width: min(92vw, 420px);
+  background: var(--danger);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  padding: 12px 18px;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+}
+.admin-perm-banner.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }

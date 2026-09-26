@@ -22,14 +22,22 @@
         <span class="brand-mark">◆</span>
         <span class="brand-name">My<span class="accent"> Badges</span></span>
       </div>
-      <nav class="side-nav">
+            <nav class="side-nav">
         <a href="home.html" class="side-link">Home</a>
         <a href="dashboard.html" class="side-link">Dashboard</a>
+        <a href="timetable.html" class="side-link">Timetable</a>
+        <a href="requests.html" class="side-link">Requests</a>
         <a href="fund.html" class="side-link">Fund</a>
-        <a href="wall.html" class="side-link">Wall of Fame</a>
-        <a href="badges.html" class="side-link active">Badges</a>
-        <a href="settings.html" class="side-link">Settings</a>
-        <a href="admin.html" class="side-link" id="admin-nav-link" hidden>Admin</a>
+        <button type="button" class="side-link side-submenu-toggle open" id="side-more-toggle">
+          <span>More</span>
+          <span class="side-submenu-chevron">▾</span>
+        </button>
+        <div class="side-submenu open" id="side-submenu">
+          <a href="wall.html" class="side-link">Wall of Fame</a>
+          <a href="badges.html" class="side-link active">Badges</a>
+          <a href="settings.html" class="side-link">Settings</a>
+          <a href="admin.html" class="side-link" id="admin-nav-link" hidden>Admin</a>
+        </div>
       </nav>
       <div class="sidebar-footer">
         <span id="user-email" class="user-email" hidden></span>
