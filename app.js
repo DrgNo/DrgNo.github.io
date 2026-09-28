@@ -1111,12 +1111,21 @@ function badBehaviorMultiplier(count) {
 }
 
 // rawAmount: points before the bad-behavior multiplier is applied.
-// source: short machine tag, e.g. "task", "project-overall",
+// source: short machine tag, e.g. "task", "project-group",
 //   "project-group", "member-rating", "leader-rating", "fund-donation".
 // note: human-readable line for the batchmate's own prestige history.
-// Returns the final (post-multiplier) amount actually awarded.
-async function awardPrestige({ uid, rawAmount, source, note }) {
-  if (!uid || !rawAmount) return 0;
+// logId: optional stable prestigeLog doc ID. Omit it for a one-off award
+//   (adds a new prestigeLog doc, same as always). Pass one for an award
+//   that can be RE-AWARDED later at a new value (e.g. a task's rating,
+//   or a project/group's admin rating) — the same doc gets overwritten
+//   in place with the new rawAmount/finalAmount instead of a fresh log
+//   entry being added, and only the difference between the new and
+//   previous finalAmount is applied to the batchmate's running total —
+//   so re-awarding at a new value is a correction, not a second payout.
+// Returns the final (post-multiplier) amount now on that log entry.
+async function awardPrestige({ uid, rawAmount, source, note, logId }) {
+  if (!uid) return 0;
+  if (!logId && !rawAmount) return 0;
 
   const bmSnap = await getDoc(doc(db, "batchmates", uid));
   const badCount = bmSnap.exists() && Array.isArray(bmSnap.data().badBehaviorRecords)
@@ -1124,36 +1133,50 @@ async function awardPrestige({ uid, rawAmount, source, note }) {
     : 0;
 
   const multiplier = badBehaviorMultiplier(badCount);
-  const finalAmount = Math.round(rawAmount * multiplier);
+  const finalAmount = Math.round((rawAmount || 0) * multiplier);
 
-  await updateDoc(doc(db, "batchmates", uid), {
-    prestigePoints: increment(finalAmount)
-  });
-
-  // The exact point total is still NOT mirrored to batchmatesPublic —
-  // batchmates should be able to see their own total (Dashboard,
-  // self-read on /batchmates) but not each other's exact score. The
-  // Admin leaderboard reads /batchmates directly instead, using the
-  // admin-read bypass added in the prestige engine's first pass.
-  //
-  // What DOES get mirrored is the much coarser derived level (every
-  // PRESTIGE_POINTS_PER_LEVEL points = 1) — enough for the directory's
-  // level badge/pill without exposing anyone's precise standing.
-  try {
-    const priorTotal = bmSnap.exists() ? (Number(bmSnap.data().prestigePoints) || 0) : 0;
-    const newLevel = levelForPoints(priorTotal + finalAmount);
-    await setDoc(doc(db, "batchmatesPublic", uid), { prestigeLevel: newLevel }, { merge: true });
-  } catch (err) {
-    // Non-fatal — the batchmate's own total/history is already saved;
-    // the public level badge will catch up next time an admin taps
-    // "Re-sync Directory Now" on the Admin page.
+  let priorFinalAmount = 0;
+  let logRef;
+  if (logId) {
+    logRef = doc(db, "prestigeLog", logId);
+    const existingLog = await getDoc(logRef);
+    if (existingLog.exists()) priorFinalAmount = Number(existingLog.data().finalAmount) || 0;
+  } else {
+    logRef = doc(collection(db, "prestigeLog"));
   }
 
-  await addDoc(collection(db, "prestigeLog"), {
+  const pointsDelta = finalAmount - priorFinalAmount;
+
+  if (pointsDelta !== 0) {
+    await updateDoc(doc(db, "batchmates", uid), {
+      prestigePoints: increment(pointsDelta)
+    });
+
+    // The exact point total is still NOT mirrored to batchmatesPublic —
+    // batchmates should be able to see their own total (Dashboard,
+    // self-read on /batchmates) but not each other's exact score. The
+    // Admin leaderboard reads /batchmates directly instead, using the
+    // admin-read bypass added in the prestige engine's first pass.
+    //
+    // What DOES get mirrored is the much coarser derived level (every
+    // PRESTIGE_POINTS_PER_LEVEL points = 1) — enough for the directory's
+    // level badge/pill without exposing anyone's precise standing.
+    try {
+      const priorTotal = bmSnap.exists() ? (Number(bmSnap.data().prestigePoints) || 0) : 0;
+      const newLevel = levelForPoints(priorTotal + pointsDelta);
+      await setDoc(doc(db, "batchmatesPublic", uid), { prestigeLevel: newLevel }, { merge: true });
+    } catch (err) {
+      // Non-fatal — the batchmate's own total/history is already saved;
+      // the public level badge will catch up next time an admin taps
+      // "Re-sync Directory Now" on the Admin page.
+    }
+  }
+
+  await setDoc(logRef, {
     uid,
     source,
     note: note || "",
-    rawAmount,
+    rawAmount: rawAmount || 0,
     multiplier,
     badBehaviorCount: badCount,
     finalAmount,
@@ -1296,7 +1319,7 @@ async function loadAndRenderFundLog(uid) {
 // ── Prestige info modal (Dashboard) ──────────────────────────────
 // Explains every way prestige points are earned and what slows down how
 // fast they're earned. Built from the same constants the award functions
-// actually use (TASK_DIFFICULTY_POINTS, OVERALL_RATING_POINTS_PER_STAR,
+// actually use (TASK_DIFFICULTY_POINTS, GROUP_RATING_POINTS_PER_STAR,
 // etc. — defined further down this file, but already initialized by the
 // time a batchmate can click the info button), so this can't drift out of
 // sync with what actually gets awarded.
@@ -1354,10 +1377,9 @@ function buildPrestigeInfoBody() {
   // Group projects
   const projWrap = section(
     "Group Projects",
-    "Two ways an admin can award a whole project or a single group, plus ratings batchmates give each other once everyone on a group has rated."
+    "An admin can award a single group, plus ratings batchmates give each other once everyone on a group has rated."
   );
   list(projWrap, [
-    ["Admin's overall project rating (1-10) will be paid to every group's members + leaders", `+${OVERALL_RATING_POINTS_PER_STAR} to +${10 * OVERALL_RATING_POINTS_PER_STAR}`],
     ["Admin's single-group rating (1-10) wil be paid to that specific group's members + leader", `+${GROUP_RATING_POINTS_PER_STAR} to +${10 * GROUP_RATING_POINTS_PER_STAR}`],
     [`Peer/leader ratings of you, averaged (your leader's rating counts ${LEADER_RATING_WEIGHT}× a peer's)`, `+${MEMBER_RATING_POINTS_PER_STAR} to +${10 * MEMBER_RATING_POINTS_PER_STAR}`],
     ["If you're a leader: your members' ratings of you, averaged", `+${LEADER_RATING_POINTS_PER_STAR} to +${10 * LEADER_RATING_POINTS_PER_STAR}`]
@@ -2596,10 +2618,9 @@ function wireGroupModal() {
 }
 
 // ── Group Project ratings & prestige ────────────────────────────
-// Overall/group admin ratings and peer/leader ratings are two separate
+// Group admin ratings and peer/leader ratings are two separate
 // awarding paths that both feed the same awardPrestige() engine from
 // the prestige-points feature.
-const OVERALL_RATING_POINTS_PER_STAR = 2;  // admin's whole-project rating → every member of every group
 const GROUP_RATING_POINTS_PER_STAR = 2;    // admin's single-group rating → that group's members + leader
 const MEMBER_RATING_POINTS_PER_STAR = 2;   // peer + leader ratings, averaged → each member
 const LEADER_RATING_POINTS_PER_STAR = 2;   // member-to-leader ratings, averaged → the leader
@@ -2622,6 +2643,54 @@ function groupRatingDocId(projectId, groupIndex, raterUid) {
   return `${projectId}__g${groupIndex}__${raterUid}`;
 }
 
+// A group's own due date (YYYY-MM-DD) has passed — used to auto-finalize
+// peer/leader ratings even if not everyone on the roster has submitted
+// theirs yet (see finalizeGroupRatings' participationRate reduction).
+function isGroupPastDeadline(g) {
+  if (!g || !g.dueDate) return false;
+  const today = new Date().toISOString().slice(0, 10);
+  return today > g.dueDate;
+}
+
+// Small "N of M have rated — Who?" progress readout, shared between the
+// Home page's own rating area (renderGroupRatingArea) and the Admin
+// panel's rating controls, so both surfaces show identically who on the
+// roster still hasn't submitted their ratings.
+function buildRosterProgressUI(roster, submittedUids) {
+  const wrap = document.createElement("div");
+
+  const progress = document.createElement("p");
+  progress.className = "fine-print";
+  progress.style.textAlign = "left";
+  progress.style.margin = "10px 0 0";
+  progress.textContent = `${submittedUids.size} of ${roster.length} have rated. `;
+
+  const whoToggle = document.createElement("button");
+  whoToggle.type = "button";
+  whoToggle.className = "rating-roster-toggle";
+  whoToggle.textContent = "Who?";
+  progress.appendChild(whoToggle);
+  wrap.appendChild(progress);
+
+  const rosterMini = document.createElement("div");
+  rosterMini.className = "rating-roster-mini";
+  rosterMini.hidden = true;
+  roster.forEach((person) => {
+    const rated = submittedUids.has(person.uid);
+    const chip = document.createElement("span");
+    chip.className = "rating-roster-chip " + (rated ? "rated" : "pending");
+    chip.textContent = (rated ? "✓ " : "… ") + person.name;
+    rosterMini.appendChild(chip);
+  });
+  wrap.appendChild(rosterMini);
+  whoToggle.addEventListener("click", () => {
+    rosterMini.hidden = !rosterMini.hidden;
+    whoToggle.textContent = rosterMini.hidden ? "Who?" : "Hide";
+  });
+
+  return wrap;
+}
+
 async function getGroupRatingSubmissions(projectId, groupIndex) {
   const q = query(
     collection(db, "groupProjectRatings"),
@@ -2637,14 +2706,49 @@ async function getGroupRatingSubmissions(projectId, groupIndex) {
 // Averages every submitted rating for a group into a final per-person
 // score (a leader's rating of a member weighted higher than a peer's),
 // awards prestige accordingly, and marks the group finalized so this
-// can't run twice. Called by the group's leader once every roster
-// member (leader included) has submitted their ratings.
+// can't run twice. Can be triggered three ways: the group's leader once
+// everyone on the roster has submitted (renderGroupRatingArea), anyone
+// viewing the page once the group's own due date has passed
+// (isGroupPastDeadline — see renderGroupRatingArea), or an admin forcing
+// it early (renderAdminProjectRatingControls / marking the whole project
+// complete). All three call the same logic here, which never assumes the
+// roster is fully rated:
+//
+//  - Anyone on the roster who never submitted their OWN ratings of their
+//    groupmates forfeits their entire payout from this group — they're
+//    simply skipped below, so they earn nothing from it.
+//  - Since a missing rater also means everyone else's ratings are
+//    incomplete, everyone who DID rate has their payout scaled down by
+//    participationRate (ratedCount / totalCount on the roster) — the
+//    fewer people who bothered to rate, the smaller the whole group's
+//    payout, not just the missing person's own share.
 async function finalizeGroupRatings(project, groupIndex, group) {
+  // Idempotency guard: this can be triggered from three places (deadline
+  // auto-finalize, the roster leader's own button, an admin forcing it
+  // early), so it's possible for two of them to race before the
+  // ratingsFinalized flag written at the end of this function has
+  // propagated back to whichever caller loaded the page first. Bailing out
+  // here — on top of the `!ratingsFinalized` checks each caller already
+  // does before even showing its button — closes that race instead of
+  // relying on caller-side checks alone.
+  if (group.ratingsFinalized) return;
+
   const roster = getGroupRoster(group);
   const submissions = await getGroupRatingSubmissions(project.id, groupIndex);
+  const submittedUids = new Set(submissions.map((s) => s.raterUid));
+
+  const totalCount = roster.length;
+  const ratedCount = roster.filter((p) => submittedUids.has(p.uid)).length;
+  const missedCount = totalCount - ratedCount;
+  const participationRate = totalCount > 0 ? ratedCount / totalCount : 1;
+  const missedPct = totalCount > 0 ? Math.round((missedCount / totalCount) * 100) : 0;
+  const reductionNote = missedCount > 0
+    ? ` (reduced ${missedPct}% — ${missedCount} of ${totalCount} on the roster never submitted ratings)`
+    : "";
 
   for (const person of roster) {
     if (person.isLeader) continue;
+    if (!submittedUids.has(person.uid)) continue; // never rated anyone themselves — no payout
     let weightedSum = 0;
     let weightTotal = 0;
     submissions.forEach((sub) => {
@@ -2656,15 +2760,22 @@ async function finalizeGroupRatings(project, groupIndex, group) {
     });
     if (weightTotal === 0) continue;
     const avg = weightedSum / weightTotal;
+    // Stable per-person-per-group logId — same overwrite-in-place pattern
+    // as editTaskRating/editGroupRating, so if
+    // this function ever does run again for the same group (the guard
+    // above should prevent it, but this is the actual point of no
+    // duplication, not just a gate before the call), the existing entry
+    // is corrected by the delta instead of a second one being added.
     await awardPrestige({
       uid: person.uid,
-      rawAmount: Math.round(avg * MEMBER_RATING_POINTS_PER_STAR),
+      rawAmount: Math.round(avg * MEMBER_RATING_POINTS_PER_STAR * participationRate),
       source: "member-rating",
-      note: `Group project peer rating: ${project.title || "Untitled project"}`
+      note: `Group project peer rating: ${project.title || "Untitled project"}${reductionNote}`,
+      logId: `project-member__${project.id}__g${groupIndex}__${person.uid}`
     });
   }
 
-  if (group.leaderUid) {
+  if (group.leaderUid && submittedUids.has(group.leaderUid)) {
     let sum = 0, count = 0;
     submissions.forEach((sub) => {
       if (sub.raterUid === group.leaderUid) return; // leader doesn't rate themself
@@ -2676,17 +2787,22 @@ async function finalizeGroupRatings(project, groupIndex, group) {
       const avg = sum / count;
       await awardPrestige({
         uid: group.leaderUid,
-        rawAmount: Math.round(avg * LEADER_RATING_POINTS_PER_STAR),
+        rawAmount: Math.round(avg * LEADER_RATING_POINTS_PER_STAR * participationRate),
         source: "leader-rating",
-        note: `Group project leadership rating: ${project.title || "Untitled project"}`
+        note: `Group project leadership rating: ${project.title || "Untitled project"}${reductionNote}`,
+        logId: `project-leader__${project.id}__g${groupIndex}__${group.leaderUid}`
       });
     }
   }
 
   // Firestore has no per-element array update, so the whole array is
-  // rewritten with just this one group's ratingsFinalized flag added.
+
+  // rewritten with just this one group's ratingsFinalized flag (plus the
+  // participation numbers, kept for display in the admin history view
+  // and the roster's own "finalized" message) added.
+  const ratingParticipation = { ratedCount, totalCount, missedCount };
   const groups = Array.isArray(project.groups) ? project.groups.slice() : [];
-  groups[groupIndex] = { ...groups[groupIndex], ratingsFinalized: true };
+  groups[groupIndex] = { ...groups[groupIndex], ratingsFinalized: true, ratingParticipation };
   await updateDoc(doc(db, "groupProjects", project.id), { groups });
 
   // Mirror the flag onto the in-memory objects the caller is holding —
@@ -2696,8 +2812,10 @@ async function finalizeGroupRatings(project, groupIndex, group) {
   // button again, letting it be clicked repeatedly and re-award the same
   // prestige points each time.
   group.ratingsFinalized = true;
+  group.ratingParticipation = ratingParticipation;
   if (Array.isArray(project.groups) && project.groups[groupIndex]) {
     project.groups[groupIndex].ratingsFinalized = true;
+    project.groups[groupIndex].ratingParticipation = ratingParticipation;
   }
 }
 
@@ -2718,8 +2836,26 @@ async function renderGroupRatingArea(container, project, groupIndex, group) {
   const isOnRoster = roster.some((p) => p.uid === uid);
   if (!isOnRoster) return; // only roster members/leader can rate or finalize
 
+  // The group's own due date has passed — finalize now even though not
+  // everyone has rated, rather than leaving it stuck forever. Whichever
+  // roster member happens to load this first triggers it; finalizeGroupRatings()
+  // itself docks the payout for the share of the roster that never rated
+  // instead of blocking on full participation.
+  if (!group.ratingsFinalized && isGroupPastDeadline(group)) {
+    try {
+      await finalizeGroupRatings(project, groupIndex, group);
+    } catch (err) {
+      // Non-fatal — falls through to the normal rating UI below; whoever
+      // next opens this will retry the auto-finalize.
+    }
+  }
+
   if (group.ratingsFinalized) {
-    container.innerHTML = '<p class="fine-print" style="text-align:left; color:var(--accent);">Ratings finalized for this group — an admin can now mark the project complete.</p>';
+    const part = group.ratingParticipation;
+    const missedNote = part && part.missedCount > 0
+      ? ` ${part.missedCount} of ${part.totalCount} on the roster never rated — the payout was reduced ${Math.round((part.missedCount / part.totalCount) * 100)}%.`
+      : "";
+    container.innerHTML = `<p class="fine-print" style="text-align:left; color:var(--accent);">Ratings finalized for this group — an admin can now mark the project complete.${missedNote}</p>`;
     return;
   }
 
@@ -2735,36 +2871,7 @@ async function renderGroupRatingArea(container, project, groupIndex, group) {
   rateBtn.addEventListener("click", () => openRateModal(project, groupIndex, group));
   container.appendChild(rateBtn);
 
-  const progress = document.createElement("p");
-  progress.className = "fine-print";
-  progress.style.textAlign = "left";
-  progress.style.margin = "10px 0 0";
-  progress.textContent = `${submittedUids.size} of ${roster.length} have rated. `;
-
-  const whoToggle = document.createElement("button");
-  whoToggle.type = "button";
-  whoToggle.className = "rating-roster-toggle";
-  whoToggle.textContent = "Who?";
-  progress.appendChild(whoToggle);
-  container.appendChild(progress);
-
-  // Small, collapsed-by-default chip list — who's rated vs. still pending —
-  // so it doesn't take up space until someone actually taps to check.
-  const rosterMini = document.createElement("div");
-  rosterMini.className = "rating-roster-mini";
-  rosterMini.hidden = true;
-  roster.forEach((person) => {
-    const rated = submittedUids.has(person.uid);
-    const chip = document.createElement("span");
-    chip.className = "rating-roster-chip " + (rated ? "rated" : "pending");
-    chip.textContent = (rated ? "✓ " : "… ") + person.name;
-    rosterMini.appendChild(chip);
-  });
-  container.appendChild(rosterMini);
-  whoToggle.addEventListener("click", () => {
-    rosterMini.hidden = !rosterMini.hidden;
-    whoToggle.textContent = rosterMini.hidden ? "Who?" : "Hide";
-  });
+  container.appendChild(buildRosterProgressUI(roster, submittedUids));
 
   const isLeader = group.leaderUid === uid;
   const everyoneRated = submittedUids.size >= roster.length && roster.every((p) => submittedUids.has(p.uid));
@@ -4493,9 +4600,43 @@ async function adminVerifyTask(taskId, task, rating) {
       uid: task.assignedToUid,
       rawAmount,
       source: "task",
-      note: `Task: ${task.taskName || "Untitled task"}${missedNote}`
+      note: `Task: ${task.taskName || "Untitled task"}${missedNote}`,
+      logId: `task__${taskId}`
     });
   }
+}
+
+// Admin action: changes the 1-10 rating on an already-verified/completed
+// task. Only the rating portion should move — the difficulty base points
+// (which depend on whether it was on time, judged once at verification)
+// are recomputed the same way but from the task's already-stored onTime
+// flag, not re-judged against today's date. Recalculates by passing the
+// task's full new point value back through awardPrestige with the SAME
+// logId the original verification used, so it overwrites that one log
+// entry in place (and adjusts the batchmate's total by just the
+// difference) rather than adding a second "edit" line.
+async function editTaskRating(taskId, task, newRating) {
+  if (!guardPerm('tasks', 'Verify Task')) throw new Error("no-permission");
+  const oldRating = Number(task.rating) || 0;
+  if (newRating === oldRating) return;
+
+  await updateDoc(doc(db, "tasks", taskId), { rating: newRating });
+
+  if (task.assignedToUid) {
+    const onTime = task.onTime !== false;
+    const basePoints = onTime ? (TASK_DIFFICULTY_POINTS[task.difficulty] || 0) : 0;
+    const rawAmount = basePoints + newRating * TASK_RATING_POINTS_PER_STAR;
+    const missedNote = onTime ? "" : " (deadline missed — no difficulty points)";
+    await awardPrestige({
+      uid: task.assignedToUid,
+      rawAmount,
+      source: "task",
+      note: `Task: ${task.taskName || "Untitled task"}${missedNote}`,
+      logId: `task__${taskId}`
+    });
+  }
+
+  task.rating = newRating;
 }
 
 // ── Admin: Completed Tasks (history) ────────────────────────────
@@ -4605,6 +4746,58 @@ function openTaskDetailModal(task) {
     row.querySelector(".admin-detail-value").textContent = value;
     body.appendChild(row);
   });
+
+  // Edit Rating — only makes sense for a task that actually has a rating
+  // on it (i.e. it went through adminVerifyTask). Recalculates prestige
+  // by the delta via editTaskRating() rather than re-awarding from scratch.
+  if (task.status === "complete" && task.rating) {
+    const ratingRowWrap = document.createElement("div");
+    ratingRowWrap.style.marginTop = "14px";
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "ghost-btn";
+    editBtn.style.cssText = "padding:6px 14px; font-size:12px;";
+    editBtn.textContent = "Edit Rating";
+    ratingRowWrap.appendChild(editBtn);
+    body.appendChild(ratingRowWrap);
+
+    editBtn.addEventListener("click", () => {
+      const picker = buildRatingBoxPicker(Number(task.rating));
+      const saveBtn = document.createElement("button");
+      saveBtn.type = "button";
+      saveBtn.className = "admin-task-verify-btn";
+      saveBtn.textContent = "Save";
+      const statusEl = document.createElement("p");
+      statusEl.className = "fine-print";
+      statusEl.style.textAlign = "left";
+
+      saveBtn.addEventListener("click", async () => {
+        const value = Number(picker.dataset.value);
+        if (!value) { alert("Pick a rating (1-10) first."); return; }
+        saveBtn.disabled = true;
+        saveBtn.textContent = "Saving…";
+        try {
+          await editTaskRating(task.id, task, value);
+          statusEl.textContent = "Rating updated.";
+          openTaskDetailModal(task); // re-render with the new value + refresh completed list
+          renderAdminCompletedTasks();
+        } catch (err) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Save";
+          if (!err || err.message !== "no-permission") {
+            statusEl.textContent = "Could not save this change. Please try again.";
+          }
+        }
+      });
+
+      ratingRowWrap.innerHTML = "";
+      ratingRowWrap.appendChild(picker);
+      ratingRowWrap.appendChild(saveBtn);
+      ratingRowWrap.appendChild(statusEl);
+    });
+  }
+
   overlay.hidden = false;
 }
 
@@ -5048,6 +5241,21 @@ async function renderAdminActiveProjects() {
         toggles.querySelectorAll(".project-status-toggle").forEach((b) => (b.disabled = true));
 
         try {
+          // Marking the whole project complete is one of the ways a
+          // group's peer/leader ratings can get finished (the other two
+          // are the group's own due date passing, and the leader
+          // finalizing once everyone's rated) — force-finalize any group
+          // that isn't finalized yet before pulling the project off the
+          // site, same participation-based reduction as those other paths.
+          if (value === "complete") {
+            const projGroups = Array.isArray(p.groups) ? p.groups : [];
+            for (let gi = 0; gi < projGroups.length; gi++) {
+              if (!projGroups[gi].ratingsFinalized && getGroupRoster(projGroups[gi]).length > 0) {
+                await finalizeGroupRatings(p, gi, projGroups[gi]);
+              }
+            }
+          }
+
           const updates = { status: value };
           if (value === "complete") updates.completedDate = new Date().toISOString().slice(0, 10);
           await updateDoc(doc(db, "groupProjects", p.id), updates);
@@ -5203,50 +5411,56 @@ function initProjectEditForm() {
   });
 }
 
-// Admin's two rating tools for a project: one overall rating that pays
-// every member of every group the same points, and one rating per group
-// that only pays that group's members + leader. Each can only be
-// awarded once per project/group (re-renders show "Awarded: X/10"
-// instead of the controls once set) to avoid double-paying prestige.
-function renderAdminProjectRatingControls(container, p) {
+// Changes an already-awarded single-group rating. Passes the full new
+// value back through awardPrestige with the SAME per-person logId the
+// original award used — that overwrites each person's existing
+// prestigeLog entry in place (adjusting their total by just the
+// difference) instead of adding a second "edited" line.
+async function editGroupRating(p, groupIndex, newValue) {
+  const groups = Array.isArray(p.groups) ? p.groups.slice() : [];
+  const g = groups[groupIndex] || {};
+  const oldValue = g.rating && typeof g.rating.value === "number" ? g.rating.value : 0;
+  if (newValue === oldValue) return;
+
+  const roster = getGroupRoster(g);
+  for (const person of roster) {
+    await awardPrestige({
+      uid: person.uid,
+      rawAmount: newValue * GROUP_RATING_POINTS_PER_STAR,
+      source: "project-group",
+      note: `Group rating: ${p.title || "Untitled project"} — ${g.groupName || "Group"}`,
+      logId: `project-group__${p.id}__g${groupIndex}__${person.uid}`
+    });
+  }
+
+  const rating = {
+    value: newValue,
+    ratedAt: (g.rating && g.rating.ratedAt) || new Date().toISOString(),
+    editedAt: new Date().toISOString()
+  };
+  groups[groupIndex] = { ...g, rating };
+  await updateDoc(doc(db, "groupProjects", p.id), { groups });
+  if (Array.isArray(p.groups) && p.groups[groupIndex]) {
+    p.groups[groupIndex].rating = rating;
+  }
+}
+
+// Admin's rating tool for a project: one rating per group that only pays
+// that group's members + leader. Each can be awarded once (shows
+// "Awarded: X/10" + an Edit button after that); editing recalculates
+// prestige by the delta between old and new value rather than re-awarding
+// from scratch (see editGroupRating). Each group row also shows
+// peer/leader-rating progress ("N of M have rated") and, once finalized,
+// the participation-based payout reduction if anyone on that roster never
+// rated — plus a "Finalize Ratings Now" button so an admin can force it
+// before everyone's submitted, same as a group's due date passing does
+// automatically.
+async function renderAdminProjectRatingControls(container, p) {
   container.innerHTML = "";
 
-  const overallRow = document.createElement("div");
-  overallRow.className = "admin-rating-row";
-  const overallLabel = document.createElement("span");
-  overallLabel.textContent = "Overall Project Rating";
-  overallRow.appendChild(overallLabel);
-
-  if (p.overallRating && typeof p.overallRating.value === "number") {
-    const awarded = document.createElement("span");
-    awarded.className = "admin-rating-awarded";
-    awarded.textContent = `Awarded: ${p.overallRating.value}/10 to everyone`;
-    overallRow.appendChild(awarded);
-  } else {
-    const picker = buildRatingBoxPicker();
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "admin-task-verify-btn";
-    btn.textContent = "Award to All";
-    btn.addEventListener("click", async () => {
-      const value = Number(picker.dataset.value);
-      if (!value) { alert("Pick a rating (1-10) first."); return; }
-      btn.disabled = true;
-      try {
-        await awardOverallProjectRating(p, value);
-        renderAdminProjectRatingControls(container, p);
-      } catch (err) {
-        btn.disabled = false;
-        alert("Could not award this rating. Please try again.");
-      }
-    });
-    overallRow.appendChild(picker);
-    overallRow.appendChild(btn);
-  }
-  container.appendChild(overallRow);
-
   const groups = Array.isArray(p.groups) ? p.groups : [];
-  groups.forEach((g, index) => {
+  for (let index = 0; index < groups.length; index++) {
+    const g = groups[index];
     const row = document.createElement("div");
     row.className = "admin-rating-row";
     const label = document.createElement("span");
@@ -5258,6 +5472,35 @@ function renderAdminProjectRatingControls(container, p) {
       awarded.className = "admin-rating-awarded";
       awarded.textContent = `Awarded: ${g.rating.value}/10`;
       row.appendChild(awarded);
+
+      const editBtn = document.createElement("button");
+      editBtn.type = "button";
+      editBtn.className = "ghost-btn";
+      editBtn.style.cssText = "margin-left:8px; padding:4px 10px; font-size:12px;";
+      editBtn.textContent = "Edit";
+      editBtn.addEventListener("click", () => {
+        const picker = buildRatingBoxPicker(g.rating.value);
+        const saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "admin-task-verify-btn";
+        saveBtn.textContent = "Save";
+        saveBtn.addEventListener("click", async () => {
+          const value = Number(picker.dataset.value);
+          if (!value) { alert("Pick a rating (1-10) first."); return; }
+          saveBtn.disabled = true;
+          try {
+            await editGroupRating(p, index, value);
+            renderAdminProjectRatingControls(container, p);
+          } catch (err) {
+            saveBtn.disabled = false;
+            alert("Could not save this change. Please try again.");
+          }
+        });
+        row.appendChild(picker);
+        row.appendChild(saveBtn);
+        editBtn.remove();
+      });
+      row.appendChild(editBtn);
     } else {
       const picker = buildRatingBoxPicker();
       const btn = document.createElement("button");
@@ -5280,33 +5523,75 @@ function renderAdminProjectRatingControls(container, p) {
       row.appendChild(btn);
     }
 
-    if (g.ratingsFinalized) {
-      const badge = document.createElement("span");
-      badge.className = "admin-rating-awarded";
-      badge.textContent = "Peer ratings finalized ✓";
-      row.appendChild(badge);
-    }
-
     container.appendChild(row);
-  });
+
+    // Peer/leader rating progress for this group — mirrors what a roster
+    // member sees on the Home page, so the admin can see who's holding a
+    // group up without asking around. Once finalized, shows the
+    // participation-based reduction instead (see finalizeGroupRatings).
+    const roster = getGroupRoster(g);
+    if (roster.length > 0) {
+      if (g.ratingsFinalized) {
+        const part = g.ratingParticipation;
+        const badge = document.createElement("p");
+        badge.className = "fine-print";
+        badge.style.textAlign = "left";
+        badge.style.margin = "4px 0 10px";
+        badge.textContent = "Peer ratings finalized ✓" +
+          (part && part.missedCount > 0
+            ? ` — ${part.missedCount} of ${part.totalCount} never rated (payout reduced ${Math.round((part.missedCount / part.totalCount) * 100)}%)`
+            : "");
+        container.appendChild(badge);
+      } else {
+        const submissions = await getGroupRatingSubmissions(p.id, index);
+        const submittedUids = new Set(submissions.map((s) => s.raterUid));
+        const progressWrap = buildRosterProgressUI(roster, submittedUids);
+        progressWrap.style.margin = "4px 0 10px";
+        container.appendChild(progressWrap);
+
+        const finalizeBtn = document.createElement("button");
+        finalizeBtn.type = "button";
+        finalizeBtn.className = "ghost-btn";
+        finalizeBtn.style.cssText = "margin:0 0 14px; padding:6px 14px; font-size:12px;";
+        finalizeBtn.textContent = "Finalize Ratings Now";
+        finalizeBtn.addEventListener("click", async () => {
+          const missing = roster.length - submittedUids.size;
+          if (missing > 0 && !confirm(
+            `${missing} of ${roster.length} on this roster haven't rated yet. Finalize anyway? ` +
+            `They'll get no prestige from this group's peer/leader ratings, and everyone else's payout will be reduced.`
+          )) return;
+          finalizeBtn.disabled = true;
+          try {
+            await finalizeGroupRatings(p, index, g);
+            renderAdminProjectRatingControls(container, p);
+          } catch (err) {
+            finalizeBtn.disabled = false;
+            alert("Could not finalize ratings. Please try again.");
+          }
+        });
+        container.appendChild(finalizeBtn);
+      }
+    }
+  }
 }
 
-// Box-type 1-10 picker for the admin's Overall/Group rating rows — same
+// Box-type 1-10 picker for the admin's Group rating rows — same
 // visual design as the home page's group-project peer rating picker
 // (.rate-star-picker / .rate-star-btn), used here instead of a native
 // <select> so the admin taps a number box rather than opening the
 // browser's default dropdown. The chosen value is read from
 // picker.dataset.value (set on click), same contract buildRatingSelect's
 // callers used to read from select.value.
-function buildRatingBoxPicker() {
+function buildRatingBoxPicker(initialValue) {
   const picker = document.createElement("div");
   picker.className = "rate-star-picker admin-rating-picker";
-  picker.dataset.value = "";
+  picker.dataset.value = initialValue ? String(initialValue) : "";
   for (let i = 1; i <= 10; i++) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "rate-star-btn";
     btn.textContent = String(i);
+    if (initialValue === i) btn.classList.add("selected");
     btn.addEventListener("click", () => {
       picker.dataset.value = String(i);
       picker.querySelectorAll(".rate-star-btn").forEach((b) => b.classList.toggle("selected", b === btn));
@@ -5317,29 +5602,6 @@ function buildRatingBoxPicker() {
 }
 
 
-async function awardOverallProjectRating(p, value) {
-  const groups = Array.isArray(p.groups) ? p.groups : [];
-  for (const g of groups) {
-    const roster = getGroupRoster(g);
-    for (const person of roster) {
-      await awardPrestige({
-        uid: person.uid,
-        rawAmount: value * OVERALL_RATING_POINTS_PER_STAR,
-        source: "project-overall",
-        note: `Project rating: ${p.title || "Untitled project"}`
-      });
-    }
-  }
-  const overallRating = { value, ratedAt: new Date().toISOString() };
-  await updateDoc(doc(db, "groupProjects", p.id), { overallRating });
-
-  // Mirror onto the in-memory project object — otherwise the re-render
-  // right after this call (see the "Award to All" click handler) would
-  // still see p.overallRating as unset and show the award controls again,
-  // letting the button be clicked repeatedly and re-award every member.
-  p.overallRating = overallRating;
-}
-
 async function awardGroupRating(p, groupIndex, value) {
   const groups = Array.isArray(p.groups) ? p.groups.slice() : [];
   const roster = getGroupRoster(groups[groupIndex] || {});
@@ -5348,7 +5610,8 @@ async function awardGroupRating(p, groupIndex, value) {
       uid: person.uid,
       rawAmount: value * GROUP_RATING_POINTS_PER_STAR,
       source: "project-group",
-      note: `Group rating: ${p.title || "Untitled project"} — ${groups[groupIndex].groupName || "Group"}`
+      note: `Group rating: ${p.title || "Untitled project"} — ${groups[groupIndex].groupName || "Group"}`,
+      logId: `project-group__${p.id}__g${groupIndex}__${person.uid}`
     });
   }
   const rating = { value, ratedAt: new Date().toISOString() };
@@ -5431,14 +5694,12 @@ async function openProjectDetailModal(p) {
   body.innerHTML = "Loading…";
 
   const groups = Array.isArray(p.groups) ? p.groups : [];
-  const overall = p.overallRating && typeof p.overallRating.value === "number" ? p.overallRating.value + "/10" : "—";
 
   const topRows = [
     ["Project", p.title || "Untitled project"],
     ["Description", p.description || "—"],
     ["Status", p.status || "—"],
-    ["Completed", p.completedDate || "—"],
-    ["Overall rating", overall]
+    ["Completed", p.completedDate || "—"]
   ];
   body.innerHTML = "";
   topRows.forEach(([label, value]) => {
@@ -5448,6 +5709,15 @@ async function openProjectDetailModal(p) {
     row.querySelector(".admin-detail-value").textContent = value;
     body.appendChild(row);
   });
+
+  // Ratings stay editable even after the project's been marked complete —
+  // reuses the same controls (and delta-based recalculation) as the
+  // Active Projects panel.
+  const ratingControls = document.createElement("div");
+  ratingControls.className = "admin-project-rating-section";
+  ratingControls.style.margin = "6px 0 16px";
+  body.appendChild(ratingControls);
+  renderAdminProjectRatingControls(ratingControls, p);
 
   if (groups.length === 0) {
     const none = document.createElement("p");
@@ -6054,6 +6324,124 @@ function formatAdminDirValue(v) {
   return String(v);
 }
 
+// Fetches and renders a batchmate's /prestigeLog history into listEl (used
+// both on first open and to refresh in place after a delete). Super admins
+// (ADMIN_INFO.superAdmin === true) get a ✕ button on each row; anyone else
+// sees a read-only list, matching the Manage Admin Access gating pattern
+// used elsewhere on this page.
+async function renderAdminDirectoryPrestigeSection(d, listEl) {
+  listEl.innerHTML = "";
+  try {
+    const pq = query(collection(db, "prestigeLog"), where("uid", "==", d.uid));
+    const psnap = await getDocs(pq);
+    const pentries = psnap.docs
+      .map((s) => ({ id: s.id, ...s.data() }))
+      .sort((a, b) => (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
+
+    if (pentries.length === 0) {
+      listEl.innerHTML = '<p class="info-text" style="color:var(--muted)">No prestige activity yet.</p>';
+      return;
+    }
+
+    const canDelete = ADMIN_INFO && ADMIN_INFO.superAdmin === true;
+
+    pentries.forEach((e) => {
+      const row = document.createElement("div");
+      row.className = "prestige-log-item";
+      row.style.height = "auto";
+      row.style.minHeight = "36px";
+
+      const left = document.createElement("div");
+      left.className = "prestige-log-note";
+      left.style.webkitLineClamp = "unset";
+      left.style.display = "block";
+      const dateStr = e.createdAt && typeof e.createdAt.toDate === "function" ? e.createdAt.toDate().toLocaleString() : "";
+      const sourceStr = e.source ? humanizeKey(e.source) : "";
+      left.textContent = e.note || sourceStr || "Prestige update";
+      if (dateStr || sourceStr) {
+        const meta = document.createElement("span");
+        meta.style.display = "block";
+        meta.style.fontSize = "11px";
+        meta.style.color = "var(--muted)";
+        meta.textContent = [sourceStr, dateStr].filter(Boolean).join(" · ");
+        left.appendChild(meta);
+      }
+
+      const amount = Number(e.finalAmount) || 0;
+      const right = document.createElement("div");
+      right.className = "prestige-log-amount " + (amount < 0 ? "prestige-negative" : "prestige-positive");
+      right.textContent = (amount > 0 ? "+" : "") + amount;
+      right.style.display = "flex";
+      right.style.alignItems = "center";
+      right.style.gap = "8px";
+
+      row.appendChild(left);
+      row.appendChild(right);
+
+      if (canDelete) {
+        const delBtn = document.createElement("button");
+        delBtn.type = "button";
+        delBtn.className = "prestige-log-delete-btn";
+        delBtn.setAttribute("aria-label", "Delete this prestige record");
+        delBtn.textContent = "✕";
+        delBtn.addEventListener("click", () => deletePrestigeLogEntry(e, d, listEl));
+        right.appendChild(delBtn);
+      }
+
+      listEl.appendChild(row);
+    });
+  } catch (err) {
+    listEl.innerHTML = '<p class="info-text" style="color:var(--muted)">Could not load prestige history.</p>';
+  }
+}
+
+// Super-admin only: permanently deletes one /prestigeLog entry and reverses
+// its effect on the batchmate's running total — i.e. their prestigePoints
+// is reduced by exactly that record's finalAmount (the post-multiplier
+// value actually applied when it was awarded), same arithmetic awardPrestige()
+// used going the other way. The coarser public level mirror is recomputed
+// the same best-effort way awardPrestige() does. Firestore rules are the
+// real gate (hasPerm() there treats superAdmin as passing every check);
+// this UI check just avoids showing the button to non-super-admins.
+async function deletePrestigeLogEntry(entry, d, listEl) {
+  if (!ADMIN_INFO || ADMIN_INFO.superAdmin !== true) return;
+
+  const finalAmount = Number(entry.finalAmount) || 0;
+  const label = entry.note || (entry.source ? humanizeKey(entry.source) : "this prestige record");
+  const sign = finalAmount > 0 ? "+" : "";
+  const confirmMsg = `Delete "${label}"?\n\nThis will permanently remove the record and adjust ${d.fullName || "this batchmate"}'s prestige total by ${sign}${-finalAmount} (reversing the ${sign}${finalAmount} it originally awarded). This cannot be undone.`;
+  if (!confirm(confirmMsg)) return;
+
+  try {
+    if (finalAmount !== 0) {
+      await updateDoc(doc(db, "batchmates", d.uid), { prestigePoints: increment(-finalAmount) });
+      try {
+        const bmSnap = await getDoc(doc(db, "batchmates", d.uid));
+        const newTotal = bmSnap.exists() ? (Number(bmSnap.data().prestigePoints) || 0) : 0;
+        await setDoc(doc(db, "batchmatesPublic", d.uid), { prestigeLevel: levelForPoints(newTotal) }, { merge: true });
+      } catch (err) {
+        // Non-fatal — same reasoning as awardPrestige(): the exact total is
+        // already corrected; the public level badge catches up on next re-sync.
+      }
+    }
+    await deleteDoc(doc(db, "prestigeLog", entry.id));
+
+    // Reflect the new total immediately: in this open popup, in the
+    // in-memory Data Table row (so it's correct without a full reload),
+    // and in the Data Table itself if that column is currently shown.
+    d.prestigePoints = (Number(d.prestigePoints) || 0) - finalAmount;
+    const totalEl = document.getElementById("admindir-detail-prestige-total-value");
+    if (totalEl) totalEl.textContent = formatAdminDirValue(d.prestigePoints);
+    const cachedRow = dataTableRows.find((r) => r.uid === d.uid);
+    if (cachedRow) cachedRow.prestigePoints = d.prestigePoints;
+    renderDataTable();
+
+    await renderAdminDirectoryPrestigeSection(d, listEl);
+  } catch (err) {
+    alert("Could not delete this record — please check your connection and try again.");
+  }
+}
+
 // Renders every field on a batchmate's record into #admindir-detail-fields,
 // grouped by the same schema the Dashboard/directory use for the fields
 // it covers, plus fixed groups for extracurricular/prestige/records, plus
@@ -6093,10 +6481,94 @@ async function renderAdminDirectoryDetail(d) {
     extraGroup.appendChild(fieldRow(humanizeKey(key), formatAdminDirValue(d[key])));
   });
   knownKeys.add("prestigePoints");
-  extraGroup.appendChild(fieldRow("Prestige Points (exact)", formatAdminDirValue(d.prestigePoints)));
+  const prestigeTotalRow = fieldRow("Prestige Points (exact)", formatAdminDirValue(d.prestigePoints));
+  const prestigeTotalValueEl = prestigeTotalRow.querySelector("span:last-child");
+  if (prestigeTotalValueEl) prestigeTotalValueEl.id = "admindir-detail-prestige-total-value";
+  extraGroup.appendChild(prestigeTotalRow);
   knownKeys.add("badBehaviorRecords");
   extraGroup.appendChild(fieldRow("Bad Behavior Records", formatAdminDirValue(d.badBehaviorRecords)));
   container.appendChild(extraGroup);
+
+  // Prestige Point History — every /prestigeLog entry for this batchmate
+  // (task/project/fund awards, admin corrections, etc.), each with its
+  // note and the final (post-multiplier) point delta. Reuses the same
+  // .prestige-log-item look the Dashboard's own history list uses, but
+  // unclamped/unscrolled — this popup should show every entry. Super
+  // admins additionally get a delete (✕) button on each row — see
+  // renderAdminDirectoryPrestigeSection() / deletePrestigeLogEntry().
+  const prestigeGroup = document.createElement("div");
+  prestigeGroup.className = "admindir-detail-group";
+  const prestigeTitle = document.createElement("p");
+  prestigeTitle.className = "admindir-detail-group-title";
+  prestigeTitle.textContent = "Prestige Point History";
+  prestigeGroup.appendChild(prestigeTitle);
+  const prestigeList = document.createElement("div");
+  prestigeList.className = "prestige-log-list";
+  prestigeList.style.maxHeight = "none";
+  prestigeGroup.appendChild(prestigeList);
+  container.appendChild(prestigeGroup);
+
+  await renderAdminDirectoryPrestigeSection(d, prestigeList);
+
+  // Fund Donation History — every /fundTransactions doc this batchmate
+  // was part of (income, per-student split), with its description/date
+  // and their individual share, same list styling as above.
+  const fundGroup = document.createElement("div");
+  fundGroup.className = "admindir-detail-group";
+  const fundTitle = document.createElement("p");
+  fundTitle.className = "admindir-detail-group-title";
+  fundTitle.textContent = "Fund Donation History";
+  fundGroup.appendChild(fundTitle);
+  const fundList = document.createElement("div");
+  fundList.className = "prestige-log-list";
+  fundList.style.maxHeight = "none";
+  fundGroup.appendChild(fundList);
+  container.appendChild(fundGroup);
+
+  try {
+    const fq = query(collection(db, "fundTransactions"), where("studentUids", "array-contains", d.uid));
+    const fsnap = await getDocs(fq);
+    const fentries = fsnap.docs
+      .map((s) => s.data())
+      .filter((tx) => (tx.type || "").toLowerCase() === "income")
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+    if (fentries.length === 0) {
+      fundList.innerHTML = '<p class="info-text" style="color:var(--muted)">No fund donations yet.</p>';
+    } else {
+      fentries.forEach((tx) => {
+        const row = document.createElement("div");
+        row.className = "prestige-log-item";
+        row.style.height = "auto";
+        row.style.minHeight = "36px";
+
+        const left = document.createElement("div");
+        left.className = "prestige-log-note";
+        left.style.webkitLineClamp = "unset";
+        left.style.display = "block";
+        left.textContent = tx.description || "Batch fund donation";
+        if (tx.date) {
+          const meta = document.createElement("span");
+          meta.style.display = "block";
+          meta.style.fontSize = "11px";
+          meta.style.color = "var(--muted)";
+          meta.textContent = tx.date;
+          left.appendChild(meta);
+        }
+
+        const amount = Number(tx.perStudentAmount) || 0;
+        const right = document.createElement("div");
+        right.className = "prestige-log-amount fund-log-amount";
+        right.textContent = `Rs. ${amount.toLocaleString()}`;
+
+        row.appendChild(left);
+        row.appendChild(right);
+        fundList.appendChild(row);
+      });
+    }
+  } catch (err) {
+    fundList.innerHTML = '<p class="info-text" style="color:var(--muted)">Could not load fund donation history.</p>';
+  }
 
   const otherKeys = Object.keys(d).filter((k) => !knownKeys.has(k)).sort();
   if (otherKeys.length > 0) {

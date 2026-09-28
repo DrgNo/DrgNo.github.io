@@ -285,6 +285,24 @@
           <label for="fund-date">Date</label>
           <input type="date" id="fund-date" required>
 
+          <div class="push-controls" data-push-prefix="fund">
+            <label class="push-toggle-row">
+              <input type="checkbox" id="fund-push-enabled" checked>
+              <span>Send push notification</span>
+            </label>
+            <div class="push-controls-options" id="fund-push-options">
+              <label for="fund-push-mode">Delivery</label>
+              <select id="fund-push-mode">
+                <option value="auto">Automatic (entire batch)</option>
+                <option value="manual">Manual — choose recipients</option>
+              </select>
+              <div id="fund-push-manual" hidden>
+                <input type="text" id="fund-push-search" placeholder="Search students by name or index…">
+                <div id="fund-push-checklist" class="member-checklist" style="max-height:180px; overflow-y:auto;"></div>
+              </div>
+            </div>
+          </div>
+
           <button type="submit" class="btn-primary">Add Transaction</button>
         </form>
         <p class="error-msg" id="fund-error" hidden></p>
@@ -484,6 +502,24 @@
           <label for="ann-date">Date</label>
           <input type="date" id="ann-date" required>
 
+          <div class="push-controls" data-push-prefix="ann">
+            <label class="push-toggle-row">
+              <input type="checkbox" id="ann-push-enabled" checked>
+              <span>Send push notification</span>
+            </label>
+            <div class="push-controls-options" id="ann-push-options">
+              <label for="ann-push-mode">Delivery</label>
+              <select id="ann-push-mode">
+                <option value="auto">Automatic (entire batch)</option>
+                <option value="manual">Manual — choose recipients</option>
+              </select>
+              <div id="ann-push-manual" hidden>
+                <input type="text" id="ann-push-search" placeholder="Search students by name or index…">
+                <div id="ann-push-checklist" class="member-checklist" style="max-height:180px; overflow-y:auto;"></div>
+              </div>
+            </div>
+          </div>
+
           <button type="submit" class="btn-primary">Add Announcement</button>
         </form>
         <p class="error-msg" id="ann-error" hidden></p>
@@ -519,6 +555,24 @@
 
           <div id="groups-container"></div>
           <button type="button" id="add-group-btn" class="ghost-btn" style="width:100%; margin-bottom:18px;">+ Add Another Group</button>
+
+          <div class="push-controls" data-push-prefix="proj">
+            <label class="push-toggle-row">
+              <input type="checkbox" id="proj-push-enabled" checked>
+              <span>Send push notification</span>
+            </label>
+            <div class="push-controls-options" id="proj-push-options">
+              <label for="proj-push-mode">Delivery</label>
+              <select id="proj-push-mode">
+                <option value="auto">Automatic (those involved)</option>
+                <option value="manual">Manual — choose recipients</option>
+              </select>
+              <div id="proj-push-manual" hidden>
+                <input type="text" id="proj-push-search" placeholder="Search students by name or index…">
+                <div id="proj-push-checklist" class="member-checklist" style="max-height:180px; overflow-y:auto;"></div>
+              </div>
+            </div>
+          </div>
 
           <button type="submit" class="btn-primary">Add Project</button>
         </form>
@@ -591,6 +645,24 @@
           <select id="event-labels-select" multiple size="4"></select>
           <p class="fine-print" style="margin:-12px 0 18px; text-align:left;">No labels yet? Add one first, then come back here.</p>
 
+          <div class="push-controls" data-push-prefix="event">
+            <label class="push-toggle-row">
+              <input type="checkbox" id="event-push-enabled" checked>
+              <span>Send push notification</span>
+            </label>
+            <div class="push-controls-options" id="event-push-options">
+              <label for="event-push-mode">Delivery</label>
+              <select id="event-push-mode">
+                <option value="auto">Automatic (entire batch)</option>
+                <option value="manual">Manual — choose recipients</option>
+              </select>
+              <div id="event-push-manual" hidden>
+                <input type="text" id="event-push-search" placeholder="Search students by name or index…">
+                <div id="event-push-checklist" class="member-checklist" style="max-height:180px; overflow-y:auto;"></div>
+              </div>
+            </div>
+          </div>
+
           <button type="submit" class="btn-primary">Add Event</button>
         </form>
         <p class="error-msg" id="event-error" hidden></p>
@@ -627,6 +699,24 @@
           <label for="task-duedate">Due Date (optional)</label>
           <input type="date" id="task-duedate">
           <p class="fine-print" style="text-align:left; margin:-12px 0 18px;">If set, the difficulty-based points are only earned when finished by this date — admin rating points always apply.</p>
+
+          <div class="push-controls" data-push-prefix="task">
+            <label class="push-toggle-row">
+              <input type="checkbox" id="task-push-enabled" checked>
+              <span>Send push notification</span>
+            </label>
+            <div class="push-controls-options" id="task-push-options">
+              <label for="task-push-mode">Delivery</label>
+              <select id="task-push-mode">
+                <option value="auto">Automatic (those involved)</option>
+                <option value="manual">Manual — choose recipients</option>
+              </select>
+              <div id="task-push-manual" hidden>
+                <input type="text" id="task-push-search" placeholder="Search students by name or index…">
+                <div id="task-push-checklist" class="member-checklist" style="max-height:180px; overflow-y:auto;"></div>
+              </div>
+            </div>
+          </div>
 
           <button type="submit" class="btn-primary">Assign Task</button>
         </form>
@@ -705,6 +795,25 @@
         <p class="section-label" style="margin-top:16px;">Add a Record</p>
         <form id="form-badbehavior">
           <textarea id="badbehavior-text" rows="2" placeholder="e.g. 2026-09-21 — Missed mandatory event without notice" required></textarea>
+
+          <div class="push-controls" data-push-prefix="badbehavior">
+            <label class="push-toggle-row">
+              <input type="checkbox" id="badbehavior-push-enabled" checked>
+              <span>Send push notification</span>
+            </label>
+            <div class="push-controls-options" id="badbehavior-push-options">
+              <label for="badbehavior-push-mode">Delivery</label>
+              <select id="badbehavior-push-mode">
+                <option value="auto">Automatic (those involved)</option>
+                <option value="manual">Manual — choose recipients</option>
+              </select>
+              <div id="badbehavior-push-manual" hidden>
+                <input type="text" id="badbehavior-push-search" placeholder="Search students by name or index…">
+                <div id="badbehavior-push-checklist" class="member-checklist" style="max-height:180px; overflow-y:auto;"></div>
+              </div>
+            </div>
+          </div>
+
           <button type="submit" class="btn-primary">Add Record</button>
         </form>
         <p class="error-msg" id="badbehavior-error" hidden></p>

@@ -213,6 +213,18 @@ input, textarea, select {
   margin-bottom: 18px;
   font-family: inherit;
   resize: vertical;
+  width: 100%;
+}
+/* Plain text/date/select fields fill their container (see above). A
+   <form>'s own flex layout already stretched top-level fields to full
+   width, which is why this only became visible for controls nested a
+   level or two deeper — e.g. the "Leader" <select> inside a Group
+   Project block, which could grow wider than its box and spill past
+   its rounded border once a long name was picked. Checkboxes, radios
+   and the hidden file input must never stretch like this, so they're
+   pulled back to their natural size here. */
+input[type="checkbox"], input[type="radio"], input[type="file"] {
+  width: auto;
 }
 input:focus, textarea:focus, select:focus {
   outline: none;
@@ -1158,6 +1170,23 @@ html.page-exit .content-area, html.page-exit .page-center {
   -webkit-box-orient: vertical;
 }
 .prestige-log-amount { font-size: 14px; font-weight: 700; flex: 0 0 auto; white-space: nowrap; }
+.prestige-log-delete-btn {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--panel-border);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.prestige-log-delete-btn:hover { background: #F87171; border-color: #F87171; color: #fff; }
 .prestige-positive { color: #4ADE80; }
 .prestige-negative { color: #F87171; }
 .fund-log-amount { color: var(--blue); }
@@ -1269,6 +1298,7 @@ html.page-exit .content-area, html.page-exit .page-center {
 .admin-task-box.needs-verify { border-color: #D6942A; }
 .admin-task-name { font-size: 13.5px; font-weight: 600; }
 .admin-task-assignee { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.admin-record-id { font-size: 10.5px; color: var(--muted); opacity: .7; margin-top: 3px; font-family: 'Space Grotesk', monospace; }
 .admin-task-badge {
   display: inline-block;
   font-size: 10.5px;
@@ -1291,6 +1321,29 @@ html.page-exit .content-area, html.page-exit .page-center {
   flex-shrink: 0;
 }
 .admin-task-verify-btn:hover { filter: brightness(1.1); }
+
+/* Solo task card — stacked: name+assignee, description, a scrollable
+   rating row (the 10 rating boxes never wrap, they scroll sideways
+   instead), then Edit/Verify as one even split row. */
+.admin-task-solo-card { display: flex; flex-direction: column; align-items: stretch; }
+.admin-task-card-top { display: flex; flex-direction: column; gap: 2px; }
+.admin-task-card-top .admin-task-badge { margin-top: 4px; align-self: flex-start; }
+.admin-task-desc { font-size: 12.5px; color: var(--muted); margin-top: 8px; line-height: 1.4; }
+.admin-task-rate-row {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  overflow-x: auto;
+  margin-top: 12px;
+  padding-bottom: 2px;
+}
+.admin-task-rate-row .rate-star-btn { flex-shrink: 0; }
+.admin-task-actions-row { display: flex; gap: 8px; margin-top: 12px; }
+.admin-task-actions-row .admin-task-edit-btn,
+.admin-task-actions-row .admin-task-verify-btn {
+  flex: 1;
+  text-align: center;
+}
 
 /* Group tasks — the same task assigned to several students at once.
    Each still gets rated/verified individually (member row), but they're
@@ -1553,6 +1606,30 @@ html.page-exit .content-area, html.page-exit .page-center {
   margin: 0;
   accent-color: var(--blue);
 }
+
+/* ── Admin: per-form push notification controls (toggle + auto/manual) ── */
+.push-controls {
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+  background: var(--surface);
+}
+.push-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+}
+.push-toggle-row input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--blue);
+}
+.push-controls-options { margin-top: 10px; }
+.push-controls-options label { font-size: 12px; }
 
 /* ── Shared: Manage Admin Access reuses these for its admin cards and
    "Add New Admin" batchmate search results ──────────────────────────── */
@@ -1841,7 +1918,7 @@ html.page-exit .content-area, html.page-exit .page-center {
   border: 1px solid var(--panel-border);
   border-radius: 999px;
   padding: 5px;
-  z-index: 80;
+  z-index: 1;
 }
 @media (min-width: 880px) {
   /* Center within the content area, not the whole viewport — the
