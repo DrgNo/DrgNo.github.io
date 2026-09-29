@@ -3948,6 +3948,30 @@ async function initFundTransactionForm() {
   }
   perHeadInput.addEventListener("input", updateComputedTotal);
   checklist.addEventListener("change", updateComputedTotal);
+
+  // Select all / Deselect all (applies to students currently shown by the search filter)
+  const selectAllBtn = document.createElement("button");
+  selectAllBtn.type = "button";
+  selectAllBtn.className = "ghost-btn";
+  selectAllBtn.style.cssText = "padding:6px 12px; font-size:12px; margin:0 0 8px;";
+  selectAllBtn.textContent = "Select all";
+  searchInput.insertAdjacentElement("afterend", selectAllBtn);
+  const visibleBoxes = () => Array.from(checklist.querySelectorAll(".member-check-row"))
+    .filter((row) => !row.hidden)
+    .map((row) => row.querySelector(".fund-student-checkbox"));
+  const refreshSelectAllLabel = () => {
+    const boxes = visibleBoxes();
+    selectAllBtn.textContent = boxes.length && boxes.every((b) => b.checked) ? "Deselect all" : "Select all";
+  };
+  selectAllBtn.addEventListener("click", () => {
+    const boxes = visibleBoxes();
+    const check = !(boxes.length && boxes.every((b) => b.checked));
+    boxes.forEach((b) => { b.checked = check; });
+    updateComputedTotal();
+    refreshSelectAllLabel();
+  });
+  checklist.addEventListener("change", refreshSelectAllLabel);
+  searchInput.addEventListener("input", refreshSelectAllLabel);
   searchInput.addEventListener("input", () => {
     const term = searchInput.value.trim().toLowerCase();
     checklist.querySelectorAll(".member-check-row").forEach((row) => {
@@ -5531,6 +5555,7 @@ async function renderAdminProjectRatingControls(container, p) {
     // participation-based reduction instead (see finalizeGroupRatings).
     const roster = getGroupRoster(g);
     if (roster.length > 0) {
+      const submissions = await getGroupRatingSubmissions(p.id, index);
       if (g.ratingsFinalized) {
         const part = g.ratingParticipation;
         const badge = document.createElement("p");
@@ -5543,7 +5568,6 @@ async function renderAdminProjectRatingControls(container, p) {
             : "");
         container.appendChild(badge);
       } else {
-        const submissions = await getGroupRatingSubmissions(p.id, index);
         const submittedUids = new Set(submissions.map((s) => s.raterUid));
         const progressWrap = buildRosterProgressUI(roster, submittedUids);
         progressWrap.style.margin = "4px 0 10px";
@@ -5571,8 +5595,83 @@ async function renderAdminProjectRatingControls(container, p) {
         });
         container.appendChild(finalizeBtn);
       }
+      container.appendChild(buildAdminRatingBreakdown(roster, submissions, g));
     }
   }
+}
+
+// Admin-only N:N rating matrix for one group. Rows = who rated, columns =
+// who was rated, cell = the score given ("-" = none / never rated). Last
+// column = how many ratings that rater gave; last row = average each person
+// received (leader's rating of a member weighted LEADER_RATING_WEIGHT×, as
+// in the prestige payout).
+function buildAdminRatingBreakdown(roster, submissions, g) {
+  const details = document.createElement("details");
+  details.style.cssText = "margin:0 0 14px; font-size:13px;";
+  const summary = document.createElement("summary");
+  summary.style.cssText = "cursor:pointer; font-weight:600;";
+  summary.textContent = "Ratings breakdown (rows rated → columns)";
+  details.appendChild(summary);
+
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "overflow-x:auto; margin:8px 0;";
+  const t = document.createElement("table");
+  t.style.cssText = "border-collapse:collapse; width:100%;";
+  const cell = (tag, text, bold) => {
+    const c = document.createElement(tag);
+    c.textContent = text;
+    c.style.cssText = "text-align:center; padding:4px 8px; border:1px solid rgba(128,128,128,.25); white-space:nowrap;" +
+      (bold ? " font-weight:600;" : "");
+    return c;
+  };
+  const label = (p) => p.name + (p.isLeader ? " (L)" : "");
+
+  const hr = document.createElement("tr");
+  hr.appendChild(cell("th", "Rater ↓ / Rated →"));
+  roster.forEach((p) => hr.appendChild(cell("th", label(p))));
+  t.appendChild(hr);
+
+  roster.forEach((rater) => {
+    const sub = submissions.find((x) => x.raterUid === rater.uid);
+    const tr = document.createElement("tr");
+    tr.appendChild(cell("th", label(rater)));
+    roster.forEach((ratee) => {
+      if (ratee.uid === rater.uid) { tr.appendChild(cell("td", "×")); return; }
+      const v = sub && sub.ratings ? sub.ratings[ratee.uid] : undefined;
+      const c = cell("td", typeof v === "number" ? String(v) : "-");
+      const note = sub && sub.notes ? sub.notes[ratee.uid] : "";
+      if (typeof note === "string" && note.trim()) {
+        c.style.whiteSpace = "normal";
+        c.style.minWidth = "120px";
+        c.style.verticalAlign = "top";
+        const n = document.createElement("div");
+        n.textContent = note.trim();
+        n.style.cssText = "font-size:11px; font-weight:400; opacity:.8; margin-top:2px; text-align:left;";
+        c.appendChild(n);
+      }
+      tr.appendChild(c);
+    });
+    t.appendChild(tr);
+  });
+
+  const ar = document.createElement("tr");
+  ar.appendChild(cell("th", "Avg got"));
+  roster.forEach((person) => {
+    let sum = 0, wt = 0;
+    submissions.forEach((sub) => {
+      if (sub.raterUid === person.uid) return;
+      const v = sub.ratings ? sub.ratings[person.uid] : undefined;
+      if (typeof v !== "number") return;
+      const w = (!person.isLeader && sub.raterUid === (g && g.leaderUid)) ? LEADER_RATING_WEIGHT : 1;
+      sum += v * w; wt += w;
+    });
+    ar.appendChild(cell("td", wt > 0 ? (sum / wt).toFixed(1) : "-", true));
+  });
+  t.appendChild(ar);
+
+  wrap.appendChild(t);
+  details.appendChild(wrap);
+  return details;
 }
 
 // Box-type 1-10 picker for the admin's Group rating rows — same
@@ -5725,73 +5824,6 @@ async function openProjectDetailModal(p) {
     none.style.textAlign = "left";
     none.textContent = "No groups were recorded for this project.";
     body.appendChild(none);
-  } else {
-    for (let i = 0; i < groups.length; i++) {
-      const g = groups[i];
-      const wrap = document.createElement("div");
-      wrap.className = "admin-detail-group";
-      const title = document.createElement("div");
-      title.className = "admin-detail-group-title";
-      title.textContent = g.groupName || `Group ${i + 1}`;
-      const meta = document.createElement("div");
-      meta.className = "admin-detail-group-meta";
-      const members = Array.isArray(g.members) ? g.members.join(", ") : "—";
-      const groupRating = g.rating && typeof g.rating.value === "number" ? ` · rated ${g.rating.value}/10` : "";
-      meta.textContent = `Leader: ${g.leader || "—"} · Members: ${members || "—"}${groupRating}`;
-      wrap.appendChild(title);
-      wrap.appendChild(meta);
-
-      const roster = getGroupRoster(g);
-      if (roster.length > 0) {
-        const submissions = await getGroupRatingSubmissions(p.id, i);
-        const ratingsWrap = document.createElement("div");
-        ratingsWrap.className = "admin-member-ratings";
-
-        roster.forEach((person) => {
-          let weightedSum = 0;
-          let weightTotal = 0;
-          const notes = [];
-
-          submissions.forEach((sub) => {
-            if (sub.raterUid === person.uid) return; // no self-ratings
-            const value = sub.ratings ? sub.ratings[person.uid] : undefined;
-            if (typeof value === "number") {
-              const weight = (!person.isLeader && sub.raterUid === g.leaderUid) ? LEADER_RATING_WEIGHT : 1;
-              weightedSum += value * weight;
-              weightTotal += weight;
-            }
-            const noteText = sub.notes ? sub.notes[person.uid] : undefined;
-            if (noteText) {
-              const rater = roster.find((r) => r.uid === sub.raterUid);
-              notes.push({ from: rater ? rater.name : "Unknown", text: noteText });
-            }
-          });
-
-          const row = document.createElement("div");
-          row.className = "admin-member-rating-row";
-          const nameEl = document.createElement("span");
-          nameEl.className = "admin-member-rating-name";
-          nameEl.textContent = person.name + (person.isLeader ? " (Leader)" : "");
-          const scoreEl = document.createElement("span");
-          scoreEl.className = "admin-member-rating-score";
-          scoreEl.textContent = weightTotal > 0 ? `Avg: ${(weightedSum / weightTotal).toFixed(1)}/10` : "Not rated";
-          row.appendChild(nameEl);
-          row.appendChild(scoreEl);
-          ratingsWrap.appendChild(row);
-
-          notes.forEach((n) => {
-            const noteEl = document.createElement("div");
-            noteEl.className = "admin-member-rating-note";
-            noteEl.textContent = `${n.from}: "${n.text}"`;
-            ratingsWrap.appendChild(noteEl);
-          });
-        });
-
-        wrap.appendChild(ratingsWrap);
-      }
-
-      body.appendChild(wrap);
-    }
   }
 }
 
@@ -8706,4 +8738,4 @@ function wireResolveModal() {
       submitBtn.disabled = false;
     }
   });
-}
+} 
