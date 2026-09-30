@@ -11,6 +11,7 @@
 <title>Admin</title>
 <script>(function(){try{var m=localStorage.getItem("theme-mode")||"dark";var p=localStorage.getItem("theme-palette")||"blue";var d=localStorage.getItem("theme-design")||"default";document.documentElement.setAttribute("data-mode",m);document.documentElement.setAttribute("data-palette",p);document.documentElement.setAttribute("data-design",d);}catch(e){}})();</script>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="forms.css">
 </head>
 <body>
   <div class="app-shell">
@@ -125,6 +126,16 @@
               <div id="admin-fund-transactions" class="admin-scroll-list"></div>
             </div>
 
+
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <p class="section-label" style="margin:0;">Finished Forms</p>
+                <button type="button" id="refresh-forms-history" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+              </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Forms past their due date. View responses or publish again with a new due date.</p>
+              <div id="admin-forms-history" class="admin-scroll-list"></div>
+            </div>
+
           </div>
 
           <!-- ══ ACTIVE ════════════════════════════════════════════ -->
@@ -180,6 +191,16 @@
               <div id="admin-change-requests" class="admin-scroll-list"></div>
             </div>
 
+
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <p class="section-label" style="margin:0;">Active Forms</p>
+                <button type="button" id="refresh-forms-active" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+              </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Live forms. Edit fields, view responses, or pause collecting (paused forms stay on Home with a "temporarily closed" note).</p>
+              <div id="admin-forms-active" class="admin-scroll-list"></div>
+            </div>
+
           </div>
 
           <!-- ══ DANGER ════════════════════════════════════════════ -->
@@ -193,6 +214,7 @@
               <button type="button" class="admin-section-btn" data-modal="modal-fieldmanager" data-perm="fieldManager">Manage Profile Fields</button>
               <button type="button" class="admin-section-btn" data-modal="modal-settingsfields" data-perm="settingsFields">Settings Change-Request Fields</button>
               <button type="button" class="admin-section-btn" data-modal="modal-dbstorage" data-perm="dbStorage">Database Storage</button>
+              <button type="button" class="admin-section-btn" id="new-form-btn">New Form</button>
               <button type="button" class="admin-section-btn" data-modal="modal-manageadmins" id="manage-admins-btn" hidden>Manage Admin Access</button>
             </div>
           </div>
@@ -1115,5 +1137,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script type="module" src="app.js"></script>
+  <script type="module" src="forms.js"></script>
 </body>
 </html>
