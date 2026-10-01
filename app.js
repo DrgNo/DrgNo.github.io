@@ -7728,6 +7728,72 @@ function ttOccurrencesToDate(slot, overrides) {
   return ttBuildOccurrences([slot], overrides, from, today).filter((o) => !o.cancelled);
 }
 
+let ttState = null;
+
+function ttRenderAll() {
+  const { slots, overrides, myAttendance, uid, today } = ttState;
+  renderTtWeek("tt-week-days", ttBuildOccurrences(slots, overrides, today, ttAddDays(today, 6)), today, myAttendance, uid);
+  renderTtWeek("tt-next-days", ttBuildOccurrences(slots, overrides, ttAddDays(today, 7), ttAddDays(today, 13)), today, myAttendance, uid);
+  renderMyAttendance(slots, overrides, myAttendance);
+  renderTtDateStrip();
+}
+
+// Fixed 7-box strip: 3 previous days, today (centre), 3 upcoming days.
+// Tapping a box shows that day's classes; past/today classes can be
+// marked (catch-up for a missed lecture day). Tap again to close.
+function renderTtDateStrip() {
+  const strip = document.getElementById("tt-date-strip");
+  const panel = document.getElementById("tt-date-panel");
+  if (!strip || !panel || !ttState) return;
+  const { slots, overrides, myAttendance, uid, today, selected } = ttState;
+
+  strip.innerHTML = "";
+  for (let i = -3; i <= 3; i++) {
+    const ds = ttAddDays(today, i);
+    const [y, m, d] = ds.split("-").map(Number);
+    const dow = new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short" });
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tt-date-box" + (i === 0 ? " is-today" : "") + (ds === selected ? " selected" : "");
+    btn.innerHTML = `<span class="tt-date-dow">${dow}</span><span class="tt-date-num">${d}</span>`;
+    btn.addEventListener("click", () => {
+      ttState.selected = ttState.selected === ds ? null : ds;
+      renderTtDateStrip();
+    });
+    strip.appendChild(btn);
+  }
+
+  panel.innerHTML = "";
+  if (!selected) { panel.hidden = true; return; }
+  panel.hidden = false;
+
+  const isPast = selected < today;
+  const heading = document.createElement("p");
+  heading.className = "tt-day-heading" + (selected === today ? " tt-day-today" : "");
+  heading.innerHTML = `${selected === today ? "Today" : TT_DAY_NAMES[ttDayOfWeek(selected)]} <span class="tt-day-date">${ttFormatDateLabel(selected)}</span>`;
+  panel.appendChild(heading);
+
+  const items = ttBuildOccurrences(slots, overrides, selected, selected);
+  const list = document.createElement("div");
+  list.className = "tt-card-list";
+  if (!items.length) {
+    const empty = document.createElement("p");
+    empty.className = "tt-empty-day";
+    empty.textContent = "No classes scheduled.";
+    list.appendChild(empty);
+  } else {
+    items.forEach((o) => list.appendChild(buildTtCard(o, selected <= today, myAttendance, uid)));
+  }
+  panel.appendChild(list);
+
+  if (isPast && items.some((o) => !o.cancelled)) {
+    const hint = document.createElement("p");
+    hint.className = "tt-date-hint";
+    hint.textContent = "Missed marking? You can still mark attendance for this day.";
+    panel.appendChild(hint);
+  }
+}
+
 async function initTimetablePage(user) {
   const loadingState = document.getElementById("loading-state");
   const errorState = document.getElementById("error-state");
@@ -7749,9 +7815,8 @@ async function initTimetablePage(user) {
     const myAttendance = new Set();
     attendSnap.forEach((d) => myAttendance.add(`${d.data().slotId}_${d.data().date}`));
 
-    renderTtWeek("tt-week-days", ttBuildOccurrences(slots, overrides, thisWeekStart, thisWeekEnd), today, myAttendance, user.uid);
-    renderTtWeek("tt-next-days", ttBuildOccurrences(slots, overrides, nextWeekStart, nextWeekEnd), today, myAttendance, user.uid);
-    renderMyAttendance(slots, overrides, myAttendance);
+    ttState = { slots, overrides, myAttendance, uid: user.uid, today, selected: null };
+    ttRenderAll();
 
     wireTtTabs();
 
@@ -7918,6 +7983,7 @@ function buildTtCard(o, isToday, myAttendance, uid) {
           attendBtn.classList.add("marked");
           attendBtn.textContent = "✓ Attended";
         }
+        if (ttState) ttRenderAll();
       } catch (err) {
         // leave state as-is; button re-enables below so they can retry
       } finally {
