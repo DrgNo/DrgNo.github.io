@@ -73,3 +73,104 @@
 .fm-tab { background: var(--surface); border: 1px solid var(--panel-border); color: var(--muted); padding: 7px 14px; border-radius: 999px; cursor: pointer; font-size: 13px; }
 .fm-tab.active { background: var(--accent-soft-bg); border-color: var(--accent-soft-border); color: var(--accent-soft-text); font-weight: 600; }
 @media (max-width: 520px) { .fm-brow { flex-wrap: wrap; } .fm-brow > select { flex: 1 1 100%; } }
+
+/* ═════ Idea Boards (uses the app's theme tokens: light/dark, palettes, glass) ═════ */
+
+.ideas-modal [hidden] { display: none !important; }
+
+/* ── Home: horizontally scrollable board cards (row styles come from .event-grid) ── */
+.ideas-grid { padding-bottom: 14px; }
+.idea-card {
+  flex: 0 0 240px; scroll-snap-align: start; cursor: pointer;
+  display: flex; flex-direction: column; gap: 6px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--blue) 14%, var(--panel)), var(--panel) 70%);
+  border: 1px solid color-mix(in srgb, var(--blue) 38%, var(--panel-border));
+  border-radius: 16px; padding: 16px;
+  transition: transform .2s ease, box-shadow .2s ease;
+}
+.idea-card:hover, .idea-card:focus-visible {
+  transform: translateY(-2px); outline: none;
+  box-shadow: 0 8px 24px -10px var(--blue);
+}
+.idea-card-icon { font-size: 22px; line-height: 1; }
+.idea-card-name { font-weight: 650; font-size: 15px; overflow-wrap: anywhere; }
+.idea-card-desc {
+  color: var(--muted); font-size: 12.5px; line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.idea-card-cta { margin-top: auto; padding-top: 6px; font-size: 12.5px; font-weight: 600; color: var(--blue); }
+
+/* ── Board popup ── */
+.ideas-modal .ib-box { max-width: 620px; padding: 24px 20px 20px; }
+.ib-head { padding-right: 34px; margin-bottom: 14px; }
+.ib-title { margin: 0 0 6px; font-size: 22px; overflow-wrap: anywhere; }
+.ib-desc { margin: 0; color: var(--muted); font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ib-head .ib-btn { margin-top: 10px; }
+
+.ib-add-toggle {
+  width: 100%; cursor: pointer; font: inherit; font-weight: 600; font-size: 14px;
+  padding: 12px; border-radius: 12px;
+  background: var(--accent-soft-bg); color: var(--accent-soft-text);
+  border: 1px dashed var(--accent-soft-border);
+}
+.ib-add-toggle:hover { filter: brightness(1.12); }
+.ib-add-toggle.open { border-style: solid; }
+
+.ib-compose, .ib-note.editing { display: flex; flex-direction: column; gap: 6px; }
+.ib-compose {
+  margin-top: 12px; padding: 14px; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--panel-border);
+}
+.ib-compose label, .ib-note.editing label { margin: 4px 0 0; }
+.ideas-modal input[type="text"], .ideas-modal textarea {
+  width: 100%; box-sizing: border-box; font: inherit; color: var(--text);
+  background: var(--panel); border: 1px solid var(--panel-border);
+  border-radius: 10px; padding: 10px 12px;
+}
+.ideas-modal textarea { resize: vertical; min-height: 84px; }
+.ideas-modal input[type="text"]:focus, .ideas-modal textarea:focus {
+  outline: none; border-color: var(--blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--blue) 25%, transparent);
+}
+.ib-count { align-self: flex-end; color: var(--muted); font-size: 11.5px; }
+.ib-public { margin: 6px 0 0; text-align: left; }
+.ib-ok { color: var(--success); font-size: 13px; margin: 0; }
+
+.ib-list-label { margin: 22px 0 10px; }
+.ib-list { display: flex; flex-direction: column; gap: 10px; }
+.ib-empty { color: var(--muted); font-size: 14px; text-align: center; padding: 26px 0; margin: 0; }
+
+.ib-note {
+  background: var(--surface); border: 1px solid var(--panel-border);
+  border-radius: 14px; padding: 14px;
+}
+.ib-note.pinned {
+  border-color: color-mix(in srgb, #f5a524 55%, var(--panel-border));
+  border-left: 3px solid #f5a524;
+  background: linear-gradient(145deg, color-mix(in srgb, #f5a524 10%, var(--surface)), var(--surface) 65%);
+}
+.ib-pin {
+  display: inline-block; margin-bottom: 8px; padding: 3px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 700; color: #f5a524;
+  background: color-mix(in srgb, #f5a524 18%, transparent);
+}
+.ib-note-topic { margin: 0 0 6px; font-size: 15.5px; font-weight: 650; overflow-wrap: anywhere; }
+.ib-note-desc { margin: 0 0 10px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ib-meta { display: flex; flex-wrap: wrap; gap: 4px 6px; color: var(--muted); font-size: 12px; }
+.ib-edited { font-style: italic; }
+.ib-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.ib-btn { padding: 6px 12px; font-size: 12.5px; cursor: pointer; width: auto; }
+.ib-danger { color: var(--danger); }
+.ib-danger:hover { border-color: var(--danger); color: var(--danger); }
+.ib-save { width: auto; margin: 0; padding: 7px 16px; font-size: 12.5px; }
+
+@media (max-width: 520px) {
+  .ideas-modal .ib-box { padding: 22px 14px 16px; }
+  .idea-card { flex-basis: 78%; }
+}
+
+.ib-head-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.ib-head-actions .ib-btn { margin-top: 0; }
+.ib-linkrow { display: flex; gap: 8px; align-items: center; }
+.ib-linkrow .ib-linkbox { flex: 1; min-width: 0; font-size: 12.5px; }
+.ib-linkrow .ib-btn { white-space: nowrap; }

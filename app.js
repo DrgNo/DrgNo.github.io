@@ -468,6 +468,7 @@ const ADMIN_PERMISSION_LIST = [
   ["projects", "Group Projects (add/edit)"],
   ["announcements", "Announcements (add)"],
   ["forms", "Forms (create/edit/view responses)"],
+  ["ideaBoards", "Idea Boards (create boards, pin/delete notes)"],
   ["changeRequests", "Detail Change Requests (approve/reject)"],
   ["memberRequests", "Member Requests page (resolve)"],
   ["wallOfFame", "Wall of Fame"],

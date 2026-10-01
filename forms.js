@@ -1,9 +1,10 @@
 // ── Forms feature (home cards, fill/edit, admin builder, responses) ──
 // Self-contained module: loaded on home.html and admin.html only.
+// Also hosts the Idea Boards feature (see the IDEA BOARDS section near the bottom).
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, writeBatch, collection, getDocs, serverTimestamp
+  getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField, writeBatch, collection, getDocs, onSnapshot, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const cfg = {
@@ -590,12 +591,382 @@ function exportPdf() {
   pdf.save(`${slug(R.form.title)}-${R.mode}-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
+// ═════════════════ IDEA BOARDS ═════════════════
+// Home: scrollable board cards -> popup with public notes (add / edit / delete own,
+// admins pin + delete). Admin -> Add tab: "Create Idea Board".
+//   /ideaBoards/{boardId}            { title, description, createdAt, createdBy }
+//   /ideaBoards/{boardId}/notes/{id} { topic, description, authorUid, authorName, pinned,
+//                                      pinnedAt?, createdAt, updatedAt?, edited }
+// Keep these in sync with the limits in firestore rules.
+const LIM = { topic: 100, desc: 1000, boardTitle: 80, boardDesc: 300 };
+const PERM = "ideaBoards";
+
+// Deep link to one board: home.html?board=<id> (opens its popup on load).
+const boardLink = (id) => new URL("home.html?board=" + encodeURIComponent(id), location.href).href;
+async function copyBoardLink(id, btn, label) {
+  const link = boardLink(id);
+  try { await navigator.clipboard.writeText(link); btn.textContent = "✓ Copied"; setTimeout(() => { btn.textContent = label; }, 1500); }
+  catch (e) { prompt("Copy this link:", link); }
+}
+const tsMs = (v) => { const d = toDate(v); return d ? d.getTime() : 0; };
+
+// Small red banner at the bottom of the screen (same look as the app's
+// "you don't have access" banner).
+let ideaBannerEl, ideaBannerTimer;
+function ideaFlash(msg) {
+  if (!ideaBannerEl) { ideaBannerEl = el("div", { class: "admin-perm-banner", id: "ideas-banner" }); document.body.appendChild(ideaBannerEl); }
+  ideaBannerEl.textContent = msg;
+  ideaBannerEl.classList.add("show");
+  clearTimeout(ideaBannerTimer);
+  ideaBannerTimer = setTimeout(() => ideaBannerEl.classList.remove("show"), 3500);
+}
+
+function ideaOverlay(id) {
+  const ov = el("div", { class: "modal-overlay ideas-modal", id, hidden: true });
+  document.body.appendChild(ov);
+  return ov;
+}
+
+// Re-renders the card row on Home (set by initHome).
+let refreshBoards = null;
+
+// ═════════════════ USER SIDE (home.html) ═════════════════
+
+async function initIdeasHome() {
+  const card = $("#ideas-card"), grid = $("#ideas-grid");
+  if (!card || !grid || card.dataset.ready) return;
+  card.dataset.ready = "1";
+  await getMe();
+
+  async function load() {
+    let snap;
+    try { snap = await getDocs(collection(db, "ideaBoards")); }
+    catch (e) { console.warn("Idea boards failed to load:", e); card.hidden = true; return; }
+    const boards = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => tsMs(b.createdAt) - tsMs(a.createdAt));
+    grid.innerHTML = "";
+    card.hidden = boards.length === 0;
+    boards.forEach((b) => {
+      const open = () => openBoard(b);
+      grid.append(el("div", {
+        class: "idea-card", role: "button", tabindex: "0", onclick: open,
+        onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } }
+      },
+        el("div", { class: "idea-card-icon", text: "💡" }),
+        el("div", { class: "idea-card-name", text: b.title || "Untitled board" }),
+        b.description ? el("div", { class: "idea-card-desc", text: b.description }) : null,
+        el("div", { class: "idea-card-cta", text: "Open board →" })));
+    });
+  }
+  refreshBoards = load;
+  await load();
+
+  // Deep link: home.html?board=<id> opens that board straight away.
+  const linked = new URLSearchParams(location.search).get("board");
+  if (linked) {
+    try {
+      const s = await getDoc(doc(db, "ideaBoards", linked));
+      if (s.exists()) openBoard({ id: s.id, ...s.data() });
+      else ideaFlash("⚠ That idea board no longer exists.");
+    } catch (e) { console.warn(e); ideaFlash("⚠ Couldn't open that idea board."); }
+  }
+}
+
+// ── Board popup ──
+let M = null; // modal state
+
+function buildModal() {
+  const ov = ideaOverlay("idea-board-modal");
+  M = { ov, board: null, unsub: null, notes: [], editingId: null, dirty: false };
+
+  M.title = el("h2", { class: "ib-title" });
+  M.desc = el("p", { class: "ib-desc", hidden: true });
+  M.delBoard = el("button", { type: "button", class: "ghost-btn ib-btn ib-danger", text: "Delete board", hidden: true, onclick: deleteBoard });
+  M.copy = el("button", { type: "button", class: "ghost-btn ib-btn", text: "🔗 Copy link", onclick: (e) => copyBoardLink(M.board.id, e.target, "🔗 Copy link") });
+
+  M.addToggle = el("button", { type: "button", class: "ib-add-toggle", text: "＋ Add a note", onclick: () => setCompose(M.compose.hidden) });
+  M.topic = el("input", { type: "text", maxlength: LIM.topic, placeholder: "Topic", autocomplete: "off" });
+  M.text = el("textarea", { rows: 4, maxlength: LIM.desc, placeholder: "Describe your idea…" });
+  M.count = el("small", { class: "ib-count", text: `0/${LIM.desc}` });
+  M.text.addEventListener("input", () => { M.count.textContent = `${M.text.value.length}/${LIM.desc}`; });
+  M.err = el("p", { class: "error-msg", hidden: true });
+  M.post = el("button", { type: "button", class: "btn-primary", text: "Publish note", onclick: postNote });
+  M.compose = el("div", { class: "ib-compose", hidden: true },
+    el("label", { text: "Topic" }), M.topic,
+    el("label", { text: "Description" }), M.text, M.count,
+    M.err, M.post,
+    el("p", { class: "fine-print ib-public", text: "Notes are public — everyone in the batch can read them. You can edit or delete yours later." }));
+
+  M.listLabel = el("p", { class: "section-label ib-list-label" });
+  M.list = el("div", { class: "ib-list" });
+
+  const close = el("button", { class: "modal-close", type: "button", "aria-label": "Close", text: "✕", onclick: closeModal });
+  M.box = el("div", { class: "modal-box ib-box" }, close,
+    el("div", { class: "ib-head" }, M.title, M.desc, el("div", { class: "ib-head-actions" }, M.copy, M.delBoard)),
+    M.addToggle, M.compose, M.listLabel, M.list);
+  ov.append(M.box);
+
+  // Backdrop click closes — unless the person is half-way through a note.
+  ov.addEventListener("click", (e) => {
+    if (e.target !== ov) return;
+    if (M.topic.value.trim() || M.text.value.trim() || M.editingId) return;
+    closeModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !M.ov.hidden) closeModal();
+  });
+}
+
+function setCompose(show) {
+  M.compose.hidden = !show;
+  M.addToggle.textContent = show ? "✕ Cancel" : "＋ Add a note";
+  M.addToggle.classList.toggle("open", show);
+  M.err.hidden = true;
+  if (show) M.topic.focus();
+}
+
+function resetCompose() {
+  M.topic.value = ""; M.text.value = ""; M.count.textContent = `0/${LIM.desc}`;
+  M.post.disabled = false; M.post.textContent = "Publish note";
+  setCompose(false);
+}
+
+function openBoard(b) {
+  if (!M) buildModal();
+  if (M.unsub) { M.unsub(); M.unsub = null; }
+  M.board = b; M.editingId = null; M.dirty = false; M.notes = [];
+  M.title.textContent = b.title || "Idea board";
+  M.desc.textContent = b.description || "";
+  M.desc.hidden = !b.description;
+  M.delBoard.hidden = !hasPerm(PERM);
+  resetCompose();
+  M.listLabel.textContent = "Notes";
+  M.list.innerHTML = "";
+  M.list.append(el("p", { class: "ib-empty", text: "Loading…" }));
+  M.ov.hidden = false;
+  M.box.scrollTop = 0;
+
+  // Live updates while the popup is open (stopped again on close).
+  M.unsub = onSnapshot(
+    collection(db, "ideaBoards", b.id, "notes"),
+    (snap) => {
+      M.notes = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: "estimate" }) }));
+      // Don't rebuild the list under someone who is typing an edit.
+      if (M.editingId) M.dirty = true; else renderNotes();
+    },
+    (err) => {
+      console.warn("Notes listener failed:", err);
+      M.list.innerHTML = "";
+      M.list.append(el("p", { class: "ib-empty", text: "Couldn't load notes. Please close and try again." }));
+    });
+}
+
+function closeModal() {
+  if (M.unsub) { M.unsub(); M.unsub = null; }
+  M.ov.hidden = true;
+  M.editingId = null;
+}
+
+// Pinned notes first (most recently pinned on top), then newest first.
+function sortNotes(list) {
+  return list.slice().sort((a, b) => {
+    const pa = a.pinned === true, pb = b.pinned === true;
+    if (pa !== pb) return pa ? -1 : 1;
+    return pa ? tsMs(b.pinnedAt) - tsMs(a.pinnedAt) : tsMs(b.createdAt) - tsMs(a.createdAt);
+  });
+}
+
+function renderNotes() {
+  M.dirty = false;
+  const notes = sortNotes(M.notes);
+  M.listLabel.textContent = `Notes (${notes.length})`;
+  M.list.innerHTML = "";
+  if (!notes.length) {
+    M.list.append(el("p", { class: "ib-empty", text: "No notes yet — be the first to add one." }));
+    return;
+  }
+  notes.forEach((n) => M.list.append(M.editingId === n.id ? editEl(n) : noteEl(n)));
+}
+
+function actionBtn(label, onclick, extra = "") {
+  return el("button", { type: "button", class: "ghost-btn ib-btn " + extra, text: label, onclick });
+}
+
+function noteEl(n) {
+  const mine = n.authorUid === auth.currentUser?.uid;
+  const admin = hasPerm(PERM);
+  const acts = el("div", { class: "ib-actions" });
+  if (admin) acts.append(actionBtn(n.pinned ? "Unpin" : "📌 Pin", () => togglePin(n)));
+  if (mine) acts.append(actionBtn("Edit", () => { M.editingId = n.id; renderNotes(); }));
+  if (mine || admin) acts.append(actionBtn("Delete", () => deleteNote(n, mine), "ib-danger"));
+
+  return el("article", { class: "ib-note" + (n.pinned ? " pinned" : "") },
+    n.pinned ? el("span", { class: "ib-pin", text: "📌 Pinned" }) : null,
+    el("h4", { class: "ib-note-topic", text: n.topic || "" }),
+    el("p", { class: "ib-note-desc", text: n.description || "" }),
+    el("div", { class: "ib-meta" },
+      el("span", { text: (n.authorName || "Batchmate") + (mine ? " (you)" : "") }),
+      el("span", { text: "· " + fmtDate(toDate(n.createdAt)) }),
+      n.edited ? el("span", { class: "ib-edited", text: "· edited" }) : null),
+    acts.children.length ? acts : null);
+}
+
+function editEl(n) {
+  const topic = el("input", { type: "text", maxlength: LIM.topic, value: n.topic || "" });
+  const text = el("textarea", { rows: 4, maxlength: LIM.desc });
+  text.value = n.description || "";
+  const err = el("p", { class: "error-msg", hidden: true });
+  const save = el("button", { type: "button", class: "btn-primary ib-save", text: "Save changes" });
+
+  const finish = () => { M.editingId = null; renderNotes(); };
+  save.addEventListener("click", async () => {
+    const t = topic.value.trim(), d = text.value.trim();
+    err.hidden = true;
+    if (!t || !d) { err.textContent = "Topic and description can't be empty."; err.hidden = false; return; }
+    if (t === n.topic && d === n.description) return finish(); // nothing changed
+    save.disabled = true; save.textContent = "Saving…";
+    try {
+      await updateDoc(doc(db, "ideaBoards", M.board.id, "notes", n.id),
+        { topic: t, description: d, updatedAt: serverTimestamp(), edited: true });
+      finish();
+    } catch (e) {
+      console.warn(e);
+      err.textContent = "Couldn't save — the note may have been removed. Please try again.";
+      err.hidden = false; save.disabled = false; save.textContent = "Save changes";
+    }
+  });
+
+  return el("article", { class: "ib-note editing" },
+    el("label", { text: "Topic" }), topic,
+    el("label", { text: "Description" }), text,
+    err,
+    el("div", { class: "ib-actions" }, save, actionBtn("Cancel", finish)));
+}
+
+async function postNote() {
+  const t = M.topic.value.trim(), d = M.text.value.trim();
+  M.err.hidden = true;
+  if (!t) { M.err.textContent = "Add a topic for your note."; M.err.hidden = false; return; }
+  if (!d) { M.err.textContent = "Add a description for your note."; M.err.hidden = false; return; }
+  M.post.disabled = true; M.post.textContent = "Publishing…";
+  try {
+    const who = await getMe();
+    await addDoc(collection(db, "ideaBoards", M.board.id, "notes"), {
+      topic: t, description: d, authorUid: who.uid, authorName: who.name,
+      pinned: false, edited: false, createdAt: serverTimestamp()
+    });
+    resetCompose();
+  } catch (e) {
+    console.warn(e);
+    M.err.textContent = "Couldn't publish your note. Please try again.";
+    M.err.hidden = false; M.post.disabled = false; M.post.textContent = "Publish note";
+  }
+}
+
+async function togglePin(n) {
+  if (!hasPerm(PERM)) return ideaFlash('⚠ You don\'t have access to "Idea Boards".');
+  try {
+    await updateDoc(doc(db, "ideaBoards", M.board.id, "notes", n.id),
+      n.pinned ? { pinned: false, pinnedAt: deleteField() } : { pinned: true, pinnedAt: serverTimestamp() });
+  } catch (e) { console.warn(e); ideaFlash("⚠ Couldn't update the pin. Please try again."); }
+}
+
+async function deleteNote(n, mine) {
+  const msg = mine ? "Delete your note? This can't be undone."
+    : `Delete this note by ${n.authorName || "this batchmate"}? This can't be undone.`;
+  if (!confirm(msg)) return;
+  try { await deleteDoc(doc(db, "ideaBoards", M.board.id, "notes", n.id)); }
+  catch (e) { console.warn(e); ideaFlash("⚠ Couldn't delete the note. Please try again."); }
+}
+
+async function deleteBoard() {
+  if (!hasPerm(PERM)) return ideaFlash('⚠ You don\'t have access to "Idea Boards".');
+  if (!confirm(`Delete the board "${M.board.title}" and ALL of its notes? This can't be undone.`)) return;
+  M.delBoard.disabled = true;
+  try {
+    const snap = await getDocs(collection(db, "ideaBoards", M.board.id, "notes"));
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const batch = writeBatch(db);
+      snap.docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+    await deleteDoc(doc(db, "ideaBoards", M.board.id));
+    closeModal();
+    if (refreshBoards) refreshBoards();
+  } catch (e) { console.warn(e); ideaFlash("⚠ Couldn't delete the board. Please try again."); }
+  M.delBoard.disabled = false;
+}
+
+// ═════════════════ ADMIN SIDE (admin.html → Add tab) ═════════════════
+
+function initIdeasAdmin() {
+  const btn = $("#new-idea-board-btn");
+  if (!btn || btn.dataset.ready) return;
+  btn.dataset.ready = "1";
+  let C = null;
+
+  function build() {
+    const ov = ideaOverlay("idea-create-modal");
+    C = { ov };
+    C.title = el("input", { type: "text", maxlength: LIM.boardTitle, placeholder: "e.g. Farewell party ideas", autocomplete: "off" });
+    C.desc = el("textarea", { rows: 3, maxlength: LIM.boardDesc, placeholder: "What should people share here? (optional)" });
+    C.err = el("p", { class: "error-msg", hidden: true });
+    C.ok = el("p", { class: "ib-ok", hidden: true, text: "✓ Board created — it's now live on the Home page. Share its link:" });
+    C.link = el("input", { type: "text", readonly: true, class: "ib-linkbox", onclick: (e) => e.target.select() });
+    C.copy = el("button", { type: "button", class: "ghost-btn ib-btn", text: "🔗 Copy link" });
+    C.linkRow = el("div", { class: "ib-linkrow", hidden: true }, C.link, C.copy);
+    C.copy.addEventListener("click", () => { if (C.newId) copyBoardLink(C.newId, C.copy, "🔗 Copy link"); });
+    C.btn = el("button", { type: "button", class: "btn-primary", text: "Create board", onclick: create });
+    const close = el("button", { class: "modal-close", type: "button", "aria-label": "Close", text: "✕", onclick: () => { ov.hidden = true; } });
+    ov.append(el("div", { class: "modal-box" }, close,
+      el("div", { class: "admin-modal-body" },
+        el("p", { class: "section-label", text: "Create Idea Board" }),
+        el("label", { text: "Board title" }), C.title,
+        el("label", { text: "Description" }), C.desc,
+        C.err, C.ok, C.linkRow, C.btn)));
+    ov.addEventListener("click", (e) => { if (e.target === ov) ov.hidden = true; });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") ov.hidden = true; });
+    C.title.addEventListener("input", () => { C.ok.hidden = true; C.linkRow.hidden = true; });
+  }
+
+  async function create() {
+    C.err.hidden = true; C.ok.hidden = true; C.linkRow.hidden = true;
+    const title = C.title.value.trim();
+    if (!title) { C.err.textContent = "Give the board a title."; C.err.hidden = false; return; }
+    C.btn.disabled = true; C.btn.textContent = "Creating…";
+    try {
+      const ref = await addDoc(collection(db, "ideaBoards"), {
+        title, description: C.desc.value.trim(),
+        createdAt: serverTimestamp(), createdBy: auth.currentUser.uid
+      });
+      C.title.value = ""; C.desc.value = ""; C.ok.hidden = false; // stays open so several can be added in a row
+      C.newId = ref.id; C.link.value = boardLink(ref.id); C.linkRow.hidden = false;
+    } catch (e) {
+      console.warn(e);
+      C.err.textContent = "Couldn't create the board. Check your permission and try again.";
+      C.err.hidden = false;
+    }
+    C.btn.disabled = false; C.btn.textContent = "Create board";
+  }
+
+  btn.addEventListener("click", () => {
+    if (!hasPerm(PERM)) return ideaFlash('⚠ You don\'t have access to "Idea Boards".');
+    if (!C) build();
+    C.err.hidden = true; C.ok.hidden = true; C.linkRow.hidden = true;
+    C.ov.hidden = false;
+    C.title.focus();
+  });
+}
+
 // ── boot ──
 onAuthStateChanged(auth, async (user) => {
   if (!user) return;
   if ($("#home-content")) initHome().catch((e) => console.warn("Forms init failed:", e));
-  if ($("#admin-page")) {
+  // Admin status is needed on both pages: Admin (forms + create idea board) and
+  // Home (idea-board pin/delete controls).
+  if ($("#admin-page") || $("#ideas-card")) {
     try { const s = await getDoc(doc(db, "admins", user.uid)); adminInfo = s.exists() ? s.data() : null; } catch (e) { adminInfo = null; }
-    if (adminInfo) initAdmin().catch((e) => console.warn("Forms admin failed:", e));
   }
+  if ($("#admin-page") && adminInfo) initAdmin().catch((e) => console.warn("Forms admin failed:", e));
+  if ($("#ideas-card")) initIdeasHome().catch((e) => console.warn("Idea boards init failed:", e));
+  if ($("#new-idea-board-btn")) initIdeasAdmin();
 });
