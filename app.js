@@ -2762,7 +2762,7 @@ async function finalizeGroupRatings(project, groupIndex, group) {
       const value = sub.ratings ? sub.ratings[person.uid] : undefined;
       if (typeof value !== "number") return;
       const weight = sub.raterUid === group.leaderUid ? LEADER_RATING_WEIGHT : 1;
-      weightedSum += value * weight;
+      weightedSum += Math.min(10, Math.max(0, value)) * weight;
       weightTotal += weight;
     });
     if (weightTotal === 0) continue;
@@ -2787,8 +2787,8 @@ async function finalizeGroupRatings(project, groupIndex, group) {
     submissions.forEach((sub) => {
       if (sub.raterUid === group.leaderUid) return; // leader doesn't rate themself
       const value = sub.ratings ? sub.ratings[group.leaderUid] : undefined;
-      if (typeof value !== "number") return;
-      sum += value; count++;
+      if (typeof value !== "number" || !isFinite(value)) return;
+      sum += Math.min(10, Math.max(0, value)); count++;
     });
     if (count > 0) {
       const avg = sum / count;
@@ -3987,8 +3987,8 @@ async function initFundTransactionForm() {
   });
 
   form.addEventListener("submit", async (e) => {
-    if (!guardPerm('fund', 'Add Fund Transaction')) return;
     e.preventDefault();
+    if (!guardPerm('fund', 'Add Fund Transaction')) return;
     errorEl.hidden = true;
     successEl.hidden = true;
     submitBtn.disabled = true;
@@ -6347,6 +6347,10 @@ function initFieldManagerPanel() {
 // unlike the Home directory (batchmatesPublic), this reads the full
 // doc via the admin read-bypass, so private fields (medical, NIC,
 // emergency contacts, exact prestige total, etc.) are all visible here.
+function escHtml(v) {
+  return String(v === undefined || v === null ? "" : v).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 function humanizeKey(key) {
   const spaced = String(key || "").replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
@@ -8044,7 +8048,7 @@ function renderMyAttendance(slots, overrides, myAttendance) {
       card.style.setProperty("--tt-color", v.color);
       card.innerHTML = `
         <div class="attend-stat-top">
-          <span class="attend-stat-module">${module}</span>
+          <span class="attend-stat-module">${escHtml(module)}</span>
           <span class="attend-stat-pct">${v.total > 0 ? pct + "%" : "—"}</span>
         </div>
         <div class="attend-bar-track"><div class="attend-bar-fill" style="width:${pct}%"></div></div>
@@ -8120,9 +8124,9 @@ async function renderAdminTimetable() {
     box.style.setProperty("--tt-color", slot.color || "#4C8DFF");
     box.innerHTML = `
       <div class="admin-tt-top">
-        <span class="admin-tt-name"><span class="tt-color-dot" style="background:${slot.color || "#4C8DFF"}"></span>${slot.module || "Untitled module"}</span>
+        <span class="admin-tt-name"><span class="tt-color-dot" style="background:${escHtml(slot.color || "#4C8DFF")}"></span>${escHtml(slot.module || "Untitled module")}</span>
       </div>
-      <div class="admin-tt-meta">${TT_DAY_NAMES[Number(slot.dayOfWeek)] || ""} · ${ttFormatTime(slot.startTime)}–${ttFormatTime(slot.endTime)} · ${slot.lecturer || "TBA"} · ${slot.venue || "TBA"}</div>
+      <div class="admin-tt-meta">${TT_DAY_NAMES[Number(slot.dayOfWeek)] || ""} · ${ttFormatTime(slot.startTime)}–${ttFormatTime(slot.endTime)} · ${escHtml(slot.lecturer || "TBA")} · ${escHtml(slot.venue || "TBA")}</div>
     `;
     const actions = document.createElement("div");
     actions.className = "admin-tt-actions";

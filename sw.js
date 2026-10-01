@@ -34,7 +34,12 @@ self.addEventListener("push", (event) => {
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl = (event.notification.data && event.notification.data.url) || "/home.html";
+  let targetUrl = (event.notification.data && event.notification.data.url) || "/home.html";
+  // Only ever open pages on this site (never an external URL from a payload).
+  try {
+    const u = new URL(targetUrl, self.location.origin);
+    if (u.origin !== self.location.origin) targetUrl = "/home.html";
+  } catch (err) { targetUrl = "/home.html"; }
 
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
