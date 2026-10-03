@@ -174,3 +174,45 @@
 .ib-linkrow { display: flex; gap: 8px; align-items: center; }
 .ib-linkrow .ib-linkbox { flex: 1; min-width: 0; font-size: 12.5px; }
 .ib-linkrow .ib-btn { white-space: nowrap; }
+
+/* ── New field types: reuse the portal's existing components (style.css) ──
+   Yes/No → .seg-toggle · options → .member-checklist/.member-check-row · select → global select
+   Table → .datatable-wrap/.data-table · chips → .pill-list · toggle → .fm-switch
+   Only neutralise the generic ".fm-field input" rule so those components look as they do elsewhere. */
+.fm-field .seg-toggle { margin-bottom: 0; }
+.fm-field .seg-toggle input { width: 0; height: 0; padding: 0; margin: 0; border: 0; }
+.fm-field .seg-toggle label { font-size: 13px; }
+.fm-field .member-checklist { margin-bottom: 0; }
+.fm-field .member-check-row { font-weight: 400; color: var(--text); margin: 0; }
+.fm-field .member-check-row input, .fm-field .data-table input { width: auto; padding: 0; margin: 0; border-radius: 0; accent-color: var(--blue); }
+.fm-field select { margin-bottom: 0; }
+.fm-field .fm-switch { margin-left: 0; align-self: flex-start; color: var(--text); font-weight: 600; margin-bottom: 0; }
+.fm-field .fm-switch input { display: none; }
+.fm-field .data-table th, .fm-field .data-table td { text-align: center; }
+.fm-field .data-table th:first-child { text-align: left; }
+.fm-field .data-table thead th { cursor: default; }
+.fm-field .data-table .fm-rowh { text-transform: none; font-size: 12.5px; color: var(--text); font-weight: 600; background: none; position: static; }
+.fm-bm { display: flex; flex-direction: column; gap: 8px; }
+.fm-bm .pill-list li { display: inline-flex; align-items: center; gap: 6px; }
+.fm-bm .pill-list li button { background: none; border: none; color: inherit; padding: 0; font-size: 11px; line-height: 1; }
+.fm-bm .pill-list:empty { display: none; }
+.fm-bm .member-checklist { max-height: 220px; }
+.fm-bm input[type=text] { margin-bottom: 0; }
+.fm-bm-count { font-weight: 600; }
+
+/* builder extras */
+.fm-bcol { flex-direction: column; align-items: stretch; }
+.fm-bcol .fm-brow { width: 100%; }
+.fm-bfield textarea { flex: 1; width: 100%; margin-bottom: 0; }
+
+/* custom dropdown (select one) */
+.fm-dd { display: flex; flex-direction: column; gap: 6px; }
+.fm-dd-btn { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left; background: var(--surface); border: 1px solid var(--panel-border); color: var(--text); border-radius: 9px; padding: 11px 12px; font-size: 14px; font-weight: 400; font-family: inherit; }
+.fm-dd-btn.open, .fm-dd-btn:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px var(--focus-ring); }
+.fm-dd-ph { color: var(--muted); }
+.fm-dd-arrow { color: var(--muted); transition: transform .15s ease; }
+.fm-dd-btn.open .fm-dd-arrow { transform: rotate(180deg); }
+.fm-dd-list { margin-bottom: 0; }
+.fm-dd-list[hidden] { display: none; }
+.fm-dd-list .leader-picker-row { font-size: 14px; font-weight: 400; margin: 0; color: var(--text); }
+.fm-dd-list .leader-picker-row.selected { background: var(--accent-soft-bg); color: var(--accent-soft-text); font-weight: 600; }

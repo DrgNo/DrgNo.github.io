@@ -22,8 +22,21 @@ const PUSH_WORKER_URL = "https://batchportal-push.batchportal-push.workers.dev";
 
 const TYPES = {
   short: "Short answer", long: "Long answer", link: "Link",
-  date: "Date", number: "Number", prefixed: "Pre-filled (e.g. AS…)"
+  date: "Date", number: "Number", prefixed: "Pre-filled (e.g. AS…)",
+  yesno: "Yes / No", toggle: "Toggle (On/Off)", select: "Select one option", multi: "Select multiple options",
+  table: "Option table", batchmates: "Batchmate selection (groups)"
 };
+const isEmptyVal = (v) => v === "" || v == null || (Array.isArray(v) && !v.length);
+// Human-readable text for any answer (response table + Excel/PDF export).
+function fmtAnswer(fd, v) {
+  if (isEmptyVal(v)) return "";
+  if (typeof v === "boolean") return v ? "On" : "Off";
+  if (Array.isArray(v)) return fd?.type === "batchmates"
+    ? v.map((m) => `${m.name}${m.index ? " (" + m.index + ")" : ""}`).join("; ")
+    : v.join(", ");
+  if (typeof v === "object") return Object.entries(v).map(([k, x]) => `${k}: ${Array.isArray(x) ? x.join(", ") : x}`).join("; ");
+  return String(v);
+}
 
 // ── tiny helpers ─────────────────────────────────────────────────
 const $ = (s, r = document) => r.querySelector(s);
@@ -177,7 +190,119 @@ async function initHome() {
   if (id) openFill(id, load);
 }
 
-function fieldInput(f, val) {
+function batchmatePicker(f, val, ctx) {
+  const sel = new Map((Array.isArray(val) ? val : []).map((m) => [m.uid, m]));
+  // Pool = everyone except me and anyone already in another group.
+  const pool = ctx.roster.filter((b) => b.uid !== ctx.me.uid && (sel.has(b.uid) || !ctx.claims.has(b.uid)));
+  const max = Number(f.max) || 0;
+  const chips = el("ul", { class: "pill-list" });
+  const count = el("small", { class: "fm-bm-count" });
+  const search = el("input", { type: "text", placeholder: "Search batchmates by name or index…" });
+  const list = el("div", { class: "member-checklist" });
+  const rows = [];
+  function sync() {
+    chips.innerHTML = "";
+    sel.forEach((m) => chips.append(el("li", {}, m.name, el("button", { type: "button", "aria-label": "Remove", text: "✕", onclick: () => { sel.delete(m.uid); sync(); } }))));
+    count.textContent = `${sel.size} selected` + (max ? ` (max ${max})` : "") + (Number(f.min) ? ` · min ${f.min}` : "");
+    rows.forEach(({ c, b }) => { c.checked = sel.has(b.uid); c.disabled = !!max && !c.checked && sel.size >= max; });
+  }
+  pool.forEach((b) => {
+    const c = el("input", { type: "checkbox" });
+    c.addEventListener("change", () => { if (c.checked) sel.set(b.uid, { uid: b.uid, name: b.name, index: b.index }); else sel.delete(b.uid); sync(); });
+    rows.push({ c, b });
+    list.append(el("label", { class: "member-check-row", "data-name": (b.name + " " + b.index).toLowerCase() }, c, el("span", { text: `${b.name}${b.index ? " — " + b.index : ""}` })));
+  });
+  if (!pool.length) list.append(el("p", { class: "fine-print", text: "No batchmates left to select." }));
+  search.addEventListener("input", () => {
+    const t = search.value.trim().toLowerCase();
+    list.querySelectorAll(".member-check-row").forEach((r) => { r.hidden = !!t && !r.dataset.name.includes(t); });
+  });
+  sync();
+  return {
+    node: el("div", { class: "fm-bm" },
+      el("div", { class: "fm-edit-note", text: `You (${ctx.me.name}) are the group leader and are added automatically. Batchmates already in another group aren't listed.` }),
+      chips, count, search, list),
+    get: () => (sel.size ? [...sel.values()] : "")
+  };
+}
+
+function fieldInput(f, val, ctx) {
+  const t = f.type, opts = f.options || [];
+  if (t === "yesno") {
+    let cur = val === "Yes" || val === "No" ? val : "";
+    const row = el("div", { class: "seg-toggle" });
+    ["Yes", "No"].forEach((o) => {
+      const id = `yn_${f.id}_${o}`;
+      const r = el("input", { type: "radio", name: "yn_" + f.id, value: o, id }); r.checked = cur === o;
+      r.addEventListener("change", () => { cur = o; });
+      row.append(r, el("label", { for: id, text: o }));
+    });
+    return { node: row, get: () => cur };
+  }
+  if (t === "toggle") {
+    const cb = el("input", { type: "checkbox" }); cb.checked = val === true;
+    const lbl = el("span", { text: cb.checked ? "On" : "Off" });
+    cb.addEventListener("change", () => { lbl.textContent = cb.checked ? "On" : "Off"; });
+    return { node: el("label", { class: "fm-switch" }, cb, el("i"), lbl), get: () => cb.checked };
+  }
+  if (t === "select") {
+    // Custom dropdown (no native popup) built from the portal's leader-picker list styles.
+    let cur = opts.includes(val) ? val : "";
+    const btn = el("button", { type: "button", class: "fm-dd-btn" });
+    const label = el("span");
+    btn.append(label, el("span", { class: "fm-dd-arrow", text: "▾" }));
+    const list = el("div", { class: "leader-picker-list fm-dd-list", hidden: true });
+    const rows = opts.map((o) => {
+      const r = el("div", { class: "leader-picker-row", role: "option", text: o, onclick: () => { cur = o; paint(); list.hidden = true; btn.classList.remove("open"); } });
+      list.append(r); return [o, r];
+    });
+    function paint() {
+      label.textContent = cur || "Select…"; label.classList.toggle("fm-dd-ph", !cur);
+      rows.forEach(([o, r]) => r.classList.toggle("selected", o === cur));
+    }
+    btn.addEventListener("click", () => { list.hidden = !list.hidden; btn.classList.toggle("open", !list.hidden); });
+    document.addEventListener("click", (e) => { if (!wrap.contains(e.target)) { list.hidden = true; btn.classList.remove("open"); } });
+    const wrap = el("div", { class: "fm-dd" }, btn, list);
+    paint();
+    return { node: wrap, get: () => cur };
+  }
+  if (t === "multi") {
+    const cur = new Set(Array.isArray(val) ? val : []);
+    const box = el("div", { class: "member-checklist" });
+    opts.forEach((o) => {
+      const c = el("input", { type: "checkbox" }); c.checked = cur.has(o);
+      c.addEventListener("change", () => { if (c.checked) cur.add(o); else cur.delete(o); });
+      box.append(el("label", { class: "member-check-row" }, c, el("span", { text: o })));
+    });
+    return { node: box, get: () => { const a = opts.filter((o) => cur.has(o)); return a.length ? a : ""; } };
+  }
+  if (t === "table") {
+    // dir "row": one answer per row (choices across = horizontal); dir "col": one answer per column (choices down = vertical)
+    const byRow = f.dir !== "col", rows = f.rows || [], cols = f.cols || [];
+    const lines = byRow ? rows : cols;
+    const cur = {};
+    lines.forEach((l) => { const v = val && typeof val === "object" ? val[l] : null; cur[l] = new Set(Array.isArray(v) ? v : v ? [v] : []); });
+    const tb = el("tbody");
+    rows.forEach((r, ri) => {
+      const tr = el("tr", {}, el("th", { class: "fm-rowh", text: r }));
+      cols.forEach((c, ci) => {
+        const k = byRow ? r : c, o = byRow ? c : r;
+        const inp = el("input", { type: f.multi ? "checkbox" : "radio", name: `t_${f.id}_${byRow ? ri : ci}`, "aria-label": `${r} / ${c}` });
+        inp.checked = cur[k].has(o);
+        inp.addEventListener("change", () => { if (f.multi) { if (inp.checked) cur[k].add(o); else cur[k].delete(o); } else cur[k] = new Set(inp.checked ? [o] : []); });
+        tr.append(el("td", {}, inp));
+      });
+      tb.append(tr);
+    });
+    const table = el("table", { class: "data-table" }, el("thead", {}, el("tr", {}, el("th"), ...cols.map((c) => el("th", { text: c })))), tb);
+    return {
+      node: el("div", { class: "datatable-wrap" }, table),
+      get: () => { const out = {}; lines.forEach((l) => { const a = [...cur[l]]; if (a.length) out[l] = f.multi ? a : a[0]; }); return Object.keys(out).length ? out : ""; },
+      incomplete: () => lines.some((l) => !cur[l].size)
+    };
+  }
+  if (t === "batchmates") return batchmatePicker(f, val, ctx);
+
   let input, node;
   if (f.type === "long") input = el("textarea", { rows: 4 });
   else if (f.type === "date") input = el("input", { type: "date" });
@@ -229,6 +354,17 @@ async function openFill(formId, onDone) {
   if (!isActive(f)) return msg("This form has closed", `It ended on ${fmtDate(d)}.`);
   if (f.collecting === false) return msg("Temporarily closed", "The admins have paused responses for now. Please check back later.");
 
+  const hasBm = (f.fields || []).some((x) => x.type === "batchmates");
+  const ctx = { me: null, roster: [], claims: new Map() };
+  if (hasBm) {
+    try {
+      const [m, roster, cs] = await Promise.all([getMe(), getRoster(), getDocs(collection(db, "forms", f.id, "claims"))]);
+      ctx.me = m; ctx.roster = roster; cs.docs.forEach((c) => ctx.claims.set(c.id, c.data()));
+    } catch (e) { return msg("Couldn't load", "The batchmate list couldn't be loaded. Please try again."); }
+    const taken = ctx.claims.get(ctx.me.uid);
+    if (taken && taken.leaderUid !== ctx.me.uid) return msg("You're already in a group", `${taken.leaderName || "A group leader"} added you to their group, so only they can fill this form for it.`);
+  }
+
   const info = dueInfo(d);
   box.append(el("div", { class: "fm-due fm-due-lg", style: `--due:${info.color}` }, el("span", { class: "fm-dot" }), el("b", { text: info.label }), el("span", { class: "fm-card-sub", text: " · Due " + fmtDate(d) })));
   if (f.description) box.append(el("p", { class: "fm-desc", text: f.description }));
@@ -237,7 +373,7 @@ async function openFill(formId, onDone) {
   const form = el("form", { class: "fm-form", novalidate: true });
   const inputs = [];
   (f.fields || []).forEach((fd) => {
-    const inp = fieldInput(fd, resp?.answers?.[fd.id]);
+    const inp = fieldInput(fd, resp?.answers?.[fd.id], ctx);
     inputs.push([fd, inp]);
     form.append(el("div", { class: "fm-field" },
       el("label", {}, fd.label, fd.required ? el("span", { class: "fm-req", text: " *" }) : null),
@@ -252,7 +388,12 @@ async function openFill(formId, onDone) {
     const answers = {};
     for (const [fd, inp] of inputs) {
       const v = inp.get();
-      if (fd.required && !v) { err.textContent = `"${fd.label}" is required.`; err.hidden = false; return; }
+      if (fd.required && fd.type !== "toggle" && (isEmptyVal(v) || inp.incomplete?.())) { err.textContent = `"${fd.label}" is required${fd.type === "table" ? " — answer every " + (fd.dir === "col" ? "column" : "row") : ""}.`; err.hidden = false; return; }
+      if (fd.type === "batchmates" && !isEmptyVal(v)) {
+        if (Number(fd.min) && v.length < Number(fd.min)) { err.textContent = `"${fd.label}": select at least ${fd.min} batchmate(s).`; err.hidden = false; return; }
+        if (Number(fd.max) && v.length > Number(fd.max)) { err.textContent = `"${fd.label}": select at most ${fd.max} batchmate(s).`; err.hidden = false; return; }
+      }
+      if (fd.type === "batchmates" && isEmptyVal(v) && Number(fd.min)) { err.textContent = `"${fd.label}": select at least ${fd.min} batchmate(s).`; err.hidden = false; return; }
       if (v && fd.type === "link" && !/^https?:\/\/\S+\.\S+/i.test(v)) { err.textContent = `"${fd.label}" needs a valid link starting with http(s)://`; err.hidden = false; return; }
       if (v && fd.type === "number" && !isFinite(Number(v))) { err.textContent = `"${fd.label}" must be a number.`; err.hidden = false; return; }
       answers[fd.id] = v;
@@ -260,17 +401,27 @@ async function openFill(formId, onDone) {
     btn.disabled = true; btn.textContent = "Saving…";
     try {
       const m = await getMe();
-      await setDoc(doc(db, "forms", f.id, "responses", m.uid), {
+      // One atomic batch: the response + the group "claims" that hide chosen students from other groups.
+      const wb = writeBatch(db);
+      wb.set(doc(db, "forms", f.id, "responses", m.uid), {
         uid: m.uid, name: m.name, index: m.index, answers,
         firstSubmittedAt: resp?.firstSubmittedAt || serverTimestamp(),
         respondedAt: serverTimestamp()
       });
+      const bmField = (f.fields || []).find((x) => x.type === "batchmates");
+      if (bmField) {
+        const members = Array.isArray(answers[bmField.id]) ? answers[bmField.id] : [];
+        const keep = new Set([m.uid, ...members.map((x) => x.uid)]);
+        keep.forEach((uid) => wb.set(doc(db, "forms", f.id, "claims", uid), { leaderUid: m.uid, leaderName: m.name, fieldId: bmField.id }));
+        ctx.claims.forEach((c, uid) => { if (c.leaderUid === m.uid && !keep.has(uid)) wb.delete(doc(db, "forms", f.id, "claims", uid)); });
+      }
+      await wb.commit();
       box.innerHTML = "";
       box.append(closeBtn(ov), el("div", { class: "fm-msg ok" }, el("div", { class: "fm-tick", text: "✓" }), el("h3", { text: resp ? "Changes saved" : "Submitted!" }), el("p", { text: "You can reopen this form any time before the due date to edit your answers." }),
         el("button", { class: "btn-primary", type: "button", text: "Done", onclick: () => { ov.hidden = true; } })));
       if (onDone) onDone();
     } catch (x) {
-      err.textContent = "Couldn't save — the form may have just closed. Please try again."; err.hidden = false;
+      err.textContent = hasBm ? "Couldn't save — the form may have closed, or someone you picked was just added to another group. Close and reopen the form to refresh the list." : "Couldn't save — the form may have just closed. Please try again."; err.hidden = false;
       btn.disabled = false; btn.textContent = resp ? "Save changes" : "Submit";
     }
   });
@@ -355,7 +506,10 @@ function buildBuilder() {
   B.saveBtn = el("button", { type: "button", class: "btn-primary", onclick: saveForm });
   B.heading = el("p", { class: "section-label" });
   const chips = el("div", { class: "fm-addrow" }, el("span", { text: "Add field:" }),
-    ...Object.entries(TYPES).map(([t, l]) => el("button", { type: "button", class: "fm-addchip", text: "+ " + l, onclick: () => { B.fields.push({ id: newId(), type: t, label: "", required: false, prefix: t === "prefixed" ? "AS" : "", help: "" }); renderFields(); } })));
+    ...Object.entries(TYPES).map(([t, l]) => el("button", { type: "button", class: "fm-addchip", text: "+ " + l, onclick: () => {
+      if (t === "batchmates" && B.fields.some((x) => x.type === "batchmates")) { B.err.textContent = "A form can have only one batchmate selection field."; B.err.hidden = false; return; }
+      B.err.hidden = true;
+      B.fields.push({ id: newId(), type: t, label: "", required: false, prefix: t === "prefixed" ? "AS" : "", help: "" }); renderFields(); } })));
   B.body = el("div", { class: "admin-modal-body fm-builder-body" }, B.heading,
     el("label", { text: "Form title" }), B.title, el("label", { text: "Description" }), B.desc,
     el("label", { text: "Due date & time" }), B.due,
@@ -371,7 +525,21 @@ function renderFields() {
   B.fields.forEach((f, i) => {
     const type = el("select", {}, ...Object.entries(TYPES).map(([t, l]) => el("option", { value: t, text: l })));
     type.value = f.type;
-    type.addEventListener("change", () => { f.type = type.value; if (f.type === "prefixed" && !f.prefix) f.prefix = "AS"; renderFields(); });
+    type.addEventListener("change", () => {
+      if (type.value === "batchmates" && B.fields.some((x) => x !== f && x.type === "batchmates")) { type.value = f.type; B.err.textContent = "A form can have only one batchmate selection field."; B.err.hidden = false; return; }
+      B.err.hidden = true; f.type = type.value; if (f.type === "prefixed" && !f.prefix) f.prefix = "AS"; renderFields(); });
+    const lines = (key, ph, rows = 3) => { const ta = el("textarea", { rows, placeholder: ph }); ta.value = (f[key] || []).join("\n"); ta.addEventListener("input", () => { f[key] = ta.value.split("\n"); }); return ta; };
+    const num = (key, ph) => { const n = el("input", { type: "number", min: "0", placeholder: ph }); n.value = f[key] || ""; n.addEventListener("input", () => { f[key] = n.value; }); return n; };
+    let extra = null;
+    if (f.type === "select" || f.type === "multi") extra = el("div", { class: "fm-brow fm-bcol" }, lines("options", "Options — one per line"));
+    else if (f.type === "table") {
+      const dir = el("select", {}, el("option", { value: "row", text: "One answer per row (choices across ↔ horizontal)" }), el("option", { value: "col", text: "One answer per column (choices down ↕ vertical)" }));
+      dir.value = f.dir === "col" ? "col" : "row"; dir.addEventListener("change", () => { f.dir = dir.value; });
+      const multi = el("input", { type: "checkbox" }); multi.checked = !!f.multi; multi.addEventListener("change", () => { f.multi = multi.checked; });
+      extra = el("div", { class: "fm-bcol" }, el("div", { class: "fm-brow" }, lines("rows", "Rows — one per line"), lines("cols", "Columns — one per line")),
+        el("div", { class: "fm-brow" }, dir), el("label", { class: "fm-req-toggle" }, multi, el("span", { text: "Allow multiple answers per row/column" })));
+    } else if (f.type === "batchmates") extra = el("div", { class: "fm-bcol" }, el("div", { class: "fm-brow" }, num("min", "Min members (optional)"), num("max", "Max members (optional)")),
+      el("small", { text: "Whoever fills the form becomes the group leader. Picked students (and the leader) disappear from other groups' lists." }));
     const label = el("input", { type: "text", placeholder: "Question / field name" }); label.value = f.label;
     label.addEventListener("input", () => { f.label = label.value; });
     const help = el("input", { type: "text", placeholder: "Helper text (optional)" }); help.value = f.help || "";
@@ -384,9 +552,10 @@ function renderFields() {
     B.list.append(el("div", { class: "fm-bfield" },
       el("div", { class: "fm-brow" }, label, type),
       f.type === "prefixed" ? el("div", { class: "fm-brow" }, prefix, el("small", { text: "Users type only the rest, e.g. 2002547 → " + (f.prefix || "AS") + "2002547" })) : null,
+      extra,
       el("div", { class: "fm-brow" }, help),
       el("div", { class: "fm-brow fm-bactions" },
-        el("label", { class: "fm-req-toggle" }, req, el("span", { text: "Required" })),
+        f.type === "toggle" ? null : el("label", { class: "fm-req-toggle" }, req, el("span", { text: "Required" })),
         el("span", { class: "fm-spacer" }),
         el("button", { type: "button", class: "ghost-btn", text: "↑", onclick: mv(-1) }),
         el("button", { type: "button", class: "ghost-btn", text: "↓", onclick: mv(1) }),
@@ -424,8 +593,20 @@ async function saveForm() {
   for (const f of B.fields) {
     if (!f.label.trim()) return fail("Every field needs a label.");
     if (f.type === "prefixed" && !f.prefix) return fail(`"${f.label}" needs a prefix (e.g. AS).`);
+    const clean = (a) => (a || []).map((x) => x.trim()).filter(Boolean);
+    const uniq = (a) => new Set(a.map((x) => x.toLowerCase())).size === a.length;
+    if (f.type === "select" || f.type === "multi") { const o = clean(f.options); if (o.length < 2) return fail(`"${f.label}" needs at least 2 options.`); if (!uniq(o)) return fail(`"${f.label}" has duplicate options.`); }
+    if (f.type === "table") { const r = clean(f.rows), c = clean(f.cols); if (!r.length || !c.length) return fail(`"${f.label}" needs at least 1 row and 1 column.`); if (!uniq(r) || !uniq(c)) return fail(`"${f.label}" has duplicate rows or columns.`); }
+    if (f.type === "batchmates" && Number(f.min) && Number(f.max) && Number(f.min) > Number(f.max)) return fail(`"${f.label}": min can't be more than max.`);
   }
-  const fields = B.fields.map((f) => ({ id: f.id, type: f.type, label: f.label.trim(), required: !!f.required, help: (f.help || "").trim(), ...(f.type === "prefixed" ? { prefix: f.prefix } : {}) }));
+  const clean = (a) => (a || []).map((x) => x.trim()).filter(Boolean);
+  const fields = B.fields.map((f) => ({
+    id: f.id, type: f.type, label: f.label.trim(), required: f.type === "toggle" ? false : !!f.required, help: (f.help || "").trim(),
+    ...(f.type === "prefixed" ? { prefix: f.prefix } : {}),
+    ...(f.type === "select" || f.type === "multi" ? { options: clean(f.options) } : {}),
+    ...(f.type === "table" ? { rows: clean(f.rows), cols: clean(f.cols), dir: f.dir === "col" ? "col" : "row", multi: !!f.multi } : {}),
+    ...(f.type === "batchmates" ? { min: Number(f.min) || 0, max: Number(f.max) || 0 } : {})
+  }));
   const data = { title, description: B.desc.value.trim(), fields, dueAt: due };
   B.saveBtn.disabled = true; B.saveBtn.textContent = "Saving…";
   try {
@@ -451,13 +632,15 @@ async function saveForm() {
 async function deleteFormAndData(f, done) {
   if (!hasPerm("forms")) return denied();
   let snap;
-  try { snap = await getDocs(collection(db, "forms", f.id, "responses")); }
+  let claims = [];
+  try { snap = await getDocs(collection(db, "forms", f.id, "responses")); claims = (await getDocs(collection(db, "forms", f.id, "claims"))).docs; }
   catch (e) { return alert("Couldn't read the responses — please try again."); }
   if (!confirm(`Permanently delete "${f.title}" and its ${snap.size} response(s)? This cannot be undone.`)) return;
   try {
-    for (let i = 0; i < snap.docs.length; i += 400) {
+    const all = [...snap.docs, ...claims];
+    for (let i = 0; i < all.length; i += 400) {
       const b = writeBatch(db);
-      snap.docs.slice(i, i + 400).forEach((d) => b.delete(d.ref));
+      all.slice(i, i + 400).forEach((d) => b.delete(d.ref));
       await b.commit();
     }
     await deleteDoc(doc(db, "forms", f.id));
@@ -493,12 +676,15 @@ function openRepublish(f, done) {
 let R = null;
 const rvCols = () => R.mode === "pending"
   ? [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" }]
-  : [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" }, ...(R.form.fields || []).map((f) => ({ k: f.id, l: f.label })), { k: "_at", l: "Responded At" }];
+  : [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" },
+     ...(R.form.fields || []).flatMap((f) => f.type === "batchmates" ? [{ k: "_leader", l: "Leader" }, { k: f.id, l: f.label }] : [{ k: f.id, l: f.label }]),
+     { k: "_at", l: "Responded At" }];
 function rvVal(r, k) {
   if (k === "_name") return r.name || "";
   if (k === "_index") return r.index || "";
+  if (k === "_leader") return r.name || ""; // the person who filled the form is the group leader
   if (k === "_at") return r.respondedAt ? fmtDate(toDate(r.respondedAt)) : "";
-  return r.answers?.[k] ?? "";
+  return fmtAnswer((R.form.fields || []).find((f) => f.id === k), r.answers?.[k]);
 }
 function rvRows() {
   let rows = R.mode === "pending" ? R.pending : R.responses;
