@@ -751,7 +751,43 @@ function renderTable() {
   });
   $("#fm-count").textContent = `${rows.length} row(s)`;
   if (!rows.length) { tb.append(el("tr", {}, el("td", { colspan: cols.length, text: R.mode === "pending" ? "Everyone has submitted 🎉" : "No responses yet.", style: "text-align:center;color:var(--muted);padding:20px 10px;" }))); return; }
-  rows.forEach((r) => tb.append(el("tr", {}, ...cols.map((c) => { const v = String(rvVal(r, c.k)); return el("td", { text: v || "—", title: v }); }))));
+  rows.forEach((r) => {
+    const tr = el("tr", {}, ...cols.map((c) => { const v = String(rvVal(r, c.k)); return el("td", { text: v || "—", title: v }); }));
+    if (R.mode === "responses") { tr.classList.add("fm-row-click"); tr.title = "Click to view this response"; tr.addEventListener("click", () => openResponseView(r)); }
+    tb.append(tr);
+  });
+}
+
+// Read-only popup: the form's own layout filled with one person's answers.
+function openResponseView(r) {
+  const f = R.form;
+  const ov = $("#fm-resp-view") || overlay("fm-resp-view");
+  ov.hidden = false; ov.innerHTML = "";
+  const box = el("div", { class: "modal-box fm-box" }, closeBtn(ov));
+  ov.append(box);
+  box.append(el("h2", { class: "fm-title", text: f.title || "Form" }),
+    el("div", { class: "fm-edit-note", text: `Response by ${r.name || "—"}${r.index ? " (" + r.index + ")" : ""}${r.respondedAt ? " · " + fmtDate(toDate(r.respondedAt)) : ""} — view only` }));
+  if (f.description) box.append(el("p", { class: "fm-desc", text: f.description }));
+  const form = el("div", { class: "fm-form fm-readonly" });
+  (f.fields || []).forEach((fd) => {
+    const v = r.answers?.[fd.id];
+    let node;
+    if (fd.type === "batchmates") {
+      const ms = Array.isArray(v) ? v : [];
+      node = el("div", { class: "fm-bm" },
+        el("p", { class: "fine-print", style: "text-align:left;margin:0;", text: `Leader: ${r.name || "—"}${r.index ? " (" + r.index + ")" : ""}` }),
+        ms.length ? el("ul", { class: "pill-list" }, ...ms.map((m) => el("li", { text: m.name + (m.index ? " — " + m.index : "") }))) : el("p", { class: "fine-print", style: "text-align:left;", text: "No members selected." }));
+    } else if (!["yesno", "toggle", "select", "multi", "table"].includes(fd.type)) {
+      // Text-like answers: plain wrapped text so long answers show in full.
+      const txt = fmtAnswer(fd, v);
+      node = fd.type === "link" && txt ? el("a", { class: "fm-ans", href: txt, target: "_blank", rel: "noopener", text: txt }) : el("div", { class: "fm-ans" + (txt ? "" : " empty"), text: txt || "—" });
+    } else {
+      node = fieldInput(fd, v, { me: null, roster: [], claims: new Map() }).node;
+      node.setAttribute("inert", "");
+    }
+    form.append(el("div", { class: "fm-field" }, el("label", {}, fd.label, fd.required ? el("span", { class: "fm-req", text: " *" }) : null), fd.help ? el("small", { text: fd.help }) : null, node));
+  });
+  box.append(form, el("button", { type: "button", class: "ghost-btn", text: "Close", onclick: () => { ov.hidden = true; } }));
 }
 
 function exportData() {

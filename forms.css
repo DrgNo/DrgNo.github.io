@@ -216,3 +216,13 @@
 .fm-dd-list[hidden] { display: none; }
 .fm-dd-list .leader-picker-row { font-size: 14px; font-weight: 400; margin: 0; color: var(--text); }
 .fm-dd-list .leader-picker-row.selected { background: var(--accent-soft-bg); color: var(--accent-soft-text); font-weight: 600; }
+
+/* response view popup */
+.fm-row-click { cursor: pointer; }
+.fm-row-click:hover td { background: var(--accent-soft-bg); }
+.fm-readonly input, .fm-readonly textarea, .fm-readonly .fm-dd-btn { cursor: default; }
+.fm-readonly textarea { resize: none; }
+.fm-ans { display: block; background: var(--bg); border: 1px solid var(--panel-border); border-radius: 9px; padding: 10px 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; color: var(--text); }
+.fm-ans.empty { color: var(--muted); }
+a.fm-ans { color: var(--blue); text-decoration: underline; }
+.fm-ans { max-height: 110px; overflow-y: auto; }
