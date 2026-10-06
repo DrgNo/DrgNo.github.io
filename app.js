@@ -2368,6 +2368,7 @@ async function initHomePage(user) {
       renderProjects()
     ]);
 
+    wireNoticeModal();
     wireEventModal();
     wireBatchmateModal();
     wireLabelModal();
@@ -2437,13 +2438,100 @@ async function renderAnnouncements() {
       titleRow.appendChild(date);
     }
 
+    // Short preview only; the full message (and any link buttons) live in
+    // the popup opened by "Show more".
+    const fullMessage = a.message || "";
+    const links = normalizeAnnouncementLinks(a.links);
+    const preview = truncateNoticeMessage(fullMessage, NOTICE_PREVIEW_CHARS);
+    const isCut = preview.length < fullMessage.length;
+
     const message = document.createElement("p");
     message.className = "notice-message";
-    message.textContent = a.message || "";
+    message.appendChild(document.createTextNode(preview));
+
+    if (isCut || links.length) {
+      message.appendChild(document.createTextNode(" "));
+      const more = document.createElement("a");
+      more.href = "#";
+      more.className = "notice-show-more";
+      more.textContent = "Show more";
+      more.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        openNoticeModal(a, links);
+      });
+      message.appendChild(more);
+    }
 
     li.appendChild(titleRow);
     li.appendChild(message);
     list.appendChild(li);
+  });
+}
+
+const NOTICE_PREVIEW_CHARS = 80;
+
+// Cuts at a word boundary and adds "…" when the message is longer than max.
+function truncateNoticeMessage(text, max) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (clean.length <= max) return clean;
+  let cut = clean.slice(0, max);
+  const lastSpace = cut.lastIndexOf(" ");
+  if (lastSpace > max * 0.5) cut = cut.slice(0, lastSpace);
+  return cut.replace(/[\s.,;:!?-]+$/, "") + "…";
+}
+
+// Accepts only http(s) / mailto links; adds https:// when the admin typed a
+// bare address like "forms.gle/abc". Anything else (javascript: etc.) is dropped.
+function sanitizeLinkUrl(raw) {
+  let url = String(raw || "").trim();
+  if (!url) return "";
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(url)) url = "https://" + url;
+  return /^(https?:|mailto:)/i.test(url) ? url : "";
+}
+
+function normalizeAnnouncementLinks(links) {
+  if (!Array.isArray(links)) return [];
+  return links
+    .map((l) => ({
+      label: String((l && l.label) || "").trim(),
+      url: sanitizeLinkUrl(l && l.url)
+    }))
+    .filter((l) => l.url)
+    .map((l) => ({ label: l.label || "Open link", url: l.url }));
+}
+
+function openNoticeModal(a, links) {
+  document.getElementById("notice-modal-title").textContent = a.title || "Untitled announcement";
+  document.getElementById("notice-modal-date").textContent = a.date ? formatPlainDate(a.date) : "";
+  document.getElementById("notice-modal-message").textContent = a.message || "";
+
+  const linksBox = document.getElementById("notice-modal-links");
+  linksBox.innerHTML = "";
+  links.forEach((l) => {
+    const btn = document.createElement("a");
+    btn.className = "notice-link-btn";
+    btn.href = l.url;
+    btn.target = "_blank";
+    btn.rel = "noopener noreferrer";
+    btn.textContent = l.label;
+    linksBox.appendChild(btn);
+  });
+  linksBox.hidden = links.length === 0;
+
+  document.getElementById("notice-modal-overlay").hidden = false;
+}
+
+function wireNoticeModal() {
+  const overlay = document.getElementById("notice-modal-overlay");
+  const closeBtn = document.getElementById("notice-modal-close");
+  if (!overlay || !closeBtn) return;
+
+  function closeModal() { overlay.hidden = true; }
+
+  closeBtn.addEventListener("click", closeModal);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !overlay.hidden) closeModal();
   });
 }
 
@@ -3328,6 +3416,59 @@ function splitList(value, sep) {
   return value.split(sep).map((s) => s.trim()).filter(Boolean);
 }
 
+// ── Announcement links (admin form) ───────────────────────────────
+function addAnnouncementLinkRow(listId = "ann-links-list", link = null) {
+  const list = document.getElementById(listId);
+  const row = document.createElement("div");
+  row.className = "ann-link-row";
+
+  const label = document.createElement("input");
+  label.type = "text";
+  label.className = "ann-link-label";
+  label.placeholder = "Button text (e.g. Register)";
+  label.maxLength = 40;
+
+  const url = document.createElement("input");
+  url.type = "text";
+  url.className = "ann-link-url";
+  url.placeholder = "https://…";
+  if (link) {
+    label.value = link.label || "";
+    url.value = link.url || "";
+  }
+
+  const remove = document.createElement("button");
+  remove.type = "button";
+  remove.className = "ann-link-remove";
+  remove.setAttribute("aria-label", "Remove link");
+  remove.textContent = "✕";
+  remove.addEventListener("click", () => row.remove());
+
+  row.append(label, url, remove);
+  list.appendChild(row);
+}
+
+function initAnnouncementLinkRows() {
+  const addBtn = document.getElementById("ann-add-link");
+  const form = document.getElementById("form-announcement");
+  const list = document.getElementById("ann-links-list");
+  if (!addBtn || !form || !list) return;
+  addBtn.addEventListener("click", () => addAnnouncementLinkRow("ann-links-list"));
+  // form.reset() after a successful save should also clear the link rows
+  form.addEventListener("reset", () => { list.innerHTML = ""; });
+}
+
+// Rows with a URL become {label, url}; empty rows are ignored.
+function collectAnnouncementLinks(listId = "ann-links-list") {
+  return Array.from(document.querySelectorAll("#" + listId + " .ann-link-row"))
+    .map((row) => ({
+      label: row.querySelector(".ann-link-label").value.trim(),
+      url: sanitizeLinkUrl(row.querySelector(".ann-link-url").value)
+    }))
+    .filter((l) => l.url)
+    .map((l) => ({ label: l.label || "Open link", url: l.url }));
+}
+
 async function initAdminPage(isAdmin) {
   const loadingState = document.getElementById("loading-state");
   const accessDenied = document.getElementById("access-denied");
@@ -3405,13 +3546,16 @@ async function initAdminPage(isAdmin) {
     date: document.getElementById("wall-date").value
   }));
 
-  // Announcement
+  // Announcement — admin can attach links (label + URL); they appear as
+  // buttons in the announcement popup on the home page.
+  initAnnouncementLinkRows();
   wireForm(
     "form-announcement", "announcements", "ann-error", "ann-success",
     () => ({
       title: document.getElementById("ann-title").value.trim(),
       message: document.getElementById("ann-message").value.trim(),
-      date: document.getElementById("ann-date").value
+      date: document.getElementById("ann-date").value,
+      links: collectAnnouncementLinks()
     }),
     (data) => ({
       title: data.title || "New announcement",
@@ -3563,6 +3707,11 @@ async function initAdminPage(isAdmin) {
   await renderAdminActiveEvents();
   document.getElementById("refresh-active-events").addEventListener("click", renderAdminActiveEvents);
   wireEventEditModal();
+
+  // Active Announcements panel
+  await renderAdminActiveAnnouncements();
+  document.getElementById("refresh-active-announcements").addEventListener("click", renderAdminActiveAnnouncements);
+  wireAnnouncementEditModal();
 
   // Detail Change Requests panel
   await renderAdminChangeRequests();
@@ -5195,6 +5344,107 @@ function wireEventEditModal() {
     } catch (err) {
       document.getElementById("eventedit-error").textContent = "Could not delete this event. Please try again.";
       document.getElementById("eventedit-error").hidden = false;
+    }
+  });
+}
+
+// ── Admin: Active Announcements ──────────────────────────────────
+// Every published announcement, newest first. Tap one to edit its title,
+// message, date and links (or delete it) — changes show on Home right away.
+async function renderAdminActiveAnnouncements() {
+  const container = document.getElementById("admin-active-announcements");
+  if (!container) return;
+  container.innerHTML = "Loading…";
+
+  const snap = await getDocs(collection(db, "announcements"));
+  const items = [];
+  snap.forEach((docSnap) => items.push({ id: docSnap.id, ...docSnap.data() }));
+  items.sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+
+  if (items.length === 0) {
+    container.innerHTML = '<p class="info-text" style="color:var(--muted)">No announcements yet.</p>';
+    return;
+  }
+
+  container.innerHTML = "";
+  items.forEach((item) => {
+    const box = document.createElement("div");
+    box.className = "admin-event-box";
+    const name = document.createElement("div");
+    name.className = "admin-event-name";
+    name.textContent = item.title || "Untitled announcement";
+    const meta = document.createElement("div");
+    meta.className = "admin-event-meta";
+    meta.textContent = item.date ? formatPlainDate(item.date) : "No date set";
+    box.appendChild(name);
+    box.appendChild(meta);
+    box.addEventListener("click", () => openAnnouncementEditModal(item));
+    container.appendChild(box);
+  });
+}
+
+function openAnnouncementEditModal(item) {
+  if (!guardPerm('announcements', 'Edit Announcement')) return;
+  document.getElementById("annedit-id").value = item.id;
+  document.getElementById("annedit-title").value = item.title || "";
+  document.getElementById("annedit-message").value = item.message || "";
+  document.getElementById("annedit-date").value = item.date || "";
+  document.getElementById("annedit-error").hidden = true;
+  document.getElementById("annedit-success").hidden = true;
+
+  document.getElementById("annedit-links-list").innerHTML = "";
+  normalizeAnnouncementLinks(item.links).forEach((l) => addAnnouncementLinkRow("annedit-links-list", l));
+
+  document.getElementById("modal-announcement-edit").hidden = false;
+}
+
+function wireAnnouncementEditModal() {
+  const form = document.getElementById("form-announcement-edit");
+  const deleteBtn = document.getElementById("annedit-delete-btn");
+  const addLinkBtn = document.getElementById("annedit-add-link");
+  if (!form || !deleteBtn || !addLinkBtn) return;
+
+  addLinkBtn.addEventListener("click", () => addAnnouncementLinkRow("annedit-links-list"));
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!guardPerm('announcements', 'Edit Announcement')) return;
+    const id = document.getElementById("annedit-id").value;
+    const errorEl = document.getElementById("annedit-error");
+    const successEl = document.getElementById("annedit-success");
+    errorEl.hidden = true;
+    successEl.hidden = true;
+
+    try {
+      await updateDoc(doc(db, "announcements", id), {
+        title: document.getElementById("annedit-title").value.trim(),
+        message: document.getElementById("annedit-message").value.trim(),
+        date: document.getElementById("annedit-date").value,
+        links: collectAnnouncementLinks("annedit-links-list")
+      });
+      successEl.textContent = "Announcement updated.";
+      successEl.hidden = false;
+      await renderAdminActiveAnnouncements();
+      setTimeout(() => { document.getElementById("modal-announcement-edit").hidden = true; }, 700);
+    } catch (err) {
+      errorEl.textContent = "Could not save changes. Please try again.";
+      errorEl.hidden = false;
+    }
+  });
+
+  deleteBtn.addEventListener("click", async () => {
+    if (!guardPerm('announcements', 'Delete Announcement')) return;
+    const id = document.getElementById("annedit-id").value;
+    if (!id) return;
+    if (!confirm("Delete this announcement? This can't be undone.")) return;
+    try {
+      await deleteDoc(doc(db, "announcements", id));
+      document.getElementById("modal-announcement-edit").hidden = true;
+      await renderAdminActiveAnnouncements();
+    } catch (err) {
+      const errorEl = document.getElementById("annedit-error");
+      errorEl.textContent = "Could not delete this announcement. Please try again.";
+      errorEl.hidden = false;
     }
   });
 }
@@ -7453,10 +7703,10 @@ function displayBatchmates(list) {
 
     const index = document.createElement("div");
     index.className = "batchmate-card-index";
-    index.textContent = b.campusIndexNumber || "—";
+    index.textContent = hasValue(b.campusIndexNumber) ? b.campusIndexNumber : "";
 
     card.appendChild(name);
-    card.appendChild(index);
+    if (index.textContent) card.appendChild(index);
 
     const badgeIds = batchmateBadgeAssignments[b.uid] || [];
     const badgesMap = badgesCache || {};
@@ -7496,6 +7746,27 @@ function genderPronoun(gender) {
   return "their";
 }
 
+// True when a directory value is actually filled in (not null / blank text / empty list). 0 and false count as filled.
+function hasValue(v) {
+  if (v == null) return false;
+  if (Array.isArray(v)) return v.some(hasValue);
+  if (typeof v === "string") return v.trim() !== "";
+  return true;
+}
+
+// Fills a pill list in the popup — or hides it together with its heading when there's nothing to show.
+function showPillsIfAny(listId, items) {
+  const ul = document.getElementById(listId);
+  if (!ul) return false;
+  const list = Array.isArray(items) ? items.filter(hasValue) : (hasValue(items) ? [items] : []);
+  const label = ul.previousElementSibling;
+  ul.style.display = list.length ? "" : "none";
+  if (label) label.style.display = list.length ? "" : "none";
+  if (list.length) fillPills(listId, list, "");
+  else ul.innerHTML = "";
+  return list.length > 0;
+}
+
 function openBatchmateModal(b) {
   document.getElementById("bm-modal-name").textContent = b.fullName || "Unnamed";
 
@@ -7505,10 +7776,11 @@ function openBatchmateModal(b) {
 
   const publicFields = flattenFieldGroups(directoryFieldSchemaCache || DEFAULT_DIRECTORY_FIELD_GROUPS)
     .filter((f) => f.public && f.key !== "fullName");
-  fillGroup("bm-modal-fields", publicFields.map((f) => {
-    const raw = b[f.key];
-    return [f.label || f.key, Array.isArray(raw) ? raw.join(", ") : raw];
-  }));
+  // Only fields this person has actually filled in are shown.
+  const fieldRows = publicFields
+    .map((f) => { const raw = b[f.key]; return [f.label || f.key, Array.isArray(raw) ? raw.filter(hasValue).join(", ") : raw]; })
+    .filter(([, value]) => hasValue(value));
+  fillGroup("bm-modal-fields", fieldRows);
 
   const levelPill = document.getElementById("bm-modal-level-pill");
   if (levelPill) {
@@ -7520,10 +7792,15 @@ function openBatchmateModal(b) {
     }
   }
 
-  fillPills("bm-modal-clubs", b.clubs, "No clubs recorded.");
-  fillPills("bm-modal-sports", b.sports, "No sports recorded.");
-  fillPills("bm-modal-skills", b.skills, "No skills recorded.");
-  renderModalBadges(b);
+  const shownPills = [
+    showPillsIfAny("bm-modal-clubs", b.clubs),
+    showPillsIfAny("bm-modal-sports", b.sports),
+    showPillsIfAny("bm-modal-skills", b.skills),
+    renderModalBadges(b)
+  ].some(Boolean);
+  if (!fieldRows.length && !shownPills) {
+    document.getElementById("bm-modal-fields").innerHTML = '<p class="fine-print" style="text-align:left;margin:0;">No more details to show.</p>';
+  }
 
   // A batchmate can opt out (Settings → Directory Privacy) of showing their
   // profile details to others. Their name + index number still show on the
@@ -7552,16 +7829,18 @@ function openBatchmateModal(b) {
 // badge popup used on the Badges page and the mini icons.
 function renderModalBadges(b) {
   const el = document.getElementById("bm-modal-badges");
-  if (!el) return;
+  if (!el) return false;
   el.innerHTML = "";
 
   const badgeIds = batchmateBadgeAssignments[b.uid] || [];
   const badgesMap = badgesCache || {};
 
-  if (badgeIds.length === 0) {
-    emptyPill(el, "No badges earned yet.");
-    return;
-  }
+  // No earned badges → hide the Badges heading and list entirely.
+  const hasAny = badgeIds.some((id) => badgesMap[id]);
+  const badgeLabel = el.previousElementSibling;
+  el.style.display = hasAny ? "" : "none";
+  if (badgeLabel) badgeLabel.style.display = hasAny ? "" : "none";
+  if (!hasAny) return false;
 
   badgeIds.forEach((id) => {
     const badge = badgesMap[id];
@@ -7582,6 +7861,7 @@ function renderModalBadges(b) {
     li.addEventListener("click", () => openBadgeModal(badge));
     el.appendChild(li);
   });
+  return true;
 }
 
 function wireBatchmateModal() {

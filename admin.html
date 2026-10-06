@@ -176,6 +176,15 @@
 
             <div class="card full-span">
               <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
+                <p class="section-label" style="margin:0;">Active Announcements</p>
+                <button type="button" id="refresh-active-announcements" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
+              </div>
+              <p class="fine-print" style="text-align:left; margin:0 0 14px;">Tap an announcement to edit its title, message, date and links, or delete it.</p>
+              <div id="admin-active-announcements" class="admin-scroll-list"></div>
+            </div>
+
+            <div class="card full-span">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
                 <p class="section-label" style="margin:0;">Active Timetable</p>
                 <button type="button" id="refresh-timetable" class="ghost-btn" style="padding:6px 12px; font-size:12px;">Refresh</button>
               </div>
@@ -521,6 +530,10 @@
 
           <label for="ann-message">Message</label>
           <textarea id="ann-message" rows="3" required></textarea>
+
+          <label>Links <span class="optional-hint">(optional — shown as buttons in the popup)</span></label>
+          <div id="ann-links-list" class="ann-links-list"></div>
+          <button type="button" class="ann-add-link-btn" id="ann-add-link">+ Add link</button>
 
           <label for="ann-date">Date</label>
           <input type="date" id="ann-date" required>
@@ -964,6 +977,35 @@
       <div class="admin-modal-body">
         <p class="section-label">Project Details</p>
         <div id="project-detail-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal-announcement-edit" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-announcement-edit" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Edit Announcement</p>
+        <form id="form-announcement-edit">
+          <input type="hidden" id="annedit-id">
+          <label for="annedit-title">Title</label>
+          <input type="text" id="annedit-title" required>
+
+          <label for="annedit-message">Message</label>
+          <textarea id="annedit-message" rows="4" required></textarea>
+
+          <label>Links <span class="optional-hint">(optional — shown as buttons in the popup)</span></label>
+          <div id="annedit-links-list" class="ann-links-list"></div>
+          <button type="button" class="ann-add-link-btn" id="annedit-add-link">+ Add link</button>
+
+          <label for="annedit-date">Date</label>
+          <input type="date" id="annedit-date" required>
+
+          <button type="submit" class="btn-primary">Save Changes</button>
+        </form>
+        <button type="button" id="annedit-delete-btn" class="danger-btn">Delete This Announcement</button>
+        <p class="error-msg" id="annedit-error" hidden></p>
+        <p class="success-msg" id="annedit-success" hidden></p>
       </div>
     </div>
   </div>

@@ -1,4 +1,5 @@
 // ── Forms feature (home cards, fill/edit, admin builder, responses) ──
+// Supports multi-page forms (page breaks), an animated progress indicator, conditional questions and answer-based page jumps.
 // Self-contained module: loaded on home.html and admin.html only.
 // Also hosts the Idea Boards feature (see the IDEA BOARDS section near the bottom).
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
@@ -22,9 +23,9 @@ const PUSH_WORKER_URL = "https://batchportal-push.batchportal-push.workers.dev";
 
 const TYPES = {
   short: "Short answer", long: "Long answer", link: "Link",
-  date: "Date", number: "Number", prefixed: "Pre-filled (e.g. AS…)",
+  date: "Date", number: "Number", prefixed: "Pre-filled (start / end text)",
   yesno: "Yes / No", toggle: "Toggle (On/Off)", select: "Select one option", multi: "Select multiple options",
-  table: "Option table", batchmates: "Batchmate selection (groups)"
+  rating: "Rating scale", table: "Option table", batchmates: "Batchmate selection (groups)"
 };
 const isEmptyVal = (v) => v === "" || v == null || (Array.isArray(v) && !v.length);
 // Human-readable text for any answer (response table + Excel/PDF export).
@@ -36,6 +37,179 @@ function fmtAnswer(fd, v) {
     : v.join(", ");
   if (typeof v === "object") return Object.entries(v).map(([k, x]) => `${k}: ${Array.isArray(x) ? x.join(", ") : x}`).join("; ");
   return String(v);
+}
+
+
+// ── Pages + logic engine ─────────────────────────────────────────
+// Shared by the fill form, the builder's save-check and the response viewer.
+//   field.type "section"  = page break; it STARTS a page. { label, help, next, routes[] }
+//       next   : "" (continue) | "submit" | <later section id>
+//       routes : [{ match:"all"|"any", conds:[{src,op,val}], goto }]  → first matching rule wins
+//   question.logic  = { match, conds[] }  → show the question only when true
+//   question.branch = [{ o:"option text", to:"submit"|<later section id> }]  (select / yes-no)
+const isQ = (x) => x.type !== "section";
+const RATING_STYLES = { stars: "★ Stars", hearts: "♥ Hearts", numbers: "1 2 3 Numbers", emoji: "🙂 Emoji faces" };
+const RATING_FACES = ["😡", "🙁", "😐", "🙂", "😍"];
+const ratingMax = (f) => (f.style === "emoji" ? 5 : Math.min(10, Math.max(3, Number(f.max) || 5)));
+const cleanList = (a) => (a || []).map((x) => String(x).trim()).filter(Boolean);
+function splitPages(fields) {
+  const pages = []; let cur = null;
+  (fields || []).forEach((fd) => {
+    if (fd.type === "section") { cur = { section: fd, fields: [] }; pages.push(cur); }
+    else { if (!cur) { cur = { section: null, fields: [] }; pages.push(cur); } cur.fields.push(fd); }
+  });
+  return pages;
+}
+const OP_TEXT = { eq: "is", neq: "is not", has: "includes", nhas: "does not include", gt: "is greater than", lt: "is less than", filled: "is answered", empty: "is left blank" };
+function opsFor(t) {
+  if (t === "yesno" || t === "select") return ["eq", "neq", "filled", "empty"];
+  if (t === "toggle") return ["eq"];
+  if (t === "multi") return ["has", "nhas", "filled", "empty"];
+  if (t === "number" || t === "date" || t === "rating") return ["eq", "neq", "gt", "lt", "filled", "empty"];
+  if (t === "table" || t === "batchmates") return ["filled", "empty"];
+  return ["eq", "neq", "has", "nhas", "filled", "empty"];
+}
+function opLabel(t, op) {
+  if (t === "date" && op === "gt") return "is after";
+  if (t === "date" && op === "lt") return "is before";
+  if (op === "has" && t !== "multi") return "contains";
+  if (op === "nhas" && t !== "multi") return "does not contain";
+  return OP_TEXT[op];
+}
+const opNeedsValue = (op) => op !== "filled" && op !== "empty";
+function condChoices(q) {
+  if (q.type === "yesno") return ["Yes", "No"];
+  if (q.type === "toggle") return ["On", "Off"];
+  if (q.type === "select" || q.type === "multi") return cleanList(q.options);
+  if (q.type === "rating") return Array.from({ length: ratingMax(q) }, (_, i) => String(i + 1));
+  return null;
+}
+function evalCond(c, raw, t) {
+  const norm = (x) => String(x ?? "").trim().toLowerCase();
+  const v = norm(c.val);
+  switch (c.op) {
+    case "filled": return t === "toggle" ? raw === true : !isEmptyVal(raw);
+    case "empty": return t === "toggle" ? raw !== true : isEmptyVal(raw);
+    case "eq":
+      if (t === "toggle") return (raw === true) === (v === "on");
+      if (t === "number" || t === "rating") return !isEmptyVal(raw) && Number(raw) === Number(c.val);
+      return !Array.isArray(raw) && norm(raw) === v;
+    case "neq": return !evalCond({ ...c, op: "eq" }, raw, t);
+    case "has": return Array.isArray(raw) ? raw.some((x) => norm(x) === v) : norm(raw).includes(v);
+    case "nhas": return !evalCond({ ...c, op: "has" }, raw, t);
+    case "gt": case "lt": {
+      if (isEmptyVal(raw)) return false;
+      if (t === "date") return c.op === "gt" ? String(raw) > String(c.val) : String(raw) < String(c.val);
+      const a = Number(raw), b = Number(c.val);
+      return isFinite(a) && isFinite(b) && (c.op === "gt" ? a > b : a < b);
+    }
+  }
+  return false;
+}
+function evalSet(cs, rawOf, typeOf) {
+  const conds = (cs?.conds || []).filter((c) => c.src);
+  if (!conds.length) return true;
+  const res = conds.map((c) => evalCond(c, rawOf(c.src), typeOf(c.src)));
+  return cs.match === "any" ? res.some(Boolean) : res.every(Boolean);
+}
+// Is `t` a legal jump target from page k? ("submit" or a LATER page's section id — forward only, so no loops.)
+const targetOk = (pg, k, t) => t === "submit" || (!!t && pg.findIndex((p, j) => j > k && p.section?.id === t) > -1);
+
+// Works out which questions apply and which pages the person will see, given the current answers.
+//   rawOf(id) → the raw answer for question id.  Returns { pages, path[], vis:Map(id→bool), next(pageIdx) }
+function computeFlow(fields, rawOf) {
+  const pages = splitPages(fields);
+  const types = {}; (fields || []).forEach((x) => { types[x.id] = x.type; });
+  const typeOf = (id) => types[id];
+  const vis = new Map(), seen = new Set(), nexts = new Map();
+  const val = (id) => (vis.get(id) === true ? rawOf(id) : "");
+  const calc = (pi) => {
+    if (seen.has(pi)) return; seen.add(pi);
+    pages[pi].fields.forEach((fd) => vis.set(fd.id, evalSet(fd.logic, val, typeOf)));
+  };
+  const target = (pi, t) => {
+    if (t === "submit") return -1;
+    if (t) { const j = pages.findIndex((p, k) => k > pi && p.section?.id === t); if (j > -1) return j; }
+    return pi + 1 >= pages.length ? -1 : pi + 1;
+  };
+  const isEmptyPage = (j) => pages[j].fields.length > 0 && !pages[j].fields.some((fd) => vis.get(fd.id));
+  let route;
+  const skip = (j) => { if (j === -1) return -1; calc(j); return isEmptyPage(j) ? route(j) : j; }; // pages whose questions are all hidden are skipped
+  route = (pi) => {
+    calc(pi);
+    const p = pages[pi];
+    for (const fd of p.fields) {                                   // 1) "go to page by answer" on a question
+      if (!vis.get(fd.id) || !fd.branch?.length) continue;
+      const hit = fd.branch.find((b) => b.o === val(fd.id));
+      if (hit?.to) return skip(target(pi, hit.to));
+    }
+    for (const r of p.section?.routes || [])                       // 2) routing rules on the page
+      if (r.conds?.length && evalSet(r, val, typeOf)) return skip(target(pi, r.goto));
+    return skip(target(pi, p.section?.next || ""));                // 3) the page's default
+  };
+  const path = [];
+  let i = pages.length ? skip(0) : -1;
+  while (i !== -1 && !path.includes(i)) { path.push(i); const n = route(i); nexts.set(i, n); i = n; }
+  pages.forEach((p, k) => { if (!path.includes(k)) p.fields.forEach((fd) => vis.set(fd.id, false)); });
+  return { pages, path, vis, next: (pi) => nexts.get(pi) };
+}
+
+// ── Profile import (form answers → each person's PRIVATE profile) ────────────────
+// A question can be mapped to a profile field: q.profile = { key, label, group, groupTitle? }.
+// From the responses screen an admin imports the chosen fields: values are written to /batchmates/{uid}[key]
+// and the field is added to the chosen section of /config/directoryFields (the Dashboard renders that schema).
+// Imported fields are always private (public:false) — nothing goes to /batchmatesPublic.
+const PROFILE_TYPES = new Set(["short", "long", "link", "date", "number", "prefixed", "yesno", "toggle", "select", "multi", "rating"]);
+const PROFILE_RESERVED = new Set(["campusIndexNumber", "campusRegNumber", "universityEmail", "roles", "tasks", "photoUrl", "prestigePoints", "prestigeLevel",
+  "fundDonated", "badBehaviorRecords", "sports", "clubs", "skills", "badges", "uid", "id"]);
+// Mirror of DEFAULT_DIRECTORY_FIELD_GROUPS in app.js — only used when /config/directoryFields doesn't exist yet. Keep in sync.
+const DEFAULT_PROFILE_GROUPS = [
+  { id: "person", title: "Person Details", order: 0, fields: [
+    { key: "fullName", label: "Full Name", order: 0, public: true }, { key: "gender", label: "Gender", order: 1, public: true },
+    { key: "birthday", label: "Birthday", order: 2, public: true }, { key: "nicNumber", label: "NIC Number", order: 3, public: false },
+    { key: "address", label: "Address", order: 4, public: false }, { key: "district", label: "District", order: 5, public: false }] },
+  { id: "campus", title: "Campus Details", order: 1, fields: [
+    { key: "campusIndexNumber", label: "Campus Index Number", order: 0, public: true }, { key: "campusRegNumber", label: "Campus Registration Number", order: 1, public: false }] },
+  { id: "contact", title: "Contact Options", order: 2, fields: [
+    { key: "primaryMobile", label: "Primary Mobile Number", order: 0, public: true }, { key: "alternativeNumbers", label: "Alternative Numbers", order: 1, public: false },
+    { key: "universityEmail", label: "University Email", order: 2, public: false }, { key: "personalEmail", label: "Personal Email", order: 3, public: false }] },
+  { id: "residential", title: "Residential Details", order: 3, fields: [
+    { key: "residentialStatus", label: "Residential Status", order: 0, public: false }, { key: "residentialAddress", label: "Residential Address", order: 1, public: false }] },
+  { id: "medical", title: "Medical Details", order: 4, fields: [
+    { key: "bloodGroup", label: "Blood Group", order: 0, public: false }, { key: "dietaryOption", label: "Dietary Option", order: 1, public: false },
+    { key: "severeMedicalConditions", label: "Severe Medical Conditions", order: 2, public: false }, { key: "foodAllergies", label: "Food Allergies", order: 3, public: false },
+    { key: "chemicalAllergies", label: "Chemical Allergies", order: 4, public: false }] },
+  { id: "emergency", title: "Emergency Details", order: 5, fields: [
+    { key: "emergencyContactName", label: "Emergency Contact Person Name", order: 0, public: false }, { key: "emergencyRelationship", label: "Emergency Contact Person Relationship", order: 1, public: false },
+    { key: "primaryEmergencyNumber", label: "Primary Emergency Number", order: 2, public: false }, { key: "secondaryEmergencyNumber", label: "Secondary Emergency Number", order: 3, public: false }] }
+];
+let PROFILE_GROUPS = null, PROFILE_DOC_EXISTS = false;
+async function loadProfileGroups(force) {
+  if (PROFILE_GROUPS && !force) return PROFILE_GROUPS;
+  try {
+    const snap = await getDoc(doc(db, "config", "directoryFields"));
+    PROFILE_DOC_EXISTS = snap.exists() && Array.isArray(snap.data().groups) && snap.data().groups.length > 0;
+    PROFILE_GROUPS = PROFILE_DOC_EXISTS ? snap.data().groups : DEFAULT_PROFILE_GROUPS;
+  } catch (e) { PROFILE_GROUPS = PROFILE_GROUPS || DEFAULT_PROFILE_GROUPS; }
+  return PROFILE_GROUPS;
+}
+const profileGroups = () => [...(PROFILE_GROUPS || DEFAULT_PROFILE_GROUPS)].sort((a, b) => (a.order || 0) - (b.order || 0));
+const slugKey = (t) => {
+  const w = String(t || "").replace(/[^a-zA-Z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+  let k = w.map((x, i) => (i ? x[0].toUpperCase() + x.slice(1).toLowerCase() : x.toLowerCase())).join("");
+  if (k && !/^[a-z]/.test(k)) k = "f" + k[0].toUpperCase() + k.slice(1);
+  return k.slice(0, 40);
+};
+const slugId = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40);
+const profileMappings = (form) => (form.fields || []).filter((q) => isQ(q) && q.profile?.key && PROFILE_TYPES.has(q.type));
+// Converts a raw form answer into what gets stored on the profile (undefined = nothing to import).
+function profileValue(q, v) {
+  if (isEmptyVal(v)) return undefined;
+  if (q.type === "toggle") return v === true ? "On" : v === false ? "Off" : undefined;
+  if (q.type === "multi") return Array.isArray(v) && v.length ? v.map(String) : undefined;
+  if (q.type === "number" || q.type === "rating") { const n = Number(v); return isFinite(n) ? n : String(v); }
+  const t = String(v).trim();
+  return t || undefined;
 }
 
 // ── tiny helpers ─────────────────────────────────────────────────
@@ -57,6 +231,7 @@ const fmtDate = (d) => d ? d.toLocaleString([], { dateStyle: "medium", timeStyle
 const pad = (n) => String(n).padStart(2, "0");
 const toInputValue = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const newId = () => "f" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const newSection = () => ({ id: newId(), type: "section", label: "", help: "", next: "", routes: [] });
 const formLink = (id) => new URL("home.html?form=" + encodeURIComponent(id), location.href).href;
 const slug = (s) => String(s || "form").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 const isActive = (f) => { const d = toDate(f.dueAt); return d && d > new Date(); };
@@ -228,6 +403,36 @@ function batchmatePicker(f, val, ctx) {
 
 function fieldInput(f, val, ctx) {
   const t = f.type, opts = f.options || [];
+  if (t === "rating") {
+    const max = ratingMax(f), style = RATING_STYLES[f.style] ? f.style : "stars";
+    let cur = Number(val) >= 1 && Number(val) <= max ? Number(val) : 0;
+    const iconOf = (i) => (style === "stars" ? "★" : style === "hearts" ? "♥" : style === "emoji" ? RATING_FACES[i - 1] : String(i));
+    const fill = style === "stars" || style === "hearts"; // these light up cumulatively
+    const row = el("div", { class: `fm-rate fm-rate-${style}`, role: "radiogroup", "aria-label": f.label || "Rating" });
+    const readout = el("span", { class: "fm-rate-val" });
+    const btns = [];
+    const paint = (n) => btns.forEach((b, k) => {
+      const i = k + 1;
+      b.classList.toggle("on", fill ? i <= n : i === n);
+      b.setAttribute("aria-checked", String(i === cur));
+    });
+    const settle = () => { paint(cur); readout.textContent = cur ? `${cur} / ${max}` : "Tap to rate"; readout.classList.toggle("set", !!cur); };
+    for (let i = 1; i <= max; i++) {
+      const b = el("button", { type: "button", class: "fm-rate-btn", role: "radio", "aria-label": `${i} out of ${max}`, "aria-checked": "false", text: iconOf(i) });
+      b.addEventListener("click", () => {
+        cur = cur === i ? 0 : i; settle();
+        if (cur) { b.classList.remove("pop"); void b.offsetWidth; b.classList.add("pop"); }
+      });
+      b.addEventListener("mouseenter", () => paint(i));
+      b.addEventListener("focus", () => paint(i));
+      btns.push(b); row.append(b);
+    }
+    row.addEventListener("mouseleave", settle);
+    row.addEventListener("focusout", settle);
+    settle();
+    const foot = el("div", { class: "fm-rate-foot" }, el("span", { text: f.lo || "" }), readout, el("span", { text: f.hi || "" }));
+    return { node: el("div", { class: "fm-rate-wrap" }, row, foot), get: () => (cur ? cur : "") };
+  }
   if (t === "yesno") {
     let cur = val === "Yes" || val === "No" ? val : "";
     const row = el("div", { class: "seg-toggle" });
@@ -311,10 +516,15 @@ function fieldInput(f, val, ctx) {
   else input = el("input", { type: "text" });
   node = input;
   let v = val == null ? "" : String(val);
+  const pre = f.prefix || "", suf = f.suffix || "";
+  const strip = (t) => { // remove the fixed start/end text if it was typed or stored with it
+    if (pre && t.toLowerCase().startsWith(pre.toLowerCase())) t = t.slice(pre.length);
+    if (suf && t.toLowerCase().endsWith(suf.toLowerCase())) t = t.slice(0, t.length - suf.length);
+    return t;
+  };
   if (f.type === "prefixed") {
-    const p = f.prefix || "";
-    if (p && v.toLowerCase().startsWith(p.toLowerCase())) v = v.slice(p.length);
-    node = el("div", { class: "fm-prefix" }, el("span", { text: p }), input);
+    v = strip(v);
+    node = el("div", { class: "fm-prefix" }, pre ? el("span", { class: "fm-affix fm-affix-pre", text: pre }) : null, input, suf ? el("span", { class: "fm-affix fm-affix-suf", text: suf }) : null);
     input.placeholder = "2002547";
   }
   input.value = v;
@@ -323,13 +533,13 @@ function fieldInput(f, val, ctx) {
     get() {
       const t = input.value.trim();
       if (!t) return "";
-      if (f.type === "prefixed") { const p = f.prefix || ""; return t.toLowerCase().startsWith(p.toLowerCase()) ? t : p + t; }
+      if (f.type === "prefixed") { const core = strip(t); return core ? pre + core + suf : ""; }
       return t;
     }
   };
 }
 
-async function openFill(formId, onDone) {
+async function openFill(formId, onDone, skipDraft = false) {
   const ov = $("#fm-fill") || overlay("fm-fill");
   ov.hidden = false;
   ov.innerHTML = "";
@@ -365,40 +575,187 @@ async function openFill(formId, onDone) {
     if (taken && taken.leaderUid !== ctx.me.uid) return msg("You're already in a group", `${taken.leaderName || "A group leader"} added you to their group, so only they can fill this form for it.`);
   }
 
+  // ── Draft (auto-saved answers): this device instantly + the account (Firestore) so it follows the person around ──
+  const dUid = auth.currentUser.uid, dKey = `fmDraft:${dUid}:${f.id}`, dRef = doc(db, "forms", f.id, "drafts", dUid);
+  let draft = null, seed = resp?.answers || {};
+  if (skipDraft) {
+    try { localStorage.removeItem(dKey); } catch (e) {}
+    deleteDoc(dRef).catch(() => {});
+  } else {
+    try { const l = JSON.parse(localStorage.getItem(dKey) || "null"); if (l?.data) draft = l; } catch (e) {}
+    try { const r = await getDoc(dRef); if (r.exists() && r.data()?.data && (!draft || (r.data().savedAt || 0) > (draft.savedAt || 0))) draft = r.data(); } catch (e) {}
+    if (draft) { try { seed = JSON.parse(draft.data) || {}; } catch (e) { draft = null; seed = resp?.answers || {}; } }
+  }
+
   const info = dueInfo(d);
   box.append(el("div", { class: "fm-due fm-due-lg", style: `--due:${info.color}` }, el("span", { class: "fm-dot" }), el("b", { text: info.label }), el("span", { class: "fm-card-sub", text: " · Due " + fmtDate(d) })));
   if (f.description) box.append(el("p", { class: "fm-desc", text: f.description }));
   if (resp) box.append(el("div", { class: "fm-edit-note", text: "✎ You've already submitted — you can edit and save your answers." }));
+  if (draft) box.append(el("div", { class: "fm-edit-note fm-draft-note" },
+    el("span", { text: `↻ Your unsaved draft was restored (last saved ${fmtDate(new Date(draft.savedAt || Date.now()))}).` }),
+    el("button", { type: "button", class: "fm-linkbtn", text: "Start over", onclick: () => { if (confirm("Discard this draft and start over?")) openFill(formId, onDone, true); } })));
 
   const form = el("form", { class: "fm-form", novalidate: true });
-  const inputs = [];
-  (f.fields || []).forEach((fd) => {
-    const inp = fieldInput(fd, resp?.answers?.[fd.id], ctx);
-    inputs.push([fd, inp]);
-    form.append(el("div", { class: "fm-field" },
-      el("label", {}, fd.label, fd.required ? el("span", { class: "fm-req", text: " *" }) : null),
-      fd.help ? el("small", { text: fd.help }) : null, inp.node));
+  const pages = splitPages(f.fields || []);
+  const multi = pages.length > 1;
+  const inputs = new Map(); // question id -> { fd, inp, wrap }
+  const pageEls = pages.map((p, pi) => {
+    const pg = el("section", { class: "fm-page", hidden: pi !== 0 });
+    if (p.section && (p.section.label || p.section.help)) pg.append(el("div", { class: "fm-page-head" },
+      p.section.label ? el("h3", { text: p.section.label }) : null, p.section.help ? el("p", { text: p.section.help }) : null));
+    p.fields.forEach((fd) => {
+      const inp = fieldInput(fd, seed[fd.id], ctx);
+      const wrap = el("div", { class: "fm-field" },
+        el("label", {}, fd.label, fd.required ? el("span", { class: "fm-req", text: " *" }) : null),
+        fd.help ? el("small", { text: fd.help }) : null, inp.node);
+      inputs.set(fd.id, { fd, inp, wrap });
+      pg.append(wrap);
+    });
+    return pg;
   });
+
+  // progress indicator (only for forms with more than one page)
+  const progLabel = el("b"), progPct = el("span"), progFill = el("i"), stepsEl = el("div", { class: "fm-steps" });
+  const progress = multi ? el("div", { class: "fm-progress", role: "progressbar", "aria-valuemin": "0", "aria-valuemax": "100" },
+    el("div", { class: "fm-prog-top" }, progLabel, progPct), el("div", { class: "fm-prog-bar" }, progFill), stepsEl) : null;
+  function renderSteps(total, pos) {
+    const dots = total > 1 && total <= 8;
+    stepsEl.hidden = !dots;
+    if (!dots) return;
+    if (stepsEl.children.length !== total * 2 - 1) {
+      stepsEl.innerHTML = "";
+      for (let k = 0; k < total; k++) { if (k) stepsEl.append(el("span", { class: "fm-step-line" })); stepsEl.append(el("span", { class: "fm-step" })); }
+    }
+    const nodes = [...stepsEl.children];
+    for (let k = 0; k < total; k++) {
+      const s = nodes[k * 2];
+      s.className = "fm-step " + (k < pos ? "done" : k === pos ? "current" : "");
+      s.textContent = k < pos ? "✓" : String(k + 1);
+      if (k) nodes[k * 2 - 1].className = "fm-step-line" + (k <= pos ? " done" : "");
+    }
+  }
+
   const err = el("p", { class: "error-msg", hidden: true });
-  const btn = el("button", { type: "submit", class: "btn-primary", text: resp ? "Save changes" : "Submit" });
-  form.append(err, btn);
+  let cur = 0, F = null;
+  const rawOf = (id) => inputs.get(id)?.inp.get() ?? "";
+
+  const check = (fd, inp) => {
+    const v = inp.get();
+    if (fd.required && fd.type !== "toggle" && (isEmptyVal(v) || inp.incomplete?.())) return `"${fd.label}" is required${fd.type === "table" ? " — answer every " + (fd.dir === "col" ? "column" : "row") : ""}.`;
+    if (fd.type === "batchmates") {
+      const n = isEmptyVal(v) ? 0 : v.length;
+      if (Number(fd.min) && n < Number(fd.min)) return `"${fd.label}": select at least ${fd.min} batchmate(s).`;
+      if (Number(fd.max) && n > Number(fd.max)) return `"${fd.label}": select at most ${fd.max} batchmate(s).`;
+    }
+    if (v && fd.type === "link" && !/^https?:\/\/\S+\.\S+/i.test(v)) return `"${fd.label}" needs a valid link starting with http(s)://`;
+    if (v && fd.type === "number" && !isFinite(Number(v))) return `"${fd.label}" must be a number.`;
+    return "";
+  };
+  const validatePage = (pi) => {
+    for (const fd of pages[pi].fields) { if (!F.vis.get(fd.id)) continue; const m = check(fd, inputs.get(fd.id).inp); if (m) return { fd, msg: m }; }
+    return null;
+  };
+  const showErr = (bad) => {
+    err.textContent = bad.msg; err.hidden = false;
+    const w = inputs.get(bad.fd.id).wrap;
+    w.classList.remove("fm-shake"); void w.offsetWidth; w.classList.add("fm-shake");
+    w.scrollIntoView({ block: "center", behavior: "smooth" });
+  };
+
+  const backBtn = el("button", { type: "button", class: "ghost-btn fm-back", text: "← Back", hidden: true, onclick: () => { refresh(); const pos = F.path.indexOf(cur); if (pos > 0) showPage(F.path[pos - 1], -1); } });
+  const nextBtn = el("button", { type: "button", class: "btn-primary", text: "Next →", onclick: () => goNext() });
+  const submitBtn = el("button", { type: "submit", class: "btn-primary", text: resp ? "Save changes" : "Submit" });
+  const nav = el("div", { class: "fm-nav" }, backBtn, nextBtn, submitBtn);
+
+  // Re-evaluates the logic: shows/hides questions, updates the route, progress and buttons.
+  function refresh() {
+    F = computeFlow(f.fields || [], rawOf);
+    inputs.forEach(({ wrap }, id) => {
+      const show = F.vis.get(id) === true;
+      if (wrap.hidden === show) {
+        wrap.hidden = !show;
+        if (show) { wrap.classList.remove("fm-reveal"); void wrap.offsetWidth; wrap.classList.add("fm-reveal"); }
+      }
+    });
+    if (!F.path.includes(cur)) { cur = F.path[F.path.length - 1] ?? 0; pageEls.forEach((p, k) => { p.hidden = k !== cur; }); }
+    const pos = F.path.indexOf(cur), total = F.path.length, last = F.next(cur) === -1;
+    if (multi) {
+      const pct = Math.round(((pos + 1) / total) * 100);
+      progLabel.textContent = `Page ${pos + 1} of ${total}`; progPct.textContent = pct + "%";
+      progFill.style.width = pct + "%"; progress.setAttribute("aria-valuenow", String(pct));
+      renderSteps(total, pos);
+    }
+    backBtn.hidden = pos <= 0; nextBtn.hidden = last; submitBtn.hidden = !last;
+  }
+  function showPage(pi, dir) {
+    cur = pi;
+    pageEls.forEach((p, k) => { p.hidden = k !== pi; });
+    const pe = pageEls[pi];
+    pe.classList.remove("fm-in-fwd", "fm-in-back");
+    if (dir) { void pe.offsetWidth; pe.classList.add(dir > 0 ? "fm-in-fwd" : "fm-in-back"); }
+    err.hidden = true;
+    refresh(); queueDraft();
+    $(".fm-title", box)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  function goNext() {
+    refresh();
+    const bad = validatePage(cur);
+    if (bad) return showErr(bad);
+    const nx = F.next(cur);
+    if (nx != null && nx !== -1) showPage(nx, 1);
+  }
+
+  // ── autosave ──
+  const draftTag = el("span", { class: "fm-saved" });
+  const snapAnswers = () => { const a = {}; inputs.forEach(({ inp }, id) => { a[id] = inp.get(); }); return a; };
+  let lastSig = JSON.stringify(snapAnswers()) + "|" + cur, tLocal = null, tCloud = null, tTag = null, closed = false;
+  const flashSaved = (t) => { draftTag.textContent = t; draftTag.classList.add("show"); clearTimeout(tTag); tTag = setTimeout(() => draftTag.classList.remove("show"), 2600); };
+  function saveDraftLocal() {
+    if (closed) return;
+    const data = JSON.stringify(snapAnswers()), sig = data + "|" + cur;
+    if (sig === lastSig) return;
+    lastSig = sig;
+    const dr = { savedAt: Date.now(), page: cur, data };
+    try { localStorage.setItem(dKey, JSON.stringify(dr)); } catch (e) {}
+    draftTag.textContent = "Saving draft…"; draftTag.classList.add("show");
+    clearTimeout(tCloud);
+    tCloud = setTimeout(async () => {
+      if (closed) return;
+      try { await setDoc(dRef, dr); flashSaved("✓ Draft saved"); } catch (e) { flashSaved("✓ Draft saved on this device"); }
+    }, 1500);
+  }
+  function queueDraft() { clearTimeout(tLocal); tLocal = setTimeout(saveDraftLocal, 300); }
+  const flushDraft = () => {
+    if (!form.isConnected) { document.removeEventListener("visibilitychange", onVis); window.removeEventListener("pagehide", flushDraft); return; }
+    clearTimeout(tLocal); saveDraftLocal();
+  };
+  const onVis = () => { if (document.visibilityState === "hidden") flushDraft(); };
+  document.addEventListener("visibilitychange", onVis);
+  window.addEventListener("pagehide", flushDraft);
+
+  let queued = false;
+  const sched = () => { if (queued) return; queued = true; requestAnimationFrame(() => { queued = false; refresh(); queueDraft(); }); };
+  ["input", "change"].forEach((ev) => form.addEventListener(ev, sched));
+  form.addEventListener("click", () => setTimeout(sched, 0)); // custom dropdowns, chips, etc.
+
+  form.append(...pageEls, err, el("div", { class: "fm-draft-status" }, draftTag), nav);
+  // reopen on the page the person left off (if it's still on their route)
+  if (draft && Number.isInteger(draft.page) && draft.page > 0 && draft.page < pages.length) { cur = draft.page; pageEls.forEach((p, k) => { p.hidden = k !== cur; }); }
+  refresh();
+  lastSig = JSON.stringify(snapAnswers()) + "|" + cur;
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    refresh();
+    if (F.next(cur) !== -1) return goNext(); // Enter key on a middle page just moves on
     err.hidden = true;
-    const answers = {};
-    for (const [fd, inp] of inputs) {
-      const v = inp.get();
-      if (fd.required && fd.type !== "toggle" && (isEmptyVal(v) || inp.incomplete?.())) { err.textContent = `"${fd.label}" is required${fd.type === "table" ? " — answer every " + (fd.dir === "col" ? "column" : "row") : ""}.`; err.hidden = false; return; }
-      if (fd.type === "batchmates" && !isEmptyVal(v)) {
-        if (Number(fd.min) && v.length < Number(fd.min)) { err.textContent = `"${fd.label}": select at least ${fd.min} batchmate(s).`; err.hidden = false; return; }
-        if (Number(fd.max) && v.length > Number(fd.max)) { err.textContent = `"${fd.label}": select at most ${fd.max} batchmate(s).`; err.hidden = false; return; }
-      }
-      if (fd.type === "batchmates" && isEmptyVal(v) && Number(fd.min)) { err.textContent = `"${fd.label}": select at least ${fd.min} batchmate(s).`; err.hidden = false; return; }
-      if (v && fd.type === "link" && !/^https?:\/\/\S+\.\S+/i.test(v)) { err.textContent = `"${fd.label}" needs a valid link starting with http(s)://`; err.hidden = false; return; }
-      if (v && fd.type === "number" && !isFinite(Number(v))) { err.textContent = `"${fd.label}" must be a number.`; err.hidden = false; return; }
-      answers[fd.id] = v;
+    for (const pi of F.path) {
+      const bad = validatePage(pi);
+      if (bad) { if (pi !== cur) showPage(pi, -1); return showErr(bad); }
     }
-    btn.disabled = true; btn.textContent = "Saving…";
+    // Only questions that were actually shown are saved; hidden ones are stored empty.
+    const answers = {};
+    (f.fields || []).filter(isQ).forEach((fd) => { answers[fd.id] = F.vis.get(fd.id) === true ? inputs.get(fd.id).inp.get() : ""; });
+    submitBtn.disabled = true; submitBtn.textContent = "Saving…";
     try {
       const m = await getMe();
       // One atomic batch: the response + the group "claims" that hide chosen students from other groups.
@@ -410,21 +767,26 @@ async function openFill(formId, onDone) {
       });
       const bmField = (f.fields || []).find((x) => x.type === "batchmates");
       if (bmField) {
-        const members = Array.isArray(answers[bmField.id]) ? answers[bmField.id] : [];
-        const keep = new Set([m.uid, ...members.map((x) => x.uid)]);
+        const shown = F.vis.get(bmField.id) === true; // a hidden group field means no group is claimed
+        const members = shown && Array.isArray(answers[bmField.id]) ? answers[bmField.id] : [];
+        const keep = shown ? new Set([m.uid, ...members.map((x) => x.uid)]) : new Set();
         keep.forEach((uid) => wb.set(doc(db, "forms", f.id, "claims", uid), { leaderUid: m.uid, leaderName: m.name, fieldId: bmField.id }));
         ctx.claims.forEach((c, uid) => { if (c.leaderUid === m.uid && !keep.has(uid)) wb.delete(doc(db, "forms", f.id, "claims", uid)); });
       }
       await wb.commit();
+      closed = true; clearTimeout(tLocal); clearTimeout(tCloud); // the draft has served its purpose
+      try { localStorage.removeItem(dKey); } catch (e) {}
+      deleteDoc(dRef).catch(() => {});
       box.innerHTML = "";
       box.append(closeBtn(ov), el("div", { class: "fm-msg ok" }, el("div", { class: "fm-tick", text: "✓" }), el("h3", { text: resp ? "Changes saved" : "Submitted!" }), el("p", { text: "You can reopen this form any time before the due date to edit your answers." }),
         el("button", { class: "btn-primary", type: "button", text: "Done", onclick: () => { ov.hidden = true; } })));
       if (onDone) onDone();
     } catch (x) {
       err.textContent = hasBm ? "Couldn't save — the form may have closed, or someone you picked was just added to another group. Close and reopen the form to refresh the list." : "Couldn't save — the form may have just closed. Please try again."; err.hidden = false;
-      btn.disabled = false; btn.textContent = resp ? "Save changes" : "Submit";
+      submitBtn.disabled = false; submitBtn.textContent = resp ? "Save changes" : "Submit";
     }
   });
+  if (progress) box.append(progress);
   box.append(form);
 }
 
@@ -509,7 +871,11 @@ function buildBuilder() {
     ...Object.entries(TYPES).map(([t, l]) => el("button", { type: "button", class: "fm-addchip", text: "+ " + l, onclick: () => {
       if (t === "batchmates" && B.fields.some((x) => x.type === "batchmates")) { B.err.textContent = "A form can have only one batchmate selection field."; B.err.hidden = false; return; }
       B.err.hidden = true;
-      B.fields.push({ id: newId(), type: t, label: "", required: false, prefix: t === "prefixed" ? "AS" : "", help: "" }); renderFields(); } })));
+      B.fields.push({ id: newId(), type: t, label: "", required: false, prefix: t === "prefixed" ? "AS" : "", help: "" }); renderFields(); } })),
+    el("button", { type: "button", class: "fm-addchip fm-addpage", text: "＋ Page break", onclick: () => {
+      B.err.hidden = true;
+      if (!B.fields.length || B.fields[0].type !== "section") B.fields.unshift(newSection()); // page 1 gets its own header
+      B.fields.push(newSection()); renderFields(); } }));
   B.body = el("div", { class: "admin-modal-body fm-builder-body" }, B.heading,
     el("label", { text: "Form title" }), B.title, el("label", { text: "Description" }), B.desc,
     el("label", { text: "Due date & time" }), B.due,
@@ -522,7 +888,177 @@ function buildBuilder() {
 function renderFields() {
   B.list.innerHTML = "";
   if (!B.fields.length) B.list.append(el("p", { class: "fine-print", style: "text-align:left", text: "No fields yet — add one below." }));
+  const pg = splitPages(B.fields), pageOf = new Map();
+  pg.forEach((p, k) => { if (p.section) pageOf.set(p.section.id, k); p.fields.forEach((q) => pageOf.set(q.id, k)); });
+  const pageName = (k) => `Page ${k + 1}${pg[k].section?.label?.trim() ? " — " + pg[k].section.label.trim() : ""}`;
+  const targetsAfter = (k) => [{ v: "", t: "Continue to next page" }, { v: "submit", t: "Submit form" },
+    ...pg.flatMap((p, j) => (j > k && p.section ? [{ v: p.section.id, t: "Go to " + pageName(j) }] : []))];
+  const targetSelect = (val, k, set) => {
+    const list = targetsAfter(k);
+    const s = el("select", {}, ...list.map((o) => el("option", { value: o.v, text: o.t })));
+    s.value = list.some((o) => o.v === val) ? val : "";
+    s.addEventListener("change", () => set(s.value));
+    return s;
+  };
+
+  // IF-conditions editor (used by question visibility and page routing rules)
+  const condEditor = (cs, cands) => {
+    cs.conds ||= [];
+    const box = el("div", { class: "fm-cond" });
+    if (cs.conds.length > 1) {
+      const m = el("select", {}, el("option", { value: "all", text: "Match ALL conditions" }), el("option", { value: "any", text: "Match ANY condition" }));
+      m.value = cs.match === "any" ? "any" : "all"; m.addEventListener("change", () => { cs.match = m.value; });
+      box.append(m);
+    }
+    cs.conds.forEach((c, ci) => {
+      const q = cands.find((x) => x.id === c.src), t = q?.type, ops = t ? opsFor(t) : [];
+      if (t && !ops.includes(c.op)) c.op = ops[0];
+      const src = el("select", {}, el("option", { value: "", text: "Question…" }), ...cands.map((x) => el("option", { value: x.id, text: (x.label || "").trim() || "(untitled question)" })));
+      src.value = q ? q.id : "";
+      src.addEventListener("change", () => { c.src = src.value; const nt = cands.find((x) => x.id === c.src)?.type; c.op = nt ? opsFor(nt)[0] : "eq"; c.val = ""; renderFields(); });
+      const row = el("div", { class: "fm-cond-row" }, src);
+      if (q) {
+        const op = el("select", {}, ...ops.map((o) => el("option", { value: o, text: opLabel(t, o) })));
+        op.value = c.op; op.addEventListener("change", () => { c.op = op.value; renderFields(); });
+        row.append(op);
+        if (opNeedsValue(c.op)) {
+          const ch = condChoices(q);
+          let vi;
+          if (ch) {
+            vi = el("select", {}, el("option", { value: "", text: "Answer…" }), ...ch.map((o) => el("option", { value: o, text: o })));
+            vi.value = ch.includes(c.val) ? c.val : ""; vi.addEventListener("change", () => { c.val = vi.value; });
+          } else {
+            vi = el("input", { type: t === "number" ? "number" : t === "date" ? "date" : "text", placeholder: "Value" });
+            vi.value = c.val ?? ""; vi.addEventListener("input", () => { c.val = vi.value; });
+          }
+          row.append(vi);
+        }
+      }
+      row.append(el("button", { type: "button", class: "ghost-btn fm-del fm-x", text: "✕", "aria-label": "Remove condition", onclick: () => { cs.conds.splice(ci, 1); renderFields(); } }));
+      box.append(row);
+    });
+    box.append(el("button", { type: "button", class: "fm-addchip", text: "＋ Add condition", onclick: () => { cs.conds.push({ src: "", op: "eq", val: "" }); renderFields(); } }));
+    return box;
+  };
+
+  // "Show this question only if…"
+  const logicPanel = (f, i) => {
+    const cands = B.fields.slice(0, i).filter(isQ);
+    const n = f.logic?.conds?.length || 0;
+    const det = el("details", { class: "fm-logic", open: !!f._uiL || n > 0 });
+    det.addEventListener("toggle", () => { f._uiL = det.open; });
+    det.append(el("summary", { text: n ? `⚡ Show only if… (${n} condition${n > 1 ? "s" : ""})` : "⚡ Show only if… (conditional question)" }));
+    if (!cands.length) { det.append(el("small", { text: "Add a question above this one to use its answer as a condition." })); return det; }
+    if (!f.logic) f.logic = { match: "all", conds: [] };
+    det.append(el("small", { text: "This question only appears when the conditions below are met. Hidden questions are never required." }), condEditor(f.logic, cands));
+    return det;
+  };
+
+  // "Go to page based on the answer" (select / yes-no)
+  const branchPanel = (f) => {
+    if (f.type !== "select" && f.type !== "yesno") return null;
+    const opts = f.type === "yesno" ? ["Yes", "No"] : cleanList(f.options);
+    if (!opts.length) return null;
+    const k = pageOf.get(f.id);
+    f.branch ||= [];
+    const det = el("details", { class: "fm-logic", open: !!f._uiB || f.branch.length > 0 });
+    det.addEventListener("toggle", () => { f._uiB = det.open; });
+    det.append(el("summary", { text: f.branch.length ? `↪ Go to page by answer (${f.branch.length} set)` : "↪ Go to a different page based on the answer" }),
+      el("small", { text: "Choose where the form jumps after this page for each answer. If several questions on a page jump somewhere, the first one wins." }));
+    opts.forEach((o) => {
+      const curTo = f.branch.find((b) => b.o === o)?.to || "";
+      det.append(el("div", { class: "fm-cond-row" }, el("span", { class: "fm-branch-opt", text: o }),
+        targetSelect(curTo, k, (v) => { f.branch = f.branch.filter((b) => b.o !== o); if (v) f.branch.push({ o, to: v }); })));
+    });
+    return det;
+  };
+
+  // "Save this answer to the profile"
+  const profilePanel = (f) => {
+    if (!PROFILE_TYPES.has(f.type)) return null;
+    const p = f.profile, groups = profileGroups();
+    const gName = p?.on ? (p.group === "__new" ? (p.groupTitle || "new section") : groups.find((g) => g.id === p.group)?.title || "—") : "";
+    const det = el("details", { class: "fm-logic", open: !!f._uiP || !!p?.on });
+    det.addEventListener("toggle", () => { f._uiP = det.open; });
+    det.append(el("summary", { text: p?.on ? `👤 Saved to profile → ${gName}` : "👤 Save this answer to the profile (optional)" }));
+    const chk = el("input", { type: "checkbox" }); chk.checked = !!p?.on;
+    chk.addEventListener("change", () => {
+      f.profile = f.profile || {}; f.profile.on = chk.checked; f._uiP = true;
+      if (chk.checked) { f.profile.label ||= (f.label || "").trim(); f.profile.key ||= slugKey(f.label); f.profile.group ||= groups[0]?.id || "__new"; }
+      renderFields();
+    });
+    det.append(el("label", { class: "fm-check" }, chk, el("span", { text: "Add this answer to each person's private profile" })));
+    if (p?.on) {
+      const lab = el("input", { type: "text", placeholder: "Field name shown on the profile" }); lab.value = p.label || "";
+      const key = el("input", { type: "text", placeholder: "key, e.g. favouriteSport", maxlength: "40" }); key.value = p.key || "";
+      lab.addEventListener("input", () => { p.label = lab.value; if (!p._k) { p.key = slugKey(lab.value); key.value = p.key; } });
+      key.addEventListener("input", () => { p._k = true; p.key = key.value.trim(); });
+      const sec = el("select", {}, ...groups.map((g) => el("option", { value: g.id, text: g.title || g.id })), el("option", { value: "__new", text: "＋ New section…" }));
+      sec.value = groups.some((g) => g.id === p.group) || p.group === "__new" ? p.group : groups[0]?.id;
+      if (!p.group || (p.group !== "__new" && !groups.some((g) => g.id === p.group))) p.group = sec.value;
+      sec.addEventListener("change", () => { p.group = sec.value; renderFields(); });
+      det.append(el("div", { class: "fm-cond-row" }, el("span", { class: "fm-branch-opt", text: "Section" }), sec),
+        el("div", { class: "fm-cond-row" }, el("span", { class: "fm-branch-opt", text: "Field name" }), lab),
+        el("div", { class: "fm-cond-row" }, el("span", { class: "fm-branch-opt", text: "Key" }), key));
+      if (p.group === "__new") {
+        const gt = el("input", { type: "text", placeholder: "New section title, e.g. Hobbies" }); gt.value = p.groupTitle || "";
+        gt.addEventListener("input", () => { p.groupTitle = gt.value; });
+        det.append(el("div", { class: "fm-cond-row" }, el("span", { class: "fm-branch-opt", text: "Title" }), gt));
+      }
+      det.append(el("small", { text: `Stored as batchmates.${p.key || "key"} — private, never shown in the directory. An admin imports it from the form's Responses screen.` }));
+    }
+    return det;
+  };
+
+  // Page break card
+  const sectionCard = (f, i) => {
+    const k = pageOf.get(f.id);
+    const nextSec = B.fields.findIndex((x, n) => n > i && x.type === "section");
+    const end = nextSec < 0 ? B.fields.length : nextSec;
+    const cands = B.fields.slice(0, end).filter(isQ); // a page's rules may use any answer up to the end of that page
+    const title = el("input", { type: "text", placeholder: "Page title (optional)" }); title.value = f.label || "";
+    title.addEventListener("input", () => { f.label = title.value; });
+    const help = el("input", { type: "text", placeholder: "Page description (optional)" }); help.value = f.help || "";
+    help.addEventListener("input", () => { f.help = help.value; });
+    f.routes ||= [];
+    const routeEls = f.routes.map((r, ri) => {
+      r.conds ||= [];
+      return el("div", { class: "fm-route" },
+        el("div", { class: "fm-chain", text: "IF" }), condEditor(r, cands),
+        el("div", { class: "fm-brow" }, el("span", { class: "fm-chain", text: "THEN" }), targetSelect(r.goto || "", k, (v) => { r.goto = v; }),
+          el("button", { type: "button", class: "ghost-btn fm-del fm-x", text: "✕", "aria-label": "Remove rule", onclick: () => { f.routes.splice(ri, 1); renderFields(); } })));
+    });
+    const addQ = el("select", { class: "fm-addq" }, el("option", { value: "", text: "＋ Add a question to this page…" }), ...Object.entries(TYPES).map(([t, l]) => el("option", { value: t, text: l })));
+    addQ.addEventListener("change", () => {
+      const t = addQ.value; if (!t) return;
+      if (t === "batchmates" && B.fields.some((x) => x.type === "batchmates")) { addQ.value = ""; B.err.textContent = "A form can have only one batchmate selection field."; B.err.hidden = false; return; }
+      B.err.hidden = true;
+      B.fields.splice(end, 0, { id: newId(), type: t, label: "", required: false, prefix: t === "prefixed" ? "AS" : "", help: "" });
+      renderFields();
+    });
+    const movePage = (dir) => () => {
+      const bounds = [...(B.fields[0]?.type === "section" ? [] : [0]), ...B.fields.map((x, n) => (x.type === "section" ? n : -1)).filter((n) => n >= 0)];
+      const blocks = bounds.map((b, n) => B.fields.slice(b, bounds[n + 1] ?? B.fields.length));
+      const bi = bounds.indexOf(i), tj = bi + dir;
+      if (tj < 0 || tj >= blocks.length || blocks[tj][0].type !== "section") return;
+      [blocks[bi], blocks[tj]] = [blocks[tj], blocks[bi]];
+      B.fields = blocks.flat(); renderFields();
+    };
+    return el("div", { class: "fm-bfield fm-bsection" },
+      el("div", { class: "fm-brow" }, el("span", { class: "fm-pagebadge", text: `PAGE ${k + 1} OF ${pg.length}` })),
+      title, help,
+      el("label", { class: "fm-sublabel", text: "After this page" }), targetSelect(f.next || "", k, (v) => { f.next = v; }),
+      ...routeEls,
+      el("div", { class: "fm-brow" }, el("button", { type: "button", class: "fm-addchip", text: "＋ Add routing rule (if … then go to page …)", onclick: () => { f.routes.push({ match: "all", conds: [{ src: "", op: "eq", val: "" }], goto: "" }); renderFields(); } })),
+      addQ,
+      el("div", { class: "fm-brow fm-bactions" }, el("small", { text: "Rules are checked top to bottom; the first match wins." }), el("span", { class: "fm-spacer" }),
+        el("button", { type: "button", class: "ghost-btn", text: "↑ Page", onclick: movePage(-1) }),
+        el("button", { type: "button", class: "ghost-btn", text: "↓ Page", onclick: movePage(1) }),
+        el("button", { type: "button", class: "ghost-btn fm-del", text: "Remove page break", onclick: () => { B.fields.splice(i, 1); renderFields(); } })));
+  };
+
   B.fields.forEach((f, i) => {
+    if (f.type === "section") { B.list.append(sectionCard(f, i)); return; }
     const type = el("select", {}, ...Object.entries(TYPES).map(([t, l]) => el("option", { value: t, text: l })));
     type.value = f.type;
     type.addEventListener("change", () => {
@@ -538,6 +1074,16 @@ function renderFields() {
       const multi = el("input", { type: "checkbox" }); multi.checked = !!f.multi; multi.addEventListener("change", () => { f.multi = multi.checked; });
       extra = el("div", { class: "fm-bcol" }, el("div", { class: "fm-brow" }, lines("rows", "Rows — one per line"), lines("cols", "Columns — one per line")),
         el("div", { class: "fm-brow" }, dir), el("label", { class: "fm-req-toggle" }, multi, el("span", { text: "Allow multiple answers per row/column" })));
+    } else if (f.type === "rating") {
+      f.style = RATING_STYLES[f.style] ? f.style : "stars"; f.max = ratingMax(f);
+      const style = el("select", {}, ...Object.entries(RATING_STYLES).map(([k, l]) => el("option", { value: k, text: l })));
+      style.value = f.style; style.addEventListener("change", () => { f.style = style.value; renderFields(); });
+      const max = el("select", {}, ...[3, 4, 5, 6, 7, 8, 9, 10].map((n) => el("option", { value: n, text: n + " levels" })));
+      max.value = String(f.max); max.disabled = f.style === "emoji"; max.addEventListener("change", () => { f.max = Number(max.value); });
+      const lbl = (key, ph) => { const i2 = el("input", { type: "text", placeholder: ph, maxlength: "24" }); i2.value = f[key] || ""; i2.addEventListener("input", () => { f[key] = i2.value; }); return i2; };
+      extra = el("div", { class: "fm-bcol" }, el("div", { class: "fm-brow" }, style, max),
+        el("div", { class: "fm-brow" }, lbl("lo", "Low label, e.g. Poor"), lbl("hi", "High label, e.g. Excellent")),
+        el("small", { text: "Emoji faces always use 5 levels. Users can tap the same rating again to clear it." }));
     } else if (f.type === "batchmates") extra = el("div", { class: "fm-bcol" }, el("div", { class: "fm-brow" }, num("min", "Min members (optional)"), num("max", "Max members (optional)")),
       el("small", { text: "Whoever fills the form becomes the group leader. Picked students (and the leader) disappear from other groups' lists." }));
     const label = el("input", { type: "text", placeholder: "Question / field name" }); label.value = f.label;
@@ -546,14 +1092,20 @@ function renderFields() {
     help.addEventListener("input", () => { f.help = help.value; });
     const req = el("input", { type: "checkbox" }); req.checked = !!f.required;
     req.addEventListener("change", () => { f.required = req.checked; });
-    const prefix = el("input", { type: "text", placeholder: "Prefix, e.g. AS", class: "fm-prefix-input", hidden: f.type !== "prefixed" }); prefix.value = f.prefix || "";
-    prefix.addEventListener("input", () => { f.prefix = prefix.value.trim(); });
+    const hint = el("small");
+    const showHint = () => { hint.textContent = "Users type only the middle part, e.g. 2002547 → " + (f.prefix || "") + "2002547" + (f.suffix || ""); };
+    const prefix = el("input", { type: "text", placeholder: "Starting text, e.g. AS", class: "fm-prefix-input", hidden: f.type !== "prefixed" }); prefix.value = f.prefix || "";
+    prefix.addEventListener("input", () => { f.prefix = prefix.value.trim(); showHint(); });
+    const suffix = el("input", { type: "text", placeholder: "Ending text, e.g. @uni.lk", class: "fm-prefix-input", hidden: f.type !== "prefixed" }); suffix.value = f.suffix || "";
+    suffix.addEventListener("input", () => { f.suffix = suffix.value.trim(); showHint(); });
+    showHint();
     const mv = (dir) => () => { const j = i + dir; if (j < 0 || j >= B.fields.length) return; [B.fields[i], B.fields[j]] = [B.fields[j], B.fields[i]]; renderFields(); };
     B.list.append(el("div", { class: "fm-bfield" },
       el("div", { class: "fm-brow" }, label, type),
-      f.type === "prefixed" ? el("div", { class: "fm-brow" }, prefix, el("small", { text: "Users type only the rest, e.g. 2002547 → " + (f.prefix || "AS") + "2002547" })) : null,
+      f.type === "prefixed" ? el("div", { class: "fm-brow fm-affixrow" }, prefix, suffix, hint) : null,
       extra,
       el("div", { class: "fm-brow" }, help),
+      logicPanel(f, i), branchPanel(f), profilePanel(f),
       el("div", { class: "fm-brow fm-bactions" },
         f.type === "toggle" ? null : el("label", { class: "fm-req-toggle" }, req, el("span", { text: "Required" })),
         el("span", { class: "fm-spacer" }),
@@ -573,12 +1125,67 @@ function openBuilder(form) {
   B.desc.value = form?.description || "";
   B.due.value = form ? toInputValue(toDate(form.dueAt)) : "";
   B.fields = form ? JSON.parse(JSON.stringify(form.fields || [])) : [{ id: newId(), type: "short", label: "", required: true, prefix: "", help: "" }];
+  B.fields.forEach((f) => { if (f.profile) f.profile.on = true; });
+  loadProfileGroups().then(() => { if (!B.ov.hidden) renderFields(); });
   B.push = B.push; B.push.reset();
   // edit mode: notification is opt-in
   const cb = B.push.root.querySelector("input[type=checkbox]"); cb.checked = !form; cb.dispatchEvent(new Event("change"));
   B.push.root.querySelector(".push-toggle-row span").textContent = form ? "Notify batch that this form was updated" : "Send push notification";
   renderFields();
   B.ov.hidden = false;
+}
+
+// Checks pages / conditions / jumps before saving. Returns an error message or "".
+function validateFlow() {
+  const F = B.fields, pg = splitPages(F), idx = new Map(F.map((x, n) => [x.id, n]));
+  const qn = (x) => `"${(x.label || "").trim() || "Untitled question"}"`;
+  const conds = (cs, limit, who) => {
+    for (const c of cs?.conds || []) {
+      const n = idx.get(c.src), q = F[n];
+      if (!c.src || n === undefined || !isQ(q)) return `${who}: a condition has no question picked (or its question was deleted).`;
+      if (n >= limit) return `${who}: a condition uses ${qn(q)}, which comes later. Conditions can only use earlier questions.`;
+      if (!opsFor(q.type).includes(c.op)) return `${who}: pick how ${qn(q)} should be compared.`;
+      if (opNeedsValue(c.op)) { const ch = condChoices(q); if (ch ? !ch.includes(c.val) : !String(c.val ?? "").trim()) return `${who}: choose the answer to compare ${qn(q)} with.`; }
+    }
+    return "";
+  };
+  for (let i = 0; i < F.length; i++) {
+    const x = F[i];
+    if (x.type === "section") {
+      const k = pg.findIndex((p) => p.section === x), name = `Page ${k + 1}`;
+      const nextSec = F.findIndex((y, n) => n > i && y.type === "section"), end = nextSec < 0 ? F.length : nextSec;
+      if (!pg[k].fields.length && !(x.help || "").trim()) return `${name} is empty — add a question or remove the page break.`;
+      if (x.next && !targetOk(pg, k, x.next)) return `${name}: "After this page" points to a page that no longer exists.`;
+      for (const r of x.routes || []) {
+        if (!r.conds?.length) return `${name}: a routing rule has no condition.`;
+        const e = conds(r, end, name); if (e) return e;
+        if (!r.goto) return `${name}: choose where each routing rule should go.`;
+        if (!targetOk(pg, k, r.goto)) return `${name}: a routing rule jumps to a page that no longer exists.`;
+      }
+    } else {
+      const k = pg.findIndex((p) => p.fields.includes(x));
+      if (x.logic?.conds?.length) { const e = conds(x.logic, i, qn(x)); if (e) return e; }
+      for (const b of x.branch || []) if (!targetOk(pg, k, b.to)) return `${qn(x)}: an answer jumps to a page that no longer exists (or is not after this question's page).`;
+    }
+  }
+  return "";
+}
+
+function validateProfile() {
+  const seen = new Set(), existing = profileGroups().flatMap((g) => g.fields || []);
+  for (const f of B.fields) {
+    if (f.type === "section" || !f.profile?.on || !PROFILE_TYPES.has(f.type)) continue;
+    const p = f.profile, nm = `"${(f.label || "").trim() || "Untitled question"}"`;
+    if (!(p.label || "").trim()) return `${nm}: give the profile field a name.`;
+    if (!/^[a-z][a-zA-Z0-9]{1,39}$/.test(p.key || "")) return `${nm}: the profile key must be letters/numbers only and start with a lowercase letter (e.g. favouriteSport).`;
+    if (PROFILE_RESERVED.has(p.key)) return `${nm}: "${p.key}" is reserved — choose another key.`;
+    const ex = existing.find((x) => x.key === p.key);
+    if (ex && !ex.fromForm) return `${nm}: "${p.key}" is already a built-in profile field — choose a new key.`;
+    if (seen.has(p.key)) return `Two questions use the same profile key "${p.key}".`;
+    seen.add(p.key);
+    if (p.group === "__new" ? !(p.groupTitle || "").trim() : !p.group) return `${nm}: choose the profile section it belongs to.`;
+  }
+  return "";
 }
 
 async function saveForm() {
@@ -589,24 +1196,39 @@ async function saveForm() {
   if (!B.due.value) return fail("Pick a due date & time.");
   const due = new Date(B.due.value);
   if (isNaN(due) || due <= new Date()) return fail("Due date must be in the future.");
-  if (!B.fields.length) return fail("Add at least one field.");
+  if (!B.fields.some(isQ)) return fail("Add at least one field.");
   for (const f of B.fields) {
+    if (f.type === "section") continue;
     if (!f.label.trim()) return fail("Every field needs a label.");
-    if (f.type === "prefixed" && !f.prefix) return fail(`"${f.label}" needs a prefix (e.g. AS).`);
+    if (f.type === "prefixed" && !f.prefix && !f.suffix) return fail(`"${f.label}" needs starting text, ending text, or both (e.g. AS).`);
     const clean = (a) => (a || []).map((x) => x.trim()).filter(Boolean);
     const uniq = (a) => new Set(a.map((x) => x.toLowerCase())).size === a.length;
     if (f.type === "select" || f.type === "multi") { const o = clean(f.options); if (o.length < 2) return fail(`"${f.label}" needs at least 2 options.`); if (!uniq(o)) return fail(`"${f.label}" has duplicate options.`); }
     if (f.type === "table") { const r = clean(f.rows), c = clean(f.cols); if (!r.length || !c.length) return fail(`"${f.label}" needs at least 1 row and 1 column.`); if (!uniq(r) || !uniq(c)) return fail(`"${f.label}" has duplicate rows or columns.`); }
     if (f.type === "batchmates" && Number(f.min) && Number(f.max) && Number(f.min) > Number(f.max)) return fail(`"${f.label}": min can't be more than max.`);
   }
+  const flowErr = validateFlow() || validateProfile();
+  if (flowErr) return fail(flowErr);
   const clean = (a) => (a || []).map((x) => x.trim()).filter(Boolean);
-  const fields = B.fields.map((f) => ({
-    id: f.id, type: f.type, label: f.label.trim(), required: f.type === "toggle" ? false : !!f.required, help: (f.help || "").trim(),
-    ...(f.type === "prefixed" ? { prefix: f.prefix } : {}),
-    ...(f.type === "select" || f.type === "multi" ? { options: clean(f.options) } : {}),
-    ...(f.type === "table" ? { rows: clean(f.rows), cols: clean(f.cols), dir: f.dir === "col" ? "col" : "row", multi: !!f.multi } : {}),
-    ...(f.type === "batchmates" ? { min: Number(f.min) || 0, max: Number(f.max) || 0 } : {})
-  }));
+  const cleanConds = (cs) => ({ match: cs.match === "any" ? "any" : "all", conds: cs.conds.map((c) => ({ src: c.src, op: c.op, val: opNeedsValue(c.op) ? String(c.val ?? "").trim() : "" })) });
+  const fields = B.fields.map((f) => {
+    if (f.type === "section") {
+      const routes = (f.routes || []).map((r) => ({ ...cleanConds(r), goto: r.goto }));
+      return { id: f.id, type: "section", label: (f.label || "").trim(), help: (f.help || "").trim(), required: false, ...(f.next ? { next: f.next } : {}), ...(routes.length ? { routes } : {}) };
+    }
+    const branch = (f.branch || []).map((b) => ({ o: b.o, to: b.to })).filter((b) => (f.type === "yesno" ? ["Yes", "No"] : clean(f.options)).includes(b.o));
+    return {
+      id: f.id, type: f.type, label: f.label.trim(), required: f.type === "toggle" ? false : !!f.required, help: (f.help || "").trim(),
+      ...(f.type === "prefixed" ? { prefix: f.prefix || "", suffix: f.suffix || "" } : {}),
+      ...(f.type === "select" || f.type === "multi" ? { options: clean(f.options) } : {}),
+      ...(f.type === "table" ? { rows: clean(f.rows), cols: clean(f.cols), dir: f.dir === "col" ? "col" : "row", multi: !!f.multi } : {}),
+      ...(f.type === "batchmates" ? { min: Number(f.min) || 0, max: Number(f.max) || 0 } : {}),
+      ...(f.profile?.on && PROFILE_TYPES.has(f.type) ? { profile: { key: f.profile.key, label: (f.profile.label || "").trim(), group: f.profile.group, ...(f.profile.group === "__new" ? { groupTitle: (f.profile.groupTitle || "").trim() } : {}) } } : {}),
+      ...(f.type === "rating" ? { style: RATING_STYLES[f.style] ? f.style : "stars", max: ratingMax(f), lo: (f.lo || "").trim(), hi: (f.hi || "").trim() } : {}),
+      ...(f.logic?.conds?.length ? { logic: cleanConds(f.logic) } : {}),
+      ...(branch.length ? { branch } : {})
+    };
+  });
   const data = { title, description: B.desc.value.trim(), fields, dueAt: due };
   B.saveBtn.disabled = true; B.saveBtn.textContent = "Saving…";
   try {
@@ -637,7 +1259,13 @@ async function deleteFormAndData(f, done) {
   catch (e) { return alert("Couldn't read the responses — please try again."); }
   if (!confirm(`Permanently delete "${f.title}" and its ${snap.size} response(s)? This cannot be undone.`)) return;
   try {
-    const all = [...snap.docs, ...claims];
+    // Also remove every student's auto-saved draft for this form. Admins can't read drafts, but can delete
+    // them by id (deleting a draft that doesn't exist is harmless), so we target each student in the roster.
+    let roster = [];
+    try { roster = await getRoster(); } catch (e) {}
+    const draftUids = new Set([...roster.map((b) => b.uid), ...snap.docs.map((d) => d.id), ...claims.map((d) => d.id)]);
+    const drafts = [...draftUids].map((uid) => ({ ref: doc(db, "forms", f.id, "drafts", uid) }));
+    const all = [...snap.docs, ...claims, ...drafts];
     for (let i = 0; i < all.length; i += 400) {
       const b = writeBatch(db);
       all.slice(i, i + 400).forEach((d) => b.delete(d.ref));
@@ -677,7 +1305,7 @@ let R = null;
 const rvCols = () => R.mode === "pending"
   ? [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" }]
   : [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" },
-     ...(R.form.fields || []).flatMap((f) => f.type === "batchmates" ? [{ k: "_leader", l: "Leader" }, { k: f.id, l: f.label }] : [{ k: f.id, l: f.label }]),
+     ...(R.form.fields || []).filter(isQ).flatMap((f) => f.type === "batchmates" ? [{ k: "_leader", l: "Leader" }, { k: f.id, l: f.label }] : [{ k: f.id, l: f.label }]),
      { k: "_at", l: "Responded At" }];
 function rvVal(r, k) {
   if (k === "_name") return r.name || "";
@@ -731,6 +1359,7 @@ function renderResponses() {
     el("p", { class: "section-label", text: R.form.title || "Responses" }),
     el("div", { class: "fm-tabs" }, tab("responses", `Responses (${R.responses.length})`), tab("pending", `Not submitted (${R.pending.length})`)),
     el("div", { class: "admin-list-controls", style: "margin:12px 0;" }, sel, txt,
+      profileMappings(R.form).length ? el("button", { type: "button", class: "ghost-btn", style: small + "border-color:#8b5cf6;color:#8b5cf6;", text: "👤 Import to profiles", onclick: openProfileImport }) : null,
       el("button", { type: "button", class: "ghost-btn", style: small, text: "Download Excel", onclick: exportXlsx }),
       el("button", { type: "button", class: "ghost-btn", style: small, text: "Download PDF", onclick: exportPdf }),
       el("button", { type: "button", class: "ghost-btn", style: small, text: "Refresh", onclick: () => openResponses(R.form) })),
@@ -769,25 +1398,119 @@ function openResponseView(r) {
     el("div", { class: "fm-edit-note", text: `Response by ${r.name || "—"}${r.index ? " (" + r.index + ")" : ""}${r.respondedAt ? " · " + fmtDate(toDate(r.respondedAt)) : ""} — view only` }));
   if (f.description) box.append(el("p", { class: "fm-desc", text: f.description }));
   const form = el("div", { class: "fm-form fm-readonly" });
-  (f.fields || []).forEach((fd) => {
-    const v = r.answers?.[fd.id];
-    let node;
-    if (fd.type === "batchmates") {
-      const ms = Array.isArray(v) ? v : [];
-      node = el("div", { class: "fm-bm" },
-        el("p", { class: "fine-print", style: "text-align:left;margin:0;", text: `Leader: ${r.name || "—"}${r.index ? " (" + r.index + ")" : ""}` }),
-        ms.length ? el("ul", { class: "pill-list" }, ...ms.map((m) => el("li", { text: m.name + (m.index ? " — " + m.index : "") }))) : el("p", { class: "fine-print", style: "text-align:left;", text: "No members selected." }));
-    } else if (!["yesno", "toggle", "select", "multi", "table"].includes(fd.type)) {
-      // Text-like answers: plain wrapped text so long answers show in full.
-      const txt = fmtAnswer(fd, v);
-      node = fd.type === "link" && txt ? el("a", { class: "fm-ans", href: txt, target: "_blank", rel: "noopener", text: txt }) : el("div", { class: "fm-ans" + (txt ? "" : " empty"), text: txt || "—" });
-    } else {
-      node = fieldInput(fd, v, { me: null, roster: [], claims: new Map() }).node;
-      node.setAttribute("inert", "");
-    }
-    form.append(el("div", { class: "fm-field" }, el("label", {}, fd.label, fd.required ? el("span", { class: "fm-req", text: " *" }) : null), fd.help ? el("small", { text: fd.help }) : null, node));
+  const flow = computeFlow(f.fields || [], (id) => r.answers?.[id]); // only the pages / questions this person actually saw
+  flow.pages.forEach((pgx, pi) => {
+    if (!flow.path.includes(pi)) return;
+    if (pgx.section && (pgx.section.label || pgx.section.help || flow.pages.length > 1)) form.append(el("div", { class: "fm-page-head" },
+      el("h3", { text: pgx.section.label || `Page ${pi + 1}` }), pgx.section.help ? el("p", { text: pgx.section.help }) : null));
+    pgx.fields.forEach((fd) => {
+      if (!flow.vis.get(fd.id)) return;
+      const v = r.answers?.[fd.id];
+      let node;
+      if (fd.type === "batchmates") {
+        const ms = Array.isArray(v) ? v : [];
+        node = el("div", { class: "fm-bm" },
+          el("p", { class: "fine-print", style: "text-align:left;margin:0;", text: `Leader: ${r.name || "—"}${r.index ? " (" + r.index + ")" : ""}` }),
+          ms.length ? el("ul", { class: "pill-list" }, ...ms.map((m) => el("li", { text: m.name + (m.index ? " — " + m.index : "") }))) : el("p", { class: "fine-print", style: "text-align:left;", text: "No members selected." }));
+      } else if (!["yesno", "toggle", "select", "multi", "table", "rating"].includes(fd.type)) {
+        // Text-like answers: plain wrapped text so long answers show in full.
+        const txt = fmtAnswer(fd, v);
+        node = fd.type === "link" && txt ? el("a", { class: "fm-ans", href: txt, target: "_blank", rel: "noopener", text: txt }) : el("div", { class: "fm-ans" + (txt ? "" : " empty"), text: txt || "—" });
+      } else {
+        node = fieldInput(fd, v, { me: null, roster: [], claims: new Map() }).node;
+        node.setAttribute("inert", "");
+      }
+      form.append(el("div", { class: "fm-field" }, el("label", {}, fd.label, fd.required ? el("span", { class: "fm-req", text: " *" }) : null), fd.help ? el("small", { text: fd.help }) : null, node));
+    });
   });
   box.append(form, el("button", { type: "button", class: "ghost-btn", text: "Close", onclick: () => { ov.hidden = true; } }));
+}
+
+// Admin: choose which mapped answers to write into private profiles.
+async function openProfileImport() {
+  const form = R.form, maps = profileMappings(form);
+  const ov = $("#fm-pimp") || overlay("fm-pimp");
+  ov.hidden = false; ov.innerHTML = "";
+  const box = el("div", { class: "modal-box fm-box" }, closeBtn(ov));
+  ov.append(box);
+  box.append(el("h2", { class: "fm-title", text: "Import to private profiles" }),
+    el("p", { class: "fm-desc", text: "Tick the answers to write into each person's private profile (their batchmate record). Blank answers are skipped and never overwrite existing data. Imported fields are never shown in the public directory." }));
+  const status = el("p", { class: "info-text", text: "Loading…" });
+  box.append(status);
+  let groups;
+  try { groups = JSON.parse(JSON.stringify(await loadProfileGroups(true))); } catch (e) { status.textContent = "Could not load the profile sections."; return; }
+  // Work out what each mapped question would import.
+  const flows = new Map(R.responses.map((r) => [r.uid, computeFlow(form.fields || [], (id) => r.answers?.[id])]));
+  const items = maps.map((q) => {
+    const vals = [];
+    R.responses.forEach((r) => { if (!flows.get(r.uid).vis.get(q.id)) return; const v = profileValue(q, r.answers?.[q.id]); if (v !== undefined) vals.push({ uid: r.uid, name: r.name, v }); });
+    return { q, vals, on: vals.length > 0 };
+  });
+  status.remove();
+  const sectionName = (p) => (p.group === "__new" ? `${p.groupTitle || "New section"} (new)` : groups.find((g) => g.id === p.group)?.title || "⚠ section missing");
+  const preview = (v) => (Array.isArray(v) ? v.join(", ") : String(v)).slice(0, 40);
+  const list = el("div", { class: "fm-pi-list" });
+  items.forEach((it) => {
+    const c = el("input", { type: "checkbox" }); c.checked = it.on; c.disabled = !it.vals.length;
+    c.addEventListener("change", () => { it.on = c.checked; });
+    list.append(el("label", { class: "fm-pi-row" + (it.vals.length ? "" : " off") }, c, el("div", {},
+      el("b", { text: it.q.label }),
+      el("div", { class: "fm-pi-meta", text: `→ ${sectionName(it.q.profile)} · “${it.q.profile.label}” · key ${it.q.profile.key}` }),
+      el("div", { class: "fm-pi-meta", text: it.vals.length ? `${it.vals.length} answer(s) · e.g. ${it.vals.slice(0, 2).map((x) => `${x.name || "?"}: ${preview(x.v)}`).join("  |  ")}` : "No answers to import" }))));
+  });
+  const err = el("p", { class: "error-msg", hidden: true });
+  const go = el("button", { type: "button", class: "btn-primary", text: "Import selected fields" });
+  box.append(list, err, go, el("button", { type: "button", class: "ghost-btn", text: "Cancel", onclick: () => { ov.hidden = true; } }));
+
+  go.addEventListener("click", async () => {
+    const chosen = items.filter((it) => it.on && it.vals.length);
+    err.hidden = true;
+    if (!chosen.length) { err.textContent = "Tick at least one field."; err.hidden = false; return; }
+    // guard the keys
+    const existing = groups.flatMap((g) => g.fields || []), seen = new Set();
+    for (const it of chosen) {
+      const p = it.q.profile, ex = existing.find((x) => x.key === p.key);
+      const bad = PROFILE_RESERVED.has(p.key) ? `"${p.key}" is a reserved key.` : ex && !ex.fromForm ? `"${p.key}" is already a built-in profile field.` : seen.has(p.key) ? `Two fields use the key "${p.key}".` : p.group !== "__new" && !groups.some((g) => g.id === p.group) ? `The section for "${p.label}" no longer exists — edit the form and pick another.` : "";
+      if (bad) { err.textContent = `${it.q.label}: ${bad}`; err.hidden = false; return; }
+      seen.add(p.key);
+    }
+    go.disabled = true; go.textContent = "Importing…";
+    try {
+      // 1) add the fields to their sections (the Dashboard renders sections from this schema)
+      const nextOrder = (g) => Math.max(-1, ...(g.fields || []).map((x) => x.order || 0)) + 1;
+      chosen.forEach((it) => {
+        const p = it.q.profile;
+        let g = groups.find((x) => x.id === p.group);
+        if (p.group === "__new") {
+          const id = slugId(p.groupTitle) || "custom";
+          g = groups.find((x) => x.id === id);
+          if (!g) { g = { id, title: p.groupTitle, order: Math.max(-1, ...groups.map((x) => x.order || 0)) + 1, fields: [] }; groups.push(g); }
+        }
+        g.fields = g.fields || [];
+        const old = groups.flatMap((x) => x.fields || []).find((x) => x.key === p.key);
+        if (old) { old.label = p.label; if (!g.fields.includes(old)) { groups.forEach((x) => { x.fields = (x.fields || []).filter((y) => y !== old); }); old.order = nextOrder(g); g.fields.push(old); } }
+        else g.fields.push({ key: p.key, label: p.label, order: nextOrder(g), public: false, fromForm: form.id });
+      });
+      await setDoc(doc(db, "config", "directoryFields"), { groups }, { merge: true });
+      PROFILE_GROUPS = groups; PROFILE_DOC_EXISTS = true;
+      // 2) write the values into each person's /batchmates record
+      const byUid = new Map();
+      chosen.forEach((it) => it.vals.forEach((x) => { byUid.set(x.uid, { ...(byUid.get(x.uid) || {}), [it.q.profile.key]: x.v }); }));
+      const entries = [...byUid]; let ok = 0, fail = 0;
+      for (let i = 0; i < entries.length; i += 400) {
+        const chunk = entries.slice(i, i + 400);
+        try { const wb = writeBatch(db); chunk.forEach(([uid, obj]) => wb.update(doc(db, "batchmates", uid), obj)); await wb.commit(); ok += chunk.length; }
+        catch (e) { for (const [uid, obj] of chunk) { try { await updateDoc(doc(db, "batchmates", uid), obj); ok++; } catch (x) { fail++; } } } // one bad record shouldn't sink the rest
+      }
+      box.innerHTML = "";
+      box.append(closeBtn(ov), el("div", { class: "fm-msg ok" }, el("div", { class: "fm-tick", text: "✓" }), el("h3", { text: "Imported to profiles" }),
+        el("p", { text: `${chosen.length} field(s) added to ${new Set(chosen.map((it) => sectionName(it.q.profile))).size} section(s). ${ok} profile(s) updated${fail ? `, ${fail} failed (record missing or no permission)` : ""}. People see it on their Dashboard after a refresh.` }),
+        el("button", { class: "btn-primary", type: "button", text: "Done", onclick: () => { ov.hidden = true; } })));
+    } catch (e) {
+      err.textContent = "Import failed — check that your admin account has the Forms permission and the updated Firestore rules are published."; err.hidden = false;
+      go.disabled = false; go.textContent = "Import selected fields";
+    }
+  });
 }
 
 function exportData() {
