@@ -25,13 +25,14 @@ const TYPES = {
   short: "Short answer", long: "Long answer", link: "Link",
   date: "Date", number: "Number", prefixed: "Pre-filled (start / end text)",
   yesno: "Yes / No", toggle: "Toggle (On/Off)", select: "Select one option", multi: "Select multiple options",
-  rating: "Rating scale", table: "Option table", batchmates: "Batchmate selection (groups)"
+  rating: "Rating scale", priority: "Priority choice (ranked options)", table: "Option table", batchmates: "Batchmate selection (groups)"
 };
 const isEmptyVal = (v) => v === "" || v == null || (Array.isArray(v) && !v.length);
 // Human-readable text for any answer (response table + Excel/PDF export).
 function fmtAnswer(fd, v) {
   if (isEmptyVal(v)) return "";
   if (typeof v === "boolean") return v ? "On" : "Off";
+  if (Array.isArray(v) && fd?.type === "priority") return v.map((o, i) => `${i + 1}. ${o}`).join("; ");
   if (Array.isArray(v)) return fd?.type === "batchmates"
     ? v.map((m) => `${m.name}${m.index ? " (" + m.index + ")" : ""}`).join("; ")
     : v.join(", ");
@@ -64,7 +65,7 @@ const OP_TEXT = { eq: "is", neq: "is not", has: "includes", nhas: "does not incl
 function opsFor(t) {
   if (t === "yesno" || t === "select") return ["eq", "neq", "filled", "empty"];
   if (t === "toggle") return ["eq"];
-  if (t === "multi") return ["has", "nhas", "filled", "empty"];
+  if (t === "multi" || t === "priority") return ["has", "nhas", "filled", "empty"];
   if (t === "number" || t === "date" || t === "rating") return ["eq", "neq", "gt", "lt", "filled", "empty"];
   if (t === "table" || t === "batchmates") return ["filled", "empty"];
   return ["eq", "neq", "has", "nhas", "filled", "empty"];
@@ -72,15 +73,15 @@ function opsFor(t) {
 function opLabel(t, op) {
   if (t === "date" && op === "gt") return "is after";
   if (t === "date" && op === "lt") return "is before";
-  if (op === "has" && t !== "multi") return "contains";
-  if (op === "nhas" && t !== "multi") return "does not contain";
+  if (op === "has" && t !== "multi" && t !== "priority") return "contains";
+  if (op === "nhas" && t !== "multi" && t !== "priority") return "does not contain";
   return OP_TEXT[op];
 }
 const opNeedsValue = (op) => op !== "filled" && op !== "empty";
 function condChoices(q) {
   if (q.type === "yesno") return ["Yes", "No"];
   if (q.type === "toggle") return ["On", "Off"];
-  if (q.type === "select" || q.type === "multi") return cleanList(q.options);
+  if (q.type === "select" || q.type === "multi" || q.type === "priority") return cleanList(q.options);
   if (q.type === "rating") return Array.from({ length: ratingMax(q) }, (_, i) => String(i + 1));
   return null;
 }
@@ -471,6 +472,39 @@ function fieldInput(f, val, ctx) {
     paint();
     return { node: wrap, get: () => cur };
   }
+  if (t === "priority") {
+    // Tap options in order of preference: the first tap is priority 1, the next is 2, and so on.
+    // Tapping a chosen option removes it and the later ones move up. Stored as an ordered array.
+    const order = (Array.isArray(val) ? val : []).filter((o, i, a) => opts.includes(o) && a.indexOf(o) === i);
+    const max = Number(f.max) || 0;
+    const box = el("div", { class: "fm-prio", role: "group", "aria-label": f.label || "Priority" });
+    const hint = el("p", { class: "fm-prio-hint" });
+    const rows = opts.map((o) => {
+      const badge = el("span", { class: "fm-prio-badge", "aria-hidden": "true" });
+      const r = el("button", { type: "button", class: "fm-prio-row", "aria-pressed": "false" }, badge, el("span", { class: "fm-prio-text", text: o }));
+      r.addEventListener("click", () => {
+        const at = order.indexOf(o);
+        if (at >= 0) order.splice(at, 1);
+        else if (!max || order.length < max) order.push(o);
+        paint();
+      });
+      box.append(r);
+      return [o, r, badge];
+    });
+    function paint() {
+      rows.forEach(([o, r, badge]) => {
+        const at = order.indexOf(o);
+        badge.textContent = at >= 0 ? String(at + 1) : "";
+        r.classList.toggle("on", at >= 0);
+        r.setAttribute("aria-pressed", String(at >= 0));
+        r.disabled = !!max && order.length >= max && at < 0;
+      });
+      const lim = max ? ` (up to ${max})` : "";
+      hint.textContent = order.length ? `${order.length} chosen${lim} · tap a chosen option to remove it` : `Tap options in order of priority${lim} — first tap is priority 1`;
+    }
+    paint();
+    return { node: el("div", { class: "fm-prio-wrap" }, box, hint), get: () => (order.length ? [...order] : "") };
+  }
   if (t === "multi") {
     const cur = new Set(Array.isArray(val) ? val : []);
     const box = el("div", { class: "member-checklist" });
@@ -590,6 +624,7 @@ async function openFill(formId, onDone, skipDraft = false) {
   const info = dueInfo(d);
   box.append(el("div", { class: "fm-due fm-due-lg", style: `--due:${info.color}` }, el("span", { class: "fm-dot" }), el("b", { text: info.label }), el("span", { class: "fm-card-sub", text: " · Due " + fmtDate(d) })));
   if (f.description) box.append(el("p", { class: "fm-desc", text: f.description }));
+  if (f.signup?.fee) box.append(el("div", { class: "fm-edit-note", text: `💰 Amount per student: ${f.signup.cur || "Rs."} ${fmtMoney(f.signup.fee)}` }));
   if (resp) box.append(el("div", { class: "fm-edit-note", text: "✎ You've already submitted — you can edit and save your answers." }));
   if (draft) box.append(el("div", { class: "fm-edit-note fm-draft-note" },
     el("span", { text: `↻ Your unsaved draft was restored (last saved ${fmtDate(new Date(draft.savedAt || Date.now()))}).` }),
@@ -642,6 +677,10 @@ async function openFill(formId, onDone, skipDraft = false) {
   const check = (fd, inp) => {
     const v = inp.get();
     if (fd.required && fd.type !== "toggle" && (isEmptyVal(v) || inp.incomplete?.())) return `"${fd.label}" is required${fd.type === "table" ? " — answer every " + (fd.dir === "col" ? "column" : "row") : ""}.`;
+    if (fd.type === "priority" && !isEmptyVal(v)) {
+      if (Number(fd.min) && v.length < Number(fd.min)) return `"${fd.label}": choose at least ${fd.min} option(s).`;
+      if (Number(fd.max) && v.length > Number(fd.max)) return `"${fd.label}": choose at most ${fd.max} option(s).`;
+    }
     if (fd.type === "batchmates") {
       const n = isEmptyVal(v) ? 0 : v.length;
       if (Number(fd.min) && n < Number(fd.min)) return `"${fd.label}": select at least ${fd.min} batchmate(s).`;
@@ -861,6 +900,21 @@ function buildBuilder() {
   B.title = el("input", { type: "text", placeholder: "Form title", class: "fm-title-input" });
   B.desc = el("textarea", { rows: 2, placeholder: "Description (optional)" });
   B.due = el("input", { type: "datetime-local" });
+  // Form type: a "sign-up list" (trip / event) can print a one-page tick-sheet PDF from its responses.
+  B.kind = el("select", {}, el("option", { value: "standard", text: "Standard form" }), el("option", { value: "signup", text: "Sign-up list (trip / event) — printable PDF sheet" }));
+  B.sFee = el("input", { type: "number", min: "0", step: "any", inputmode: "decimal", placeholder: "Amount per student (optional)" });
+  B.sCur = el("input", { type: "text", maxlength: "8", placeholder: "Currency, e.g. Rs." });
+  B.sNote = el("input", { type: "text", maxlength: "120", placeholder: "Line under the PDF title (optional), e.g. Trip fund collection" });
+  B.signupPanel = el("div", { class: "fm-signup-panel", hidden: true },
+    el("small", { text: "Students' names and index numbers come from their accounts. In the responses, “Trip sheet PDF” prints the form title, a tick box before each name, the amount per student, a blank date and two blank signature lines on one page." }),
+    el("div", { class: "fm-brow" }, B.sFee, B.sCur), B.sNote);
+  B.kind.addEventListener("change", () => {
+    B.signupPanel.hidden = B.kind.value !== "signup";
+    // untouched starter field → swap in a ready-made "Are you going?" question
+    if (B.kind.value === "signup" && B.fields.length === 1 && B.fields[0].type === "short" && !(B.fields[0].label || "").trim()) {
+      B.fields = [{ id: "_going", type: "yesno", label: "Are you going?", required: true, prefix: "", help: "" }]; renderFields();
+    }
+  });
   B.list = el("div", { class: "fm-builder-list" });
   B.push = pushControls(true, "Send push notification");
   B.err = el("p", { class: "error-msg", hidden: true });
@@ -879,6 +933,7 @@ function buildBuilder() {
   B.body = el("div", { class: "admin-modal-body fm-builder-body" }, B.heading,
     el("label", { text: "Form title" }), B.title, el("label", { text: "Description" }), B.desc,
     el("label", { text: "Due date & time" }), B.due,
+    el("label", { text: "Form type" }), B.kind, B.signupPanel,
     el("p", { class: "section-label", style: "margin-top:18px;", text: "Fields" }), B.list, chips,
     B.pushWrap = el("div", { style: "margin-top:18px;" }, B.push.root), B.err, B.saveBtn);
   B.box = el("div", { class: "modal-box" }, closeBtn(ov), B.body, B.result);
@@ -1068,6 +1123,9 @@ function renderFields() {
     const num = (key, ph) => { const n = el("input", { type: "number", min: "0", placeholder: ph }); n.value = f[key] || ""; n.addEventListener("input", () => { f[key] = n.value; }); return n; };
     let extra = null;
     if (f.type === "select" || f.type === "multi") extra = el("div", { class: "fm-brow fm-bcol" }, lines("options", "Options — one per line"));
+    else if (f.type === "priority") extra = el("div", { class: "fm-bcol" }, el("div", { class: "fm-brow fm-bcol" }, lines("options", "Options — one per line")),
+      el("div", { class: "fm-brow" }, num("min", "Min choices (optional)"), num("max", "Max choices (optional)")),
+      el("small", { text: "Students tap options in order; each chosen option shows its priority number. Responses list them from priority 1 downwards." }));
     else if (f.type === "table") {
       const dir = el("select", {}, el("option", { value: "row", text: "One answer per row (choices across ↔ horizontal)" }), el("option", { value: "col", text: "One answer per column (choices down ↕ vertical)" }));
       dir.value = f.dir === "col" ? "col" : "row"; dir.addEventListener("change", () => { f.dir = dir.value; });
@@ -1124,6 +1182,11 @@ function openBuilder(form) {
   B.title.value = form?.title || "";
   B.desc.value = form?.description || "";
   B.due.value = form ? toInputValue(toDate(form.dueAt)) : "";
+  B.kind.value = form?.signup ? "signup" : "standard";
+  B.sFee.value = form?.signup?.fee ? String(form.signup.fee) : "";
+  B.sCur.value = form?.signup?.cur || "";
+  B.sNote.value = form?.signup?.note || "";
+  B.signupPanel.hidden = B.kind.value !== "signup";
   B.fields = form ? JSON.parse(JSON.stringify(form.fields || [])) : [{ id: newId(), type: "short", label: "", required: true, prefix: "", help: "" }];
   B.fields.forEach((f) => { if (f.profile) f.profile.on = true; });
   loadProfileGroups().then(() => { if (!B.ov.hidden) renderFields(); });
@@ -1204,6 +1267,13 @@ async function saveForm() {
     const clean = (a) => (a || []).map((x) => x.trim()).filter(Boolean);
     const uniq = (a) => new Set(a.map((x) => x.toLowerCase())).size === a.length;
     if (f.type === "select" || f.type === "multi") { const o = clean(f.options); if (o.length < 2) return fail(`"${f.label}" needs at least 2 options.`); if (!uniq(o)) return fail(`"${f.label}" has duplicate options.`); }
+    if (f.type === "priority") {
+      const o = clean(f.options); if (o.length < 2) return fail(`"${f.label}" needs at least 2 options.`); if (!uniq(o)) return fail(`"${f.label}" has duplicate options.`);
+      const mn = Number(f.min) || 0, mx = Number(f.max) || 0;
+      if (mx && mx > o.length) return fail(`"${f.label}": max choices can't be more than the number of options.`);
+      if (mn && mx && mn > mx) return fail(`"${f.label}": min choices can't be more than max choices.`);
+      if (mn > o.length) return fail(`"${f.label}": min choices can't be more than the number of options.`);
+    }
     if (f.type === "table") { const r = clean(f.rows), c = clean(f.cols); if (!r.length || !c.length) return fail(`"${f.label}" needs at least 1 row and 1 column.`); if (!uniq(r) || !uniq(c)) return fail(`"${f.label}" has duplicate rows or columns.`); }
     if (f.type === "batchmates" && Number(f.min) && Number(f.max) && Number(f.min) > Number(f.max)) return fail(`"${f.label}": min can't be more than max.`);
   }
@@ -1220,7 +1290,8 @@ async function saveForm() {
     return {
       id: f.id, type: f.type, label: f.label.trim(), required: f.type === "toggle" ? false : !!f.required, help: (f.help || "").trim(),
       ...(f.type === "prefixed" ? { prefix: f.prefix || "", suffix: f.suffix || "" } : {}),
-      ...(f.type === "select" || f.type === "multi" ? { options: clean(f.options) } : {}),
+      ...(f.type === "select" || f.type === "multi" || f.type === "priority" ? { options: clean(f.options) } : {}),
+      ...(f.type === "priority" ? { min: Number(f.min) || 0, max: Number(f.max) || 0 } : {}),
       ...(f.type === "table" ? { rows: clean(f.rows), cols: clean(f.cols), dir: f.dir === "col" ? "col" : "row", multi: !!f.multi } : {}),
       ...(f.type === "batchmates" ? { min: Number(f.min) || 0, max: Number(f.max) || 0 } : {}),
       ...(f.profile?.on && PROFILE_TYPES.has(f.type) ? { profile: { key: f.profile.key, label: (f.profile.label || "").trim(), group: f.profile.group, ...(f.profile.group === "__new" ? { groupTitle: (f.profile.groupTitle || "").trim() } : {}) } } : {}),
@@ -1229,7 +1300,11 @@ async function saveForm() {
       ...(branch.length ? { branch } : {})
     };
   });
-  const data = { title, description: B.desc.value.trim(), fields, dueAt: due };
+  const isSignup = B.kind.value === "signup";
+  const fee = Number(B.sFee.value);
+  if (isSignup && B.sFee.value && !(isFinite(fee) && fee >= 0)) return fail("Amount per student must be a number.");
+  const signup = isSignup ? { fee: B.sFee.value ? fee : 0, cur: B.sCur.value.trim() || "Rs.", note: B.sNote.value.trim(), goingId: B.fields.some((x) => x.id === "_going") ? "_going" : "" } : null;
+  const data = { title, description: B.desc.value.trim(), fields, dueAt: due, signup };
   B.saveBtn.disabled = true; B.saveBtn.textContent = "Saving…";
   try {
     let id;
@@ -1303,11 +1378,13 @@ function openRepublish(f, done) {
 // ── Responses viewer (table like the Data tab) ──
 let R = null;
 const rvCols = () => R.mode === "pending"
-  ? [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" }]
+  ? [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" }, ...(R.pcols || []).map((p) => ({ k: "_p:" + p.key, l: p.label }))]
   : [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" },
      ...(R.form.fields || []).filter(isQ).flatMap((f) => f.type === "batchmates" ? [{ k: "_leader", l: "Leader" }, { k: f.id, l: f.label }] : [{ k: f.id, l: f.label }]),
-     { k: "_at", l: "Responded At" }];
+     { k: "_at", l: "Responded At" },
+     ...(R.pcols || []).map((p) => ({ k: "_p:" + p.key, l: p.label }))];
 function rvVal(r, k) {
+  if (k.startsWith("_p:")) return fmtProfileVal(PROFILE_ROWS?.get(r.uid)?.[k.slice(3)]); // profile column
   if (k === "_name") return r.name || "";
   if (k === "_index") return r.index || "";
   if (k === "_leader") return r.name || ""; // the person who filled the form is the group leader
@@ -1334,13 +1411,19 @@ async function openResponses(form) {
   ov.hidden = false; ov.innerHTML = "";
   const box = el("div", { class: "modal-box" }, closeBtn(ov), el("div", { class: "admin-modal-body", id: "fm-resp-body" }, el("p", { class: "info-text", text: "Loading…" })));
   ov.append(box);
-  R = { form, mode: "responses", sort: { key: null, dir: "asc" }, filterKey: "", filterText: "", responses: [], pending: [] };
+  let saved = []; try { saved = JSON.parse(localStorage.getItem(`fmProfCols:${form.id}`) || "[]"); } catch (e) {}
+  R = { form, mode: "responses", sort: { key: null, dir: "asc" }, filterKey: "", filterText: "", responses: [], pending: [],
+        pcols: Array.isArray(saved) ? saved.filter((p) => p && p.key && p.label) : [], pcolErr: "" };
   try {
     const [rs, roster] = await Promise.all([getDocs(collection(db, "forms", form.id, "responses")), getRoster()]);
     R.responses = rs.docs.map((d) => ({ uid: d.id, ...d.data() }));
     const done = new Set(R.responses.map((r) => r.uid));
     R.pending = roster.filter((b) => !done.has(b.uid));
   } catch (e) { $("#fm-resp-body").innerHTML = '<p class="error-msg">Could not load responses (permission?).</p>'; return; }
+  if (R.pcols.length) {
+    try { await loadProfileRows(true); }
+    catch (e) { R.pcols = []; R.pcolErr = "Profile columns couldn't be loaded (check the Forms permission and that the updated Firestore rules are published)."; }
+  }
   renderResponses();
 }
 
@@ -1360,9 +1443,12 @@ function renderResponses() {
     el("div", { class: "fm-tabs" }, tab("responses", `Responses (${R.responses.length})`), tab("pending", `Not submitted (${R.pending.length})`)),
     el("div", { class: "admin-list-controls", style: "margin:12px 0;" }, sel, txt,
       profileMappings(R.form).length ? el("button", { type: "button", class: "ghost-btn", style: small + "border-color:#8b5cf6;color:#8b5cf6;", text: "👤 Import to profiles", onclick: openProfileImport }) : null,
+      el("button", { type: "button", class: "ghost-btn", style: small, text: `➕ Profile columns${R.pcols.length ? " (" + R.pcols.length + ")" : ""}`, onclick: openProfileColumns }),
+      R.form.signup ? el("button", { type: "button", class: "ghost-btn", style: small + "border-color:#16a34a;color:#16a34a;", text: "🧾 Trip sheet PDF", onclick: openSignupSheet }) : null,
       el("button", { type: "button", class: "ghost-btn", style: small, text: "Download Excel", onclick: exportXlsx }),
       el("button", { type: "button", class: "ghost-btn", style: small, text: "Download PDF", onclick: exportPdf }),
       el("button", { type: "button", class: "ghost-btn", style: small, text: "Refresh", onclick: () => openResponses(R.form) })),
+    R.pcolErr ? el("p", { class: "error-msg", text: R.pcolErr }) : null,
     el("p", { class: "fine-print", id: "fm-count", style: "text-align:left; margin:0 0 10px;" }),
     el("div", { class: "datatable-wrap" }, el("table", { class: "data-table" }, el("thead", {}, el("tr", { id: "fm-head" })), el("tbody", { id: "fm-tbody" }))));
   renderTable();
@@ -1412,7 +1498,7 @@ function openResponseView(r) {
         node = el("div", { class: "fm-bm" },
           el("p", { class: "fine-print", style: "text-align:left;margin:0;", text: `Leader: ${r.name || "—"}${r.index ? " (" + r.index + ")" : ""}` }),
           ms.length ? el("ul", { class: "pill-list" }, ...ms.map((m) => el("li", { text: m.name + (m.index ? " — " + m.index : "") }))) : el("p", { class: "fine-print", style: "text-align:left;", text: "No members selected." }));
-      } else if (!["yesno", "toggle", "select", "multi", "table", "rating"].includes(fd.type)) {
+      } else if (!["yesno", "toggle", "select", "multi", "priority", "table", "rating"].includes(fd.type)) {
         // Text-like answers: plain wrapped text so long answers show in full.
         const txt = fmtAnswer(fd, v);
         node = fd.type === "link" && txt ? el("a", { class: "fm-ans", href: txt, target: "_blank", rel: "noopener", text: txt }) : el("div", { class: "fm-ans" + (txt ? "" : " empty"), text: txt || "—" });
@@ -1511,6 +1597,174 @@ async function openProfileImport() {
       go.disabled = false; go.textContent = "Import selected fields";
     }
   });
+}
+
+// ── Profile columns in the response table ───────────────────────
+// Admin can add any field from the batchmates' profiles (email, phone, …) as extra
+// columns next to the answers. They appear in the table, filter, sort and in the
+// Excel / PDF downloads. Read from /batchmates/{uid}; the choice is remembered per form.
+let PROFILE_ROWS = null;
+async function loadProfileRows(force) {
+  if (PROFILE_ROWS && !force) return PROFILE_ROWS;
+  const snap = await getDocs(collection(db, "batchmates"));
+  PROFILE_ROWS = new Map(snap.docs.map((d) => [d.id, d.data()]));
+  return PROFILE_ROWS;
+}
+function fmtProfileVal(v) {
+  if (isEmptyVal(v)) return "";
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (Array.isArray(v)) return v.map((x) => (x && typeof x === "object" ? Object.values(x).join(" ") : String(x))).join(", ");
+  if (v && typeof v === "object") {
+    if (typeof v.toDate === "function") return fmtDate(v.toDate());
+    return Object.entries(v).map(([k, x]) => `${k}: ${x}`).join("; ");
+  }
+  return String(v);
+}
+async function openProfileColumns() {
+  const ov = $("#fm-pcols") || overlay("fm-pcols");
+  ov.hidden = false; ov.innerHTML = "";
+  const box = el("div", { class: "modal-box fm-box" }, closeBtn(ov));
+  ov.append(box);
+  box.append(el("h2", { class: "fm-title", text: "Add profile columns" }),
+    el("p", { class: "fm-desc", text: "Tick profile details to show as extra columns for everyone in this table (e.g. email, phone). They are included in the Excel and PDF downloads. Fields marked private are not visible to other students, so handle downloaded files carefully." }));
+  const status = el("p", { class: "info-text", text: "Loading…" });
+  box.append(status);
+  let groups;
+  try { groups = await loadProfileGroups(true); } catch (e) { status.textContent = "Could not load the profile fields."; return; }
+  status.remove();
+
+  const chosen = new Map((R.pcols || []).map((p) => [p.key, p.label]));
+  const checks = [], blocks = [];
+  const search = el("input", { type: "text", placeholder: "Search profile fields…" });
+  const list = el("div", { class: "fm-pc-list" });
+  [...groups].sort((a, b) => (a.order || 0) - (b.order || 0)).forEach((g) => {
+    const head = el("p", { class: "fm-pc-group", text: g.title || "Section" });
+    const grp = el("div", {}, head);
+    const items = [...(g.fields || [])].sort((a, b) => (a.order || 0) - (b.order || 0)).map((f) => {
+      const c = el("input", { type: "checkbox" }); c.checked = chosen.has(f.key);
+      c.addEventListener("change", () => { if (c.checked) chosen.set(f.key, f.label); else chosen.delete(f.key); count.textContent = `${chosen.size} selected`; });
+      checks.push([c, f]);
+      const row = el("label", { class: "member-check-row" }, c, el("span", { text: f.label }), f.public === false ? el("small", { class: "fm-pc-priv", text: "private" }) : null);
+      grp.append(row);
+      return [row, f.label];
+    });
+    blocks.push([grp, items]);
+    list.append(grp);
+  });
+  search.addEventListener("input", () => {
+    const t = search.value.trim().toLowerCase();
+    blocks.forEach(([grp, items]) => {
+      let any = false;
+      items.forEach(([row, label]) => { const show = !t || label.toLowerCase().includes(t); row.hidden = !show; if (show) any = true; });
+      grp.hidden = !any;
+    });
+  });
+  const count = el("span", { class: "fine-print", text: `${chosen.size} selected` });
+  const err = el("p", { class: "error-msg", hidden: true });
+  const apply = el("button", { type: "button", class: "btn-primary", text: "Apply columns" });
+  const clear = el("button", { type: "button", class: "ghost-btn", text: "Clear all", onclick: () => { chosen.clear(); checks.forEach(([c]) => { c.checked = false; }); count.textContent = "0 selected"; } });
+  apply.addEventListener("click", async () => {
+    err.hidden = true; apply.disabled = true; apply.textContent = "Loading…";
+    const next = [...chosen].map(([key, label]) => ({ key, label }));
+    try {
+      if (next.length) await loadProfileRows(true);
+      R.pcols = next; R.pcolErr = "";
+      if (R.filterKey.startsWith("_p:") && !next.some((p) => "_p:" + p.key === R.filterKey)) R.filterKey = "";
+      if (R.sort.key?.startsWith("_p:") && !next.some((p) => "_p:" + p.key === R.sort.key)) R.sort = { key: null, dir: "asc" };
+      try { localStorage.setItem(`fmProfCols:${R.form.id}`, JSON.stringify(next)); } catch (e) {}
+      ov.hidden = true; renderResponses();
+    } catch (e) {
+      err.textContent = "Couldn't read the profiles — check that your admin account has the Forms permission and the updated Firestore rules are published.";
+      err.hidden = false; apply.disabled = false; apply.textContent = "Apply columns";
+    }
+  });
+  box.append(search, list, el("div", { class: "fm-pc-foot" }, count, clear), err, apply);
+}
+
+// ── Sign-up sheet PDF (trips / events) ──────────────────────────
+// One A4 page: form title as the header, "Students going", amount per student, a blank
+// date, a tick box before every name (+ index), and two blank signature lines.
+// The list shrinks / splits into columns automatically so it always stays on one page.
+const fmtMoney = (n) => Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
+function sheetPeople(sort) {
+  const gid = R.form.signup?.goingId;
+  const rows = R.responses.filter((r) => !gid || r.answers?.[gid] !== "No").map((r) => ({ name: (r.name || "Unnamed").trim(), index: (r.index || "").trim(), at: toDate(r.respondedAt) || 0 }));
+  const cmp = { name: (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }), index: (a, b) => (a.index || "~").localeCompare(b.index || "~", undefined, { numeric: true }), time: (a, b) => a.at - b.at }[sort] || 0;
+  return cmp ? rows.sort(cmp) : rows;
+}
+function openSignupSheet() {
+  const sg = R.form.signup || {};
+  const ov = $("#fm-sheet") || overlay("fm-sheet");
+  ov.hidden = false; ov.innerHTML = "";
+  const box = el("div", { class: "modal-box fm-box" }, closeBtn(ov));
+  ov.append(box);
+  const inp = (v, ph, type = "text") => { const i = el("input", { type, placeholder: ph }); i.value = v ?? ""; return i; };
+  const title = inp(R.form.title, "Sheet heading"), fee = inp(sg.fee || "", "Amount per student (blank = fill by hand)", "number"), cur = inp(sg.cur || "Rs.", "Currency");
+  const note = inp(sg.note || "", "Line under the heading (optional)"), s1 = inp("Collected by", "Signature 1 label"), s2 = inp("Received by", "Signature 2 label");
+  fee.min = "0"; fee.step = "any";
+  const sort = el("select", {}, el("option", { value: "name", text: "Name (A–Z)" }), el("option", { value: "index", text: "Index number" }), el("option", { value: "time", text: "Order of sign-up" }));
+  const info = el("p", { class: "fine-print", style: "text-align:left;" });
+  const upd = () => { info.textContent = `${sheetPeople("name").length} student(s) will be listed.`; };
+  upd();
+  const go = el("button", { type: "button", class: "btn-primary", text: "Download PDF", onclick: () => {
+    if (!window.jspdf || !window.jspdf.jsPDF) return alert("PDF export isn't available right now — check your connection.");
+    const people = sheetPeople(sort.value);
+    if (!people.length) return alert("No students have signed up yet.");
+    makeSignupPdf(people, { title: title.value.trim() || "Sign-up sheet", fee: fee.value === "" ? null : Number(fee.value), cur: cur.value.trim(), note: note.value.trim(), s1: s1.value.trim(), s2: s2.value.trim() });
+  } });
+  box.append(el("h2", { class: "fm-title", text: "Trip sheet PDF" }),
+    el("p", { class: "fm-desc", text: "A one-page sheet of the students who are going, with a tick box before each name." }),
+    el("label", { text: "Heading" }), title, el("label", { text: "Line under heading" }), note,
+    el("label", { text: "Amount per student" }), el("div", { class: "fm-brow" }, cur, fee),
+    el("label", { text: "Sort names by" }), sort,
+    el("label", { text: "Signature lines (left / right)" }), el("div", { class: "fm-brow" }, s1, s2), info, go);
+}
+function makeSignupPdf(people, o) {
+  const pdf = new window.jspdf.jsPDF({ unit: "mm", format: "a4" });
+  const W = 210, M = 14, n = people.length, money = (v) => `${o.cur ? o.cur + " " : ""}${fmtMoney(v)}`;
+  const hasFee = o.fee != null && isFinite(o.fee);
+  // header: the form title
+  let y = 20;
+  pdf.setFont("helvetica", "bold"); pdf.setTextColor(20);
+  let size = 22, lines;
+  do { pdf.setFontSize(size); lines = pdf.splitTextToSize(o.title, W - 2 * M); size -= 2; } while (lines.length > 2 && size >= 12);
+  pdf.text(lines.slice(0, 2), W / 2, y, { align: "center" });
+  y += (Math.min(lines.length, 2) - 1) * (size + 2) * 0.42 + 6;
+  if (o.note) { pdf.setFont("helvetica", "normal"); pdf.setFontSize(11); pdf.setTextColor(90); pdf.text(pdf.splitTextToSize(o.note, W - 2 * M).slice(0, 1), W / 2, y, { align: "center" }); y += 6; }
+  pdf.setDrawColor(76, 141, 255); pdf.setLineWidth(0.8); pdf.line(M, y, W - M, y); y += 9;
+  // info band: amount + date, students + total
+  pdf.setTextColor(30); pdf.setFontSize(11);
+  const label = (txt, x, yy, align) => { pdf.setFont("helvetica", "normal"); pdf.text(txt, x, yy, { align }); };
+  const val = (txt, x, yy) => { pdf.setFont("helvetica", "bold"); pdf.text(txt, x, yy); };
+  label("Amount per student:", M, y); val(hasFee ? money(o.fee) : "", M + 40, y);
+  if (!hasFee) { pdf.setDrawColor(120); pdf.setLineWidth(0.3); pdf.line(M + 40, y + 0.6, M + 85, y + 0.6); }
+  label("Date:", W - M - 62, y); pdf.setDrawColor(120); pdf.setLineWidth(0.3); pdf.line(W - M - 52, y + 0.6, W - M, y + 0.6);
+  y += 7;
+  label("Students going:", M, y); val(String(n), M + 40, y);
+  if (hasFee) { label("Total expected:", W - M - 62, y); val(money(o.fee * n), W - M - 36, y); }
+  y += 6;
+  // list area: one page, columns + font scale with the head-count
+  const top = y + 2, bottom = 258, H = bottom - top, gap = 6;
+  let cols = 1; while (Math.ceil(n / cols) * 5.8 > H && cols < 5) cols++; // 66 students → 2 columns of 33 rows
+  const per = Math.ceil(n / cols), rowH = Math.min(8, H / per), fs = Math.max(7, Math.min(11, rowH * 1.5));
+  const cw = (W - 2 * M - gap * (cols - 1)) / cols, bx = Math.min(4.2, rowH * 0.6);
+  const fit = (txt, maxW) => { let t = txt; while (t.length > 1 && pdf.getTextWidth(t) > maxW) t = t.slice(0, -1); return t === txt ? t : t.replace(/\s+$/, "") + "…"; };
+  pdf.setFontSize(fs);
+  people.forEach((p, i) => {
+    const c = Math.floor(i / per), r = i % per, x = M + c * (cw + gap), yy = top + r * rowH, base = yy + rowH / 2 + fs * 0.12;
+    pdf.setDrawColor(40); pdf.setLineWidth(0.3); pdf.rect(x + 0.5, yy + (rowH - bx) / 2, bx, bx);
+    pdf.setFont("helvetica", "normal"); pdf.setTextColor(120);
+    const idxW = p.index ? pdf.getTextWidth(p.index) + 3 : 0;
+    if (p.index) pdf.text(p.index, x + cw, base, { align: "right" });
+    pdf.setTextColor(20); pdf.text(fit(p.name, cw - bx - 4 - idxW), x + bx + 3.5, base);
+    pdf.setDrawColor(225); pdf.setLineWidth(0.15); pdf.line(x, yy + rowH, x + cw, yy + rowH);
+  });
+  // two blank signature lines
+  const sy = 281, sw = 70;
+  pdf.setDrawColor(40); pdf.setLineWidth(0.3); pdf.setFont("helvetica", "normal"); pdf.setFontSize(9); pdf.setTextColor(70);
+  pdf.line(M, sy, M + sw, sy); pdf.text(`${o.s1 || "Signature"} (signature)`, M, sy + 4.5);
+  pdf.line(W - M - sw, sy, W - M, sy); pdf.text(`${o.s2 || "Signature"} (signature)`, W - M - sw, sy + 4.5);
+  pdf.save(`${slug(o.title)}-sheet-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
 function exportData() {

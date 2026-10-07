@@ -356,3 +356,55 @@ a.fm-ans { color: var(--blue); text-decoration: underline; }
 .fm-affixrow { flex-wrap: wrap; }
 .fm-affixrow .fm-prefix-input { max-width: 170px; }
 .fm-affixrow small { flex-basis: 100%; }
+
+/* ── Priority choice field ─────────────────────────────────────── */
+.fm-prio { display: flex; flex-direction: column; gap: 8px; }
+.fm-prio-row {
+  display: flex; align-items: center; gap: 12px;
+  width: 100%; text-align: left;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  color: var(--text);
+  font: inherit; font-weight: 400;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, transform .15s;
+}
+.fm-prio-row:hover:not(:disabled) { border-color: var(--blue); }
+.fm-prio-row:active:not(:disabled) { transform: scale(.99); }
+.fm-prio-row:disabled { opacity: .5; cursor: not-allowed; }
+.fm-prio-row.on { background: var(--accent-soft-bg); border-color: var(--accent-soft-border); }
+.fm-prio-badge {
+  flex: 0 0 auto;
+  width: 28px; height: 28px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 2px dashed var(--panel-border);
+  font-size: 13px; font-weight: 700;
+  color: var(--text);
+  transition: background .15s, border-color .15s, color .15s;
+}
+.fm-prio-row.on .fm-prio-badge {
+  background: var(--blue); border: 2px solid var(--blue);
+  color: var(--bg);
+  animation: fm-prio-pop .18s ease-out;
+}
+.fm-prio-text { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.fm-prio-hint { margin: 8px 2px 0; font-size: 12px; color: var(--muted); }
+.fm-readonly .fm-prio-hint { display: none; }
+@keyframes fm-prio-pop { from { transform: scale(.6); } to { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .fm-prio-row.on .fm-prio-badge { animation: none; } }
+
+/* ── Profile columns picker ────────────────────────────────────── */
+.fm-pc-list { max-height: 50vh; overflow-y: auto; margin: 10px 0; padding-right: 2px; }
+.fm-pc-group { margin: 12px 0 4px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.fm-pc-list .member-check-row { display: flex; align-items: center; gap: 8px; padding: 6px 2px; font-weight: 400; color: var(--text); }
+.fm-pc-list .member-check-row input { width: auto; margin: 0; accent-color: var(--blue); }
+.fm-pc-list [hidden] { display: none; }
+.fm-pc-priv { margin-left: auto; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; color: var(--accent-soft-text); background: var(--accent-soft-bg); }
+.fm-pc-foot { display: flex; align-items: center; justify-content: space-between; margin: 0 0 12px; }
+
+/* ── Sign-up list form type ────────────────────────────────────── */
+.fm-signup-panel { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 4px; padding: 12px; border: 1px dashed var(--accent-soft-border); border-radius: 12px; background: var(--accent-soft-bg); }
+.fm-signup-panel[hidden] { display: none; }
+.fm-signup-panel input { margin: 0; min-width: 0; }
