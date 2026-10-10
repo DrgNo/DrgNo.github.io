@@ -1994,7 +1994,7 @@ html.page-exit .content-area, html.page-exit .page-center {
 /* ── Admin: bottom tab bar (History / Active / Add / Danger) ─────── */
 .admin-tab-bar {
   position: fixed;
-  bottom: 18px;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   width: max-content;
@@ -2005,7 +2005,14 @@ html.page-exit .content-area, html.page-exit .page-center {
   border: 1px solid var(--panel-border);
   border-radius: 999px;
   padding: 5px;
-  z-index: 1;
+  z-index: 20;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .22);
+}
+/* Panel colour is translucent in the glass design; blur + a solid-ish
+   backing keeps content scrolling underneath from showing through. */
+[data-design="glass"] .admin-tab-bar {
+  backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
 }
 @media (min-width: 880px) {
   /* Center within the content area, not the whole viewport — the
@@ -2026,10 +2033,27 @@ html.page-exit .content-area, html.page-exit .page-center {
   transition: background .2s ease, color .2s ease;
 }
 .admin-tab-pill:hover { color: var(--text); }
-.admin-tab-pill.active {
+.admin-tab-pill { position: relative; z-index: 1; }
+.admin-tab-pill.active { color: #fff; }
+/* Liquid highlight that slides between tabs (see attachLiquidTabs in app.js) */
+.tab-liquid {
+  position: absolute; top: 5px; bottom: 5px; left: 0; right: 0;
+  border-radius: 999px; z-index: 0; pointer-events: none;
   background: linear-gradient(180deg, var(--blue), var(--blue-dim));
-  color: #fff;
 }
+@keyframes tabInR { from { opacity: 0; transform: translateX(14px); } to { opacity: 1; transform: none; } }
+@keyframes tabInL { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+.tab-panel-in-r { animation: tabInR .25s ease both; }
+.tab-panel-in-l { animation: tabInL .25s ease both; }
+@media (prefers-reduced-motion: reduce) {
+  .tab-liquid, .tab-panel-in-r, .tab-panel-in-l { animation: none; transition: none !important; }
+}
+/* Dashboard bar: tabs share the width instead of scrolling */
+.dash-tab-bar { max-width: min(560px, calc(100% - 24px)); }
+.dash-tab-bar .admin-tab-pill { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.dash-header { margin-bottom: 18px; }
+.dash-header:empty { display: none; }
+#dash-layout.has-tabbar { padding-bottom: 90px; }
 .admin-tab-panel[hidden] { display: none; }
 .admin-tab-panel { padding-bottom: 90px; }
 
@@ -2122,7 +2146,7 @@ html.page-exit .content-area, html.page-exit .page-center {
 .danger-btn:hover { filter: brightness(1.15); }
 
 @media (max-width: 560px) {
-  .admin-tab-bar { bottom: 10px; padding: 4px; }
+  .admin-tab-bar { bottom: calc(10px + env(safe-area-inset-bottom, 0px)); padding: 4px; }
   .admin-tab-pill { padding: 9px 12px; font-size: 12px; }
 }
 
@@ -2133,34 +2157,6 @@ html.page-exit .content-area, html.page-exit .page-center {
    admin-picked accent color (--tt-color, set inline per card, same
    pattern as eventLabels' color field) as a left border + tinted
    badge, so subjects stay visually distinct without a fixed palette. */
-.tt-tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 18px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-.tt-tabs::-webkit-scrollbar { display: none; }
-.tt-tab-pill {
-  padding: 9px 18px;
-  border-radius: 20px;
-  border: 1px solid var(--panel-border);
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: all .15s ease;
-}
-.tt-tab-pill:hover { color: var(--text); }
-.tt-tab-pill.active {
-  background: var(--accent-soft-bg);
-  border-color: var(--accent-soft-border);
-  color: var(--accent-soft-text);
-}
-.tt-view[hidden] { display: none; }
 
 .tt-day-block { margin-bottom: 22px; }
 .tt-day-block:last-child { margin-bottom: 0; }
@@ -2224,54 +2220,10 @@ html.page-exit .content-area, html.page-exit .page-center {
   margin-top: 6px;
   font-style: italic;
 }
-.tt-attend-btn {
-  margin-top: 10px;
-  padding: 7px 16px;
-  font-size: 12.5px;
-  font-weight: 700;
-  border-radius: 20px;
-  border: 1px solid var(--panel-border);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  transition: all .18s ease;
-}
-.tt-attend-btn:hover { border-color: var(--tt-color, var(--blue)); }
-.tt-attend-btn.marked {
-  background: var(--success);
-  border-color: var(--success);
-  color: #06291a;
-}
-.tt-attend-btn:disabled { opacity: .5; cursor: not-allowed; }
 .tt-empty-day { font-size: 13px; color: var(--muted); padding: 4px 0 0; }
 .tt-empty-state { text-align: center; padding: 40px 16px; color: var(--muted); font-size: 13.5px; }
 
 /* My Attendance view */
-.attend-overall-card {
-  background: linear-gradient(135deg, color-mix(in srgb, var(--blue) 16%, var(--panel)), var(--panel));
-  border: 1px solid var(--panel-border);
-  border-radius: var(--radius);
-  padding: 22px;
-  margin-bottom: 18px;
-  text-align: center;
-}
-.attend-overall-value { font-size: 38px; font-weight: 700; color: var(--accent); font-family: 'Space Grotesk', sans-serif; }
-.attend-overall-label { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
-.attend-overall-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
-.attend-list { display: flex; flex-direction: column; gap: 12px; }
-.attend-stat-card {
-  background: color-mix(in srgb, var(--tt-color, var(--blue)) 10%, var(--panel));
-  border: 1px solid color-mix(in srgb, var(--tt-color, var(--blue)) 24%, var(--panel-border));
-  border-left: 4px solid var(--tt-color, var(--blue));
-  border-radius: var(--radius);
-  padding: 14px 16px;
-}
-.attend-stat-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 8px; }
-.attend-stat-module { font-size: 13.5px; font-weight: 700; }
-.attend-stat-pct { font-size: 15px; font-weight: 700; color: var(--tt-color, var(--blue)); white-space: nowrap; }
-.attend-bar-track { height: 8px; border-radius: 6px; background: var(--surface); overflow: hidden; }
-.attend-bar-fill { height: 100%; border-radius: 6px; background: var(--tt-color, var(--blue)); transition: width .5s ease; }
-.attend-stat-fraction { font-size: 11px; color: var(--muted); margin-top: 6px; }
 
 @media (max-width: 480px) {
   .tt-card { padding: 12px 12px 12px 14px; gap: 10px; }
@@ -2490,21 +2442,6 @@ html.page-exit .content-area, html.page-exit .page-center {
 }
 
 /* Timetable date strip (3 past · today · 3 upcoming) */
-.tt-date-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 14px; }
-.tt-date-box {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 8px 0; border-radius: 12px; cursor: pointer;
-  border: 1px solid var(--panel-border); background: var(--surface); color: var(--muted);
-  transition: all .15s ease;
-}
-.tt-date-box:hover { color: var(--text); }
-.tt-date-dow { font-size: 10px; font-weight: 600; text-transform: uppercase; }
-.tt-date-num { font-size: 16px; font-weight: 700; color: var(--text); }
-.tt-date-box.is-today { border-color: var(--accent); }
-.tt-date-box.is-today .tt-date-num { color: var(--accent); }
-.tt-date-box.selected { background: var(--accent-soft-bg); border-color: var(--accent-soft-border); }
-.tt-date-panel { margin-bottom: 18px; }
-.tt-date-hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
 
 /* ═══ Skeleton loaders ═══ */
 @keyframes skShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
@@ -2538,30 +2475,32 @@ html.page-exit .content-area, html.page-exit .page-center {
 }
 
 /* ═══ Customizable dashboard ═══ */
-.dash-tabs { display: flex; gap: 8px; margin: 0 0 18px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
-.dash-tabs::-webkit-scrollbar { display: none; }
-.dash-tab {
-  padding: 9px 18px; border-radius: 20px; border: 1px solid var(--panel-border);
-  background: var(--surface); color: var(--muted); font-size: 13px; font-weight: 600;
-  cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: all .15s ease;
-}
-.dash-tab:hover { color: var(--text); }
-.dash-tab.active { background: var(--accent-soft-bg); border-color: var(--accent-soft-border); color: var(--accent-soft-text); }
-.dash-panel { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; }
+/* Two flowing columns: a short box lets the next one slide up beneath it,
+   so there are no empty gaps between boxes of different heights. Full-width
+   blocks span both columns. */
+.dash-panel { column-count: 2; column-gap: 18px; }
 .dash-panel[hidden] { display: none; }
-.dash-panel.dash-panel-in { animation: skIn .3s ease both; }
-.dash-panel > * { margin: 0 !important; min-width: 0; }
-.dash-panel > .card { width: 100%; column-span: none; }
-.dl-w-full, .dash-panel > .dl-heading, .dash-panel > .dl-spacer { grid-column: 1 / -1; }
+.dash-panel > * { margin: 0 0 18px !important; min-width: 0; break-inside: avoid; -webkit-column-break-inside: avoid; }
+.dash-panel > .card { width: 100%; }
+/* Even spacing inside every data box: rows are spaced by flex gap, so the
+   last row no longer carries a stray bottom margin and the sub-headings
+   (Sports, Clubs, Tasks Assigned…) don't add their own top margin. */
+.dl-items { display: flex; flex-direction: column; gap: 14px; }
+.dl-items > div { margin: 0 !important; }
+.dl-items > div > .section-label { margin: 0 0 6px !important; }
+.dl-items > div > ul { margin: 0; }
+.profile-card .profile-head { margin-bottom: 0; }
+.dash-header .profile-card { width: 100%; }
+.dl-w-full, .dash-panel > .dl-heading, .dash-panel > .dl-spacer { column-span: all; }
 .dl-style-outline { background: transparent !important; }
 .dl-style-plain { background: transparent !important; border-color: transparent !important; padding-left: 0 !important; padding-right: 0 !important; }
 .dl-dense { padding: 16px !important; }
-.dl-dense .dl-items > div { margin-bottom: 8px !important; }
+.dl-dense .dl-items { gap: 8px; }
 .dl-accent { border-left: 4px solid var(--dl-accent) !important; }
 .dl-fl-inline .dl-items > div[data-item] { display: flex; justify-content: space-between; gap: 14px; align-items: baseline; }
 .dl-fl-inline .dl-items > div[data-item] > span { display: inline !important; }
 .dl-fl-inline .dl-items > div[data-item] > span:last-child { text-align: right; }
-.dl-fl-grid .dl-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 2px 18px; }
+.dl-fl-grid .dl-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px 18px; }
 .dl-heading { margin: 0; line-height: 1.25; }
 .dl-h1 { font-size: 26px; } .dl-h2 { font-size: 20px; } .dl-h3 { font-size: 16px; }
 .dl-text { white-space: pre-wrap; line-height: 1.55; margin: 0; }
@@ -2577,7 +2516,7 @@ html.page-exit .content-area, html.page-exit .page-center {
 .dl-btn.ghost { background: transparent; color: var(--blue); }
 .dl-btn.block { width: 100%; }
 .dl-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
-@media (max-width: 700px) { .dash-panel { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 700px) { .dash-panel { column-count: 1; } }
 @media (prefers-reduced-motion: reduce) { .dash-panel.dash-panel-in { animation: none; } }
 
 /* ═══ Dashboard customizer (admin) ═══ */
@@ -2817,3 +2756,128 @@ html.page-exit .content-area, html.page-exit .page-center {
 .bday-chip:hover { border-color: #ffc857; transform: translateY(-2px); }
 .bday-chip .avatar-slot { width: 30px; height: 30px; }
 .bday-chip .avatar-photo, .bday-chip .avatar { width: 30px; height: 30px; font-size: 13px; }
+
+/* Keyboard focus ring for buttons and links (inputs already have one) */
+button:focus-visible, a:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+/* iOS zooms the page when a focused field is under 16px — avoid it on touch screens */
+@media (hover: none) and (pointer: coarse) {
+  input, textarea, select { font-size: 16px; }
+}
+
+/* ═══ Timetable page redesign: Home / Timetable / Notes ═══ */
+.tt-panel { padding-bottom: 90px; }
+.tt-panel[hidden] { display: none; }
+.tt-panel > .card { margin-bottom: 16px; }
+
+/* Calendar */
+.cal-card { padding: 16px; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.cal-title-wrap { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cal-title { font-weight: 700; font-size: 16px; font-family: 'Space Grotesk', sans-serif; white-space: nowrap; }
+.cal-today-btn { background: var(--accent-soft-bg); color: var(--accent); border: 1px solid var(--accent-soft-border); border-radius: 999px; font-size: 11px; font-weight: 600; padding: 4px 10px; cursor: pointer; }
+.cal-nav { width: 36px; height: 36px; border-radius: 50%; background: var(--surface); border: 1px solid var(--panel-border); color: var(--text); font-size: 20px; line-height: 1; cursor: pointer; flex-shrink: 0; }
+.cal-nav:hover { border-color: var(--blue); color: var(--blue); }
+.cal-dow, .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.cal-dow span { text-align: center; font-size: 10.5px; font-weight: 600; text-transform: uppercase; color: var(--muted); padding-bottom: 6px; }
+.cal-day { position: relative; aspect-ratio: 1 / 1; min-height: 40px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: transparent; border: 1px solid transparent; border-radius: 12px; color: var(--text); cursor: pointer; padding: 0; transition: background .15s ease, border-color .15s ease; }
+.cal-day:hover { background: var(--surface); }
+.cal-num { font-size: 14px; font-weight: 600; line-height: 1; }
+.cal-day.cal-out { color: var(--muted); opacity: .45; }
+.cal-day.is-today { border-color: var(--accent); }
+.cal-day.is-today .cal-num { color: var(--accent); font-weight: 700; }
+.cal-dots { display: flex; gap: 3px; height: 6px; align-items: center; }
+.cal-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
+.cal-dot-class { background: var(--blue); }
+.cal-dot-note { background: #e0a94a; }
+.cal-legend { display: flex; gap: 16px; justify-content: center; margin-top: 12px; font-size: 11.5px; color: var(--muted); }
+.cal-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Segmented bars (Mon–Sun, Notes/To-dos) */
+.seg-bar { position: relative; display: flex; gap: 2px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 999px; padding: 4px; margin-bottom: 16px; }
+.seg-bar .tab-liquid { top: 4px; bottom: 4px; }
+.seg-pill { position: relative; z-index: 1; flex: 1 1 0; min-width: 0; background: transparent; border: none; color: var(--muted); font-size: 13px; font-weight: 600; padding: 9px 4px; border-radius: 999px; cursor: pointer; transition: color .2s ease; }
+.seg-pill.active { color: #fff; }
+.seg-bar-days .seg-pill { font-size: 12.5px; }
+.tt-panel .tt-day-heading { margin: 0 0 12px; }
+
+/* Add buttons */
+.pl-actions { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.pl-add-btn { background: var(--accent-soft-bg); color: var(--accent); border: 1px solid var(--accent-soft-border); border-radius: 999px; font-size: 13px; font-weight: 600; padding: 8px 16px; cursor: pointer; }
+.pl-add-btn:hover { filter: brightness(1.1); }
+
+/* Note cards: 2 columns on small screens, up to 4 on large */
+.note-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; align-items: start; }
+@media (min-width: 760px) { .note-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 1180px) { .note-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.note-grid > .tt-empty-state { grid-column: 1 / -1; }
+.note-card { text-align: left; display: flex; flex-direction: column; gap: 6px; background: var(--panel); border: 1px solid var(--panel-border); border-top: 3px solid #e0a94a; border-radius: 14px; padding: 12px 14px; color: var(--text); cursor: pointer; transition: transform .15s ease, border-color .15s ease; }
+.note-card:hover { transform: translateY(-2px); border-color: var(--blue); }
+.note-card-title { margin: 0; font-size: 14px; font-weight: 700; overflow-wrap: anywhere; }
+.note-card-body { margin: 0; font-size: 12.5px; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note-card-meta { margin: 2px 0 0; font-size: 11px; color: var(--muted); }
+
+/* To-dos */
+.todo-list { display: flex; flex-direction: column; gap: 8px; }
+.todo-row { display: flex; align-items: center; gap: 12px; background: var(--panel); border: 1px solid var(--panel-border); border-radius: 12px; padding: 10px 12px; }
+.todo-check { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--muted); background: transparent; color: #fff; font-size: 13px; line-height: 1; cursor: pointer; flex-shrink: 0; padding: 0; transition: background .15s ease, border-color .15s ease; }
+.todo-row.done .todo-check { background: var(--accent); border-color: var(--accent); }
+.todo-text { flex: 1; min-width: 0; font-size: 14px; overflow-wrap: anywhere; }
+.todo-row.done .todo-text { color: var(--muted); text-decoration: line-through; }
+.todo-del { background: transparent; border: none; color: var(--muted); font-size: 14px; cursor: pointer; padding: 4px 6px; }
+.todo-del:hover { color: var(--danger); }
+
+/* Day popup */
+#tt-day-modal-body .section-label { margin: 14px 0 8px; }
+#tt-day-modal-body .section-label:first-child { margin-top: 0; }
+.day-note-list { display: flex; flex-direction: column; gap: 8px; }
+.day-note { text-align: left; background: var(--surface); border: 1px solid var(--panel-border); border-left: 3px solid #e0a94a; border-radius: 10px; padding: 10px 12px; color: var(--text); cursor: pointer; }
+.day-note:hover { border-color: var(--blue); }
+.day-note-top { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.day-note-title { font-weight: 700; font-size: 13.5px; overflow-wrap: anywhere; }
+.day-note-time { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.day-note-body { margin: 4px 0 0; font-size: 12.5px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+#modal-tt-note textarea { width: 100%; resize: vertical; }
+.tt-day-date { font-size: 12px; font-weight: 500; color: var(--muted); }
+
+/* Attendance (restored in the Timetable tab) */
+.attend-overall-card {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--blue) 16%, var(--panel)), var(--panel));
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 22px;
+  margin-bottom: 18px;
+  text-align: center;
+}
+.attend-overall-value { font-size: 38px; font-weight: 700; color: var(--accent); font-family: 'Space Grotesk', sans-serif; }
+.attend-overall-label { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+.attend-overall-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+.attend-list { display: flex; flex-direction: column; gap: 12px; }
+.attend-stat-card {
+  background: color-mix(in srgb, var(--tt-color, var(--blue)) 10%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--tt-color, var(--blue)) 24%, var(--panel-border));
+  border-left: 4px solid var(--tt-color, var(--blue));
+  border-radius: var(--radius);
+  padding: 14px 16px;
+}
+.attend-stat-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.attend-stat-module { font-size: 13.5px; font-weight: 700; }
+.attend-stat-pct { font-size: 15px; font-weight: 700; color: var(--tt-color, var(--blue)); white-space: nowrap; }
+.attend-bar-track { height: 8px; border-radius: 6px; background: var(--surface); overflow: hidden; }
+.attend-bar-fill { height: 100%; border-radius: 6px; background: var(--tt-color, var(--blue)); transition: width .5s ease; }
+.attend-stat-fraction { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+/* Timetable page skeleton (matches Home: calendar + lectures + bottom tab bar) */
+.sk-cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.sk-cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.sk-cal-grid .sk { aspect-ratio: 1 / 1; min-height: 34px; border-radius: 12px; }
+.sk-cal-dow { margin-bottom: 6px; }
+.sk-cal-dow .sk { aspect-ratio: auto; height: 10px; min-height: 0; border-radius: 6px; }
+.sk-tabbar { position: fixed; bottom: calc(18px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); display: flex; gap: 8px; padding: 8px; width: min(300px, calc(100% - 24px)); background: var(--panel); border: 1px solid var(--panel-border); border-radius: 999px; z-index: 20; }
+.sk-tabbar .sk { flex: 1; height: 30px; border-radius: 999px; }
+@media (min-width: 880px) { .sk-tabbar { left: calc(50% + 115px); } }
+
+/* Attendance toggle: deliberately quiet — a small text link, not a button */
+.tt-attend-btn { margin-top: 8px; padding: 0; background: none; border: none; color: var(--muted); font-size: 11.5px; font-weight: 500; cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; opacity: .8; }
+.tt-attend-btn:hover { color: var(--text); opacity: 1; }
+.tt-attend-btn.marked { color: var(--tt-color, var(--blue)); font-weight: 600; text-decoration: none; opacity: 1; }
+.tt-attend-btn:disabled { opacity: .4; cursor: not-allowed; }

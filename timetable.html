@@ -47,41 +47,133 @@
 
     <main class="content-area">
       <div class="dash-wrap" id="timetable-page">
-        <div id="loading-state" class="sk-wrap" aria-busy="true" aria-label="Loading"><span class="sk sk-h1"></span><span class="sk sk-line" style="width:55%;"></span><div class="sk-strip"><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span></div><div style="margin-bottom:18px"><span class="sk sk-pill" style="width:100px"></span><span class="sk sk-pill" style="width:100px"></span><span class="sk sk-pill" style="width:120px"></span></div><div class="card sk-card"><span class="sk sk-title" style="width:20%"></span><div class="sk-row"><span class="sk sk-circle" style="width:44px;height:44px"></span><div class="sk-col"><span class="sk sk-line" style="width:64%;"></span><span class="sk sk-line" style="width:38%;"></span></div></div><div class="sk-row"><span class="sk sk-circle" style="width:44px;height:44px"></span><div class="sk-col"><span class="sk sk-line" style="width:64%;"></span><span class="sk sk-line" style="width:38%;"></span></div></div></div><div class="card sk-card"><span class="sk sk-title" style="width:24%"></span><div class="sk-row"><span class="sk sk-circle" style="width:44px;height:44px"></span><div class="sk-col"><span class="sk sk-line" style="width:64%;"></span><span class="sk sk-line" style="width:38%;"></span></div></div><div class="sk-row"><span class="sk sk-circle" style="width:44px;height:44px"></span><div class="sk-col"><span class="sk sk-line" style="width:64%;"></span><span class="sk sk-line" style="width:38%;"></span></div></div></div></div>
+        <div id="loading-state" class="sk-wrap" aria-busy="true" aria-label="Loading"><span class="sk sk-h1" style="width:28%;margin-bottom:16px;"></span><div class="card sk-card"><div class="sk-cal-head"><span class="sk sk-circle" style="width:36px;height:36px"></span><span class="sk" style="width:34%;height:18px"></span><span class="sk sk-circle" style="width:36px;height:36px"></span></div><div class="sk-cal-grid sk-cal-dow"><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span></div><div class="sk-cal-grid"><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div><div class="card sk-card"><span class="sk sk-title" style="width:34%"></span><div class="sk-row"><span class="sk" style="width:52px;height:38px;border-radius:8px;flex-shrink:0"></span><div class="sk-col"><span class="sk sk-line" style="width:60%;"></span><span class="sk sk-line" style="width:40%;"></span></div></div><div class="sk-row"><span class="sk" style="width:52px;height:38px;border-radius:8px;flex-shrink:0"></span><div class="sk-col"><span class="sk sk-line" style="width:60%;"></span><span class="sk sk-line" style="width:40%;"></span></div></div></div><div class="sk-tabbar"><span class="sk"></span><span class="sk"></span><span class="sk"></span></div></div>
         <div id="error-state" class="state-msg error-msg" hidden></div>
 
         <div id="timetable-content" hidden>
-          <h1 class="welcome-heading" style="margin-bottom:4px;">Timetable</h1>
-          <p class="welcome-sub" style="margin-bottom:18px;">Your weekly schedule and attendance.</p>
+          <h1 class="welcome-heading" id="tt-title" style="margin-bottom:16px;">Home</h1>
 
-          <div class="tt-date-strip" id="tt-date-strip"></div>
-          <div class="tt-date-panel" id="tt-date-panel" hidden></div>
-
-          <div class="tt-tabs" id="tt-tabs">
-            <button type="button" class="tt-tab-pill active" data-tt-view="week">This Week</button>
-            <button type="button" class="tt-tab-pill" data-tt-view="next">Next Week</button>
-            <button type="button" class="tt-tab-pill" data-tt-view="attendance">My Attendance</button>
-          </div>
-
-          <div class="tt-view" id="tt-view-week">
-            <div id="tt-week-days"></div>
-          </div>
-
-          <div class="tt-view" id="tt-view-next" hidden>
-            <div id="tt-next-days"></div>
-          </div>
-
-          <div class="tt-view" id="tt-view-attendance" hidden>
-            <div class="attend-overall-card">
-              <div class="attend-overall-value" id="attend-overall-pct">—</div>
-              <div class="attend-overall-label">Overall attendance</div>
-              <div class="attend-overall-sub" id="attend-overall-sub"></div>
+          <!-- HOME -->
+          <section class="tt-panel" data-tab="home">
+            <div class="card cal-card">
+              <div class="cal-head">
+                <button type="button" class="cal-nav" id="tt-cal-prev" aria-label="Previous month">‹</button>
+                <div class="cal-title-wrap">
+                  <span class="cal-title" id="cal-title"></span>
+                  <button type="button" class="cal-today-btn" id="tt-cal-today">Today</button>
+                </div>
+                <button type="button" class="cal-nav" id="tt-cal-next" aria-label="Next month">›</button>
+              </div>
+              <div class="cal-dow"><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span></div>
+              <div class="cal-grid" id="cal-grid"></div>
+              <div class="cal-legend"><span><i class="cal-dot cal-dot-class"></i> Lectures</span><span><i class="cal-dot cal-dot-note"></i> Notes</span></div>
             </div>
-            <div class="attend-list" id="attend-module-list"></div>
-          </div>
+
+            <div class="card">
+              <p class="section-label" style="margin:0 0 4px;">Today's lectures</p>
+              <p class="tt-day-date" id="tt-today-date" style="margin:0 0 12px;"></p>
+              <div class="tt-card-list" id="tt-today-list"></div>
+            </div>
+          </section>
+
+          <!-- TIMETABLE -->
+          <section class="tt-panel" data-tab="timetable" hidden>
+            <div class="seg-bar" id="tt-sched-seg">
+              <button type="button" class="seg-pill active" data-sub="schedule">Schedule</button>
+              <button type="button" class="seg-pill" data-sub="attendance">Attendance</button>
+            </div>
+            <div id="tt-sub-schedule">
+              <div class="seg-bar seg-bar-days" id="tt-daybar"></div>
+              <p class="tt-day-heading" id="tt-day-heading"></p>
+              <div class="tt-card-list" id="tt-day-list"></div>
+            </div>
+            <div id="tt-sub-attendance" hidden>
+              <div class="attend-overall-card">
+                <div class="attend-overall-value" id="attend-overall-pct">—</div>
+                <div class="attend-overall-label">Overall attendance</div>
+                <div class="attend-overall-sub" id="attend-overall-sub"></div>
+              </div>
+              <div class="attend-list" id="attend-module-list"></div>
+            </div>
+          </section>
+
+          <!-- NOTES -->
+          <section class="tt-panel" data-tab="notes" hidden>
+            <div class="seg-bar" id="tt-notes-seg">
+              <button type="button" class="seg-pill active" data-sub="notes">Notes</button>
+              <button type="button" class="seg-pill" data-sub="todos">To-dos</button>
+            </div>
+            <div id="tt-sub-notes">
+              <div class="pl-actions"><button type="button" class="pl-add-btn" id="tt-add-note">+ Add note</button></div>
+              <div class="note-grid" id="tt-note-grid"></div>
+            </div>
+            <div id="tt-sub-todos" hidden>
+              <div class="pl-actions"><button type="button" class="pl-add-btn" id="tt-add-todo">+ Add to-do</button></div>
+              <div class="todo-list" id="tt-todo-list"></div>
+            </div>
+          </section>
         </div>
       </div>
     </main>
+
+  <nav class="admin-tab-bar" id="tt-tabbar" role="tablist" hidden>
+    <button type="button" class="admin-tab-pill active" data-tab="home">Home</button>
+    <button type="button" class="admin-tab-pill" data-tab="timetable">Timetable</button>
+    <button type="button" class="admin-tab-pill" data-tab="notes">Notes</button>
+  </nav>
+
+  <!-- Day popup -->
+  <div class="modal-overlay" id="modal-tt-day" hidden>
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close-modal="modal-tt-day" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label" id="tt-day-modal-title"></p>
+        <div id="tt-day-modal-body"></div>
+        <button type="button" class="btn-primary" id="tt-day-add-note" style="margin-top:16px;">Add note</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Note form -->
+  <div class="modal-overlay" id="modal-tt-note" hidden>
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close-modal="modal-tt-note" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label" id="tt-note-modal-title">New note</p>
+        <form id="form-tt-note">
+          <label for="ttn-title">Header</label>
+          <input type="text" id="ttn-title" maxlength="80" required>
+          <label for="ttn-body">Description</label>
+          <textarea id="ttn-body" rows="4" maxlength="1000"></textarea>
+          <div id="ttn-date-wrap">
+            <label for="ttn-date">Date (optional)</label>
+            <input type="date" id="ttn-date">
+          </div>
+          <label for="ttn-time">Time (optional)</label>
+          <input type="time" id="ttn-time">
+          <button type="submit" class="btn-primary" id="ttn-save">Save</button>
+        </form>
+        <button type="button" class="danger-btn" id="ttn-delete" hidden>Delete note</button>
+        <p class="error-msg" id="ttn-error" hidden></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- To-do form -->
+  <div class="modal-overlay" id="modal-tt-todo" hidden>
+    <div class="modal-box">
+      <button type="button" class="modal-close" data-close-modal="modal-tt-todo" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">New to-do</p>
+        <form id="form-tt-todo">
+          <label for="ttt-text">Task</label>
+          <input type="text" id="ttt-text" maxlength="200" required>
+          <button type="submit" class="btn-primary" id="ttt-save">Add</button>
+        </form>
+        <p class="error-msg" id="ttt-error" hidden></p>
+      </div>
+    </div>
+  </div>
   </div>
 
   <script type="module" src="app.js"></script>

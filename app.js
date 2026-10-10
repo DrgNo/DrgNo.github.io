@@ -3647,17 +3647,29 @@ function wireAdminTabBar() {
   const bar = document.getElementById("admin-content-tabbar");
   if (!bar) return;
   const panels = document.querySelectorAll(".admin-tab-panel");
+  const liquid = attachLiquidTabs(bar, ".admin-tab-pill");
+  const order = [...bar.querySelectorAll(".admin-tab-pill")];
 
   bar.addEventListener("click", (e) => {
     const btn = e.target.closest(".admin-tab-pill");
     if (!btn) return;
     const perm = btn.dataset.perm;
     if (perm && !guardPerm(perm, btn.textContent.trim())) return;
+    const prev = order.findIndex((b) => b.classList.contains("active"));
+    const next = order.indexOf(btn);
+    if (prev === next) return;
     const tab = btn.dataset.tab;
-    bar.querySelectorAll(".admin-tab-pill").forEach((b) => b.classList.toggle("active", b === btn));
-    panels.forEach((p) => { p.hidden = p.dataset.tabPanel !== tab; });
+    order.forEach((b) => b.classList.toggle("active", b === btn));
+    liquid.move();
+    panels.forEach((p) => {
+      const on = p.dataset.tabPanel === tab;
+      p.hidden = !on;
+      if (on) playPanelIn(p, next > prev ? 1 : -1);
+    });
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
+  // The bar starts hidden; re-measure once it is shown.
+  new MutationObserver(() => liquid.snap()).observe(bar, { attributes: true, attributeFilter: ["hidden"] });
 }
 
 // Splits "a|b|c" or newline-separated text into a clean array of strings.
@@ -8386,15 +8398,13 @@ function wireBatchmateModal() {
   });
 }
 
-// ══ Timetable + Attendance ═══════════════════════════════════════
+// ══ Timetable ═════════════════════════════════════════════════════
 // Two collections: timetableSlots (the recurring weekly schedule —
 // module, dayOfWeek 0-6, startTime/endTime "HH:MM", lecturer, venue,
 // color, startDate) and timetableOverrides (a one-off change to a
 // single occurrence, keyed by slotId + that occurrence's original
 // date — can override any field, move the occurrence to a different
 // date, or cancel it outright, without touching the recurring slot).
-// attendance holds one doc per student per occurrence
-// (`${uid}_${slotId}_${date}`); its mere existence means "present".
 
 const TT_DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -8510,6 +8520,14 @@ function ttBuildOccurrences(slots, overrides, startDateStr, endDateStr) {
   return occurrences;
 }
 
+// ── Timetable page: Home / Timetable / Notes ─────────────────────
+// Home      → month calendar (day popup with notes) + today's lectures
+// Timetable → Mon–Sun bar, shows that weekday's lectures
+// Notes     → sub-tabs "Notes" (cards) and "To-dos" (checklist)
+// Personal notes/to-dos live in userNotes / userTodos (one doc each,
+// private to the owner — see firestore.txt). A day note is simply a
+// note with a date; the Notes tab shows every note, dated or not.
+
 // Same generation logic, but bounded to [slot.startDate, today] and
 // used only to compute "how many times was this slot legitimately
 // scheduled so far" for the attendance percentage.
@@ -8518,276 +8536,6 @@ function ttOccurrencesToDate(slot, overrides) {
   const from = slot.startDate && slot.startDate > "2000-01-01" ? slot.startDate : today;
   if (from > today) return [];
   return ttBuildOccurrences([slot], overrides, from, today).filter((o) => !o.cancelled);
-}
-
-let ttState = null;
-
-function ttRenderAll() {
-  const { slots, overrides, myAttendance, uid, today } = ttState;
-  renderTtWeek("tt-week-days", ttBuildOccurrences(slots, overrides, today, ttAddDays(today, 6)), today, myAttendance, uid);
-  renderTtWeek("tt-next-days", ttBuildOccurrences(slots, overrides, ttAddDays(today, 7), ttAddDays(today, 13)), today, myAttendance, uid);
-  renderMyAttendance(slots, overrides, myAttendance);
-  renderTtDateStrip();
-}
-
-// Fixed 7-box strip: 3 previous days, today (centre), 3 upcoming days.
-// Tapping a box shows that day's classes; past/today classes can be
-// marked (catch-up for a missed lecture day). Tap again to close.
-function renderTtDateStrip() {
-  const strip = document.getElementById("tt-date-strip");
-  const panel = document.getElementById("tt-date-panel");
-  if (!strip || !panel || !ttState) return;
-  const { slots, overrides, myAttendance, uid, today, selected } = ttState;
-
-  strip.innerHTML = "";
-  for (let i = -3; i <= 3; i++) {
-    const ds = ttAddDays(today, i);
-    const [y, m, d] = ds.split("-").map(Number);
-    const dow = new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short" });
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "tt-date-box" + (i === 0 ? " is-today" : "") + (ds === selected ? " selected" : "");
-    btn.innerHTML = `<span class="tt-date-dow">${dow}</span><span class="tt-date-num">${d}</span>`;
-    btn.addEventListener("click", () => {
-      ttState.selected = ttState.selected === ds ? null : ds;
-      renderTtDateStrip();
-    });
-    strip.appendChild(btn);
-  }
-
-  panel.innerHTML = "";
-  if (!selected) { panel.hidden = true; return; }
-  panel.hidden = false;
-
-  const isPast = selected < today;
-  const heading = document.createElement("p");
-  heading.className = "tt-day-heading" + (selected === today ? " tt-day-today" : "");
-  heading.innerHTML = `${selected === today ? "Today" : TT_DAY_NAMES[ttDayOfWeek(selected)]} <span class="tt-day-date">${ttFormatDateLabel(selected)}</span>`;
-  panel.appendChild(heading);
-
-  const items = ttBuildOccurrences(slots, overrides, selected, selected);
-  const list = document.createElement("div");
-  list.className = "tt-card-list";
-  if (!items.length) {
-    const empty = document.createElement("p");
-    empty.className = "tt-empty-day";
-    empty.textContent = "No classes scheduled.";
-    list.appendChild(empty);
-  } else {
-    items.forEach((o) => list.appendChild(buildTtCard(o, selected <= today, myAttendance, uid)));
-  }
-  panel.appendChild(list);
-
-  if (isPast && items.some((o) => !o.cancelled)) {
-    const hint = document.createElement("p");
-    hint.className = "tt-date-hint";
-    hint.textContent = "Missed marking? You can still mark attendance for this day.";
-    panel.appendChild(hint);
-  }
-}
-
-async function initTimetablePage(user) {
-  const loadingState = document.getElementById("loading-state");
-  const errorState = document.getElementById("error-state");
-  const content = document.getElementById("timetable-content");
-
-  try {
-    const { slots, overrides } = await fetchTimetableData();
-
-    const today = ttToday();
-    const thisWeekStart = today;
-    const thisWeekEnd = ttAddDays(today, 6);
-    const nextWeekStart = ttAddDays(today, 7);
-    const nextWeekEnd = ttAddDays(today, 13);
-
-    // Which attendance docs already exist for this user, for the dates
-    // we're about to render (this week only — attendance can only be
-    // marked for today anyway, but we still need to know today's state).
-    const attendSnap = await getDocs(query(collection(db, "attendance"), where("uid", "==", user.uid)));
-    const myAttendance = new Set();
-    attendSnap.forEach((d) => myAttendance.add(`${d.data().slotId}_${d.data().date}`));
-
-    ttState = { slots, overrides, myAttendance, uid: user.uid, today, selected: null };
-    ttRenderAll();
-
-    wireTtTabs();
-
-    loadingState.hidden = true;
-    content.hidden = false;
-  } catch (err) {
-    loadingState.hidden = true;
-    errorState.hidden = false;
-    errorState.textContent = "Could not load the timetable. Please try again later.";
-  }
-}
-
-function wireTtTabs() {
-  const tabs = document.getElementById("tt-tabs");
-  if (!tabs || tabs.dataset.wired) return;
-  tabs.dataset.wired = "1";
-  const views = {
-    week: document.getElementById("tt-view-week"),
-    next: document.getElementById("tt-view-next"),
-    attendance: document.getElementById("tt-view-attendance")
-  };
-  tabs.addEventListener("click", (e) => {
-    const btn = e.target.closest(".tt-tab-pill");
-    if (!btn) return;
-    tabs.querySelectorAll(".tt-tab-pill").forEach((b) => b.classList.toggle("active", b === btn));
-    Object.entries(views).forEach(([key, el]) => { el.hidden = key !== btn.dataset.ttView; });
-  });
-}
-
-// Groups a flat occurrence list by date and renders one day-block per
-// date in range, oldest first, each with its own card list. Days with
-// nothing scheduled still get a heading + an empty-state line, so the
-// week reads as complete rather than looking broken.
-function renderTtWeek(containerId, occurrences, today, myAttendance, uid) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
-  container.innerHTML = "";
-
-  const byDate = new Map();
-  occurrences.forEach((o) => {
-    if (!byDate.has(o.date)) byDate.set(o.date, []);
-    byDate.get(o.date).push(o);
-  });
-
-  const dates = Array.from(byDate.keys()).sort();
-  if (dates.length === 0 && occurrences.length === 0) {
-    // Still show 7 empty day headings so the week isn't just blank —
-    // fall through to the loop below with whatever dates exist.
-  }
-
-  // Ensure every date in the visible span shows up even with 0 classes.
-  // The caller already generated only in-range dates for occurrences,
-  // so we reconstruct the span from the first/last occurrence date if
-  // present, otherwise just render nothing extra.
-  const allDates = dates.length ? dates : [];
-
-  const block = document.createElement("div");
-  allDates.forEach((dateStr) => {
-    const dayBlock = document.createElement("div");
-    dayBlock.className = "tt-day-block";
-
-    const heading = document.createElement("p");
-    const isToday = dateStr === today;
-    heading.className = "tt-day-heading" + (isToday ? " tt-day-today" : "");
-    const label = isToday ? "Today" : (dateStr === ttAddDays(today, 1) ? "Tomorrow" : TT_DAY_NAMES[ttDayOfWeek(dateStr)]);
-    heading.innerHTML = `${label} <span class="tt-day-date">${ttFormatDateLabel(dateStr)}</span>`;
-    dayBlock.appendChild(heading);
-
-    const list = document.createElement("div");
-    list.className = "tt-card-list";
-    const dayItems = byDate.get(dateStr) || [];
-
-    if (dayItems.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "tt-empty-day";
-      empty.textContent = "No classes scheduled.";
-      list.appendChild(empty);
-    } else {
-      dayItems.forEach((o) => list.appendChild(buildTtCard(o, isToday, myAttendance, uid)));
-    }
-
-    dayBlock.appendChild(list);
-    block.appendChild(dayBlock);
-  });
-
-  if (allDates.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "tt-empty-state";
-    empty.textContent = "No classes scheduled for this period.";
-    block.appendChild(empty);
-  }
-
-  container.appendChild(block);
-}
-
-function buildTtCard(o, isToday, myAttendance, uid) {
-  const card = document.createElement("div");
-  card.className = "tt-card" + (o.cancelled ? " tt-cancelled" : "");
-  card.style.setProperty("--tt-color", o.color || "#4C8DFF");
-
-  const timeCol = document.createElement("div");
-  timeCol.className = "tt-card-time-col";
-  timeCol.innerHTML = `<span class="tt-card-time">${ttFormatTime(o.startTime)}</span><span class="tt-card-time-end">${ttFormatTime(o.endTime)}</span>`;
-
-  const body = document.createElement("div");
-  body.className = "tt-card-body";
-
-  const topRow = document.createElement("div");
-  topRow.className = "tt-card-top-row";
-  const moduleEl = document.createElement("p");
-  moduleEl.className = "tt-card-module";
-  moduleEl.textContent = o.module || "Untitled module";
-  topRow.appendChild(moduleEl);
-  if (o.cancelled) {
-    const badge = document.createElement("span");
-    badge.className = "tt-card-badge";
-    badge.textContent = "Cancelled";
-    topRow.appendChild(badge);
-  } else if (o.moved) {
-    const badge = document.createElement("span");
-    badge.className = "tt-card-badge";
-    badge.textContent = "Rescheduled";
-    topRow.appendChild(badge);
-  }
-  body.appendChild(topRow);
-
-  const meta = document.createElement("p");
-  meta.className = "tt-card-meta";
-  const lecturerEl = document.createElement("span");
-  lecturerEl.textContent = `👤 ${o.lecturer || "TBA"}`;
-  const venueEl = document.createElement("span");
-  venueEl.textContent = `📍 ${o.venue || "TBA"}`;
-  meta.appendChild(lecturerEl);
-  meta.appendChild(venueEl);
-  body.appendChild(meta);
-
-  if (o.note) {
-    const note = document.createElement("p");
-    note.className = "tt-card-note";
-    note.textContent = o.note;
-    body.appendChild(note);
-  }
-
-  if (isToday && !o.cancelled) {
-    const key = `${o.slotId}_${o.date}`;
-    const attendBtn = document.createElement("button");
-    attendBtn.type = "button";
-    attendBtn.className = "tt-attend-btn" + (myAttendance.has(key) ? " marked" : "");
-    attendBtn.textContent = myAttendance.has(key) ? "✓ Attended" : "Mark Attendance";
-    attendBtn.addEventListener("click", async () => {
-      attendBtn.disabled = true;
-      try {
-        if (myAttendance.has(key)) {
-          await deleteDoc(doc(db, "attendance", `${uid}_${key}`));
-          myAttendance.delete(key);
-          attendBtn.classList.remove("marked");
-          attendBtn.textContent = "Mark Attendance";
-        } else {
-          await setDoc(doc(db, "attendance", `${uid}_${key}`), {
-            uid, slotId: o.slotId, date: o.date, module: o.module || "",
-            markedAt: serverTimestamp()
-          });
-          myAttendance.add(key);
-          attendBtn.classList.add("marked");
-          attendBtn.textContent = "✓ Attended";
-        }
-        if (ttState) ttRenderAll();
-      } catch (err) {
-        // leave state as-is; button re-enables below so they can retry
-      } finally {
-        attendBtn.disabled = false;
-      }
-    });
-    body.appendChild(attendBtn);
-  }
-
-  card.appendChild(timeCol);
-  card.appendChild(body);
-  return card;
 }
 
 // Aggregates attendance by module name (a module can have more than
@@ -8844,6 +8592,565 @@ function renderMyAttendance(slots, overrides, myAttendance) {
       `;
       listEl.appendChild(card);
     });
+}
+
+let ttState = null;
+const TT_MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const TT_DOW_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]; // bar order; value = JS getDay()
+const TT_DOW_VALUE = [1, 2, 3, 4, 5, 6, 0];
+
+function ttFormatLong(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
+function ttFormatShort(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+function ttNotesOn(date) {
+  return ttState.notes
+    .filter((n) => n.date === date)
+    .sort((a, b) => (a.time || "99:99").localeCompare(b.time || "99:99") || (a.createdAt || 0) - (b.createdAt || 0));
+}
+const ttEl = (id) => document.getElementById(id);
+
+async function initTimetablePage(user) {
+  const loadingState = ttEl("loading-state");
+  const errorState = ttEl("error-state");
+  const content = ttEl("timetable-content");
+  try {
+    const { slots, overrides } = await fetchTimetableData();
+    const today = ttToday();
+
+    let notes = [], todos = [], plannerError = false;
+    try {
+      const [nSnap, tSnap] = await Promise.all([
+        getDocs(query(collection(db, "userNotes"), where("uid", "==", user.uid))),
+        getDocs(query(collection(db, "userTodos"), where("uid", "==", user.uid)))
+      ]);
+      nSnap.forEach((d) => notes.push({ id: d.id, ...d.data() }));
+      tSnap.forEach((d) => todos.push({ id: d.id, ...d.data() }));
+    } catch (e) { plannerError = true; }
+
+    const myAttendance = new Set();
+    try {
+      const attendSnap = await getDocs(query(collection(db, "attendance"), where("uid", "==", user.uid)));
+      attendSnap.forEach((d) => myAttendance.add(`${d.data().slotId}_${d.data().date}`));
+    } catch (e) { /* attendance unavailable — page still works */ }
+
+    const [ty, tm] = today.split("-").map(Number);
+    ttState = { slots, overrides, myAttendance, notes, todos, uid: user.uid, today, plannerError, calY: ty, calM: tm - 1, noteCtx: null };
+
+    renderTtCalendar(0);
+    renderTtToday();
+    wireTtMainTabs();
+    wireTtDayBar();
+    wireTtScheduleTabs();
+    renderMyAttendance(slots, overrides, myAttendance);
+    wireTtNotesTabs();
+    wireTtModals();
+    renderTtNotes();
+    renderTtTodos();
+
+    loadingState.hidden = true;
+    content.hidden = false;
+    ttEl("tt-tabbar").hidden = false;
+    ttState.liquidMain && ttState.liquidMain.snap();
+  } catch (err) {
+    loadingState.hidden = true;
+    errorState.hidden = false;
+    errorState.textContent = "Could not load the timetable. Please try again later.";
+  }
+}
+
+// ── Main bottom tab bar ──────────────────────────────────────────
+function wireTtMainTabs() {
+  const bar = ttEl("tt-tabbar");
+  const pills = [...bar.querySelectorAll(".admin-tab-pill")];
+  const panels = [...document.querySelectorAll(".tt-panel")];
+  const titles = { home: "Home", timetable: "Timetable", notes: "Notes" };
+  const liquid = attachLiquidTabs(bar, ".admin-tab-pill");
+  ttState.liquidMain = liquid;
+  let current = 0;
+  pills.forEach((btn, idx) => {
+    btn.addEventListener("click", () => {
+      if (idx === current) return;
+      const dir = idx > current ? 1 : -1;
+      current = idx;
+      pills.forEach((b) => b.classList.toggle("active", b === btn));
+      liquid.move();
+      panels.forEach((p) => {
+        const on = p.dataset.tab === btn.dataset.tab;
+        p.hidden = !on;
+        if (on) playPanelIn(p, dir);
+      });
+      ttEl("tt-title").textContent = titles[btn.dataset.tab] || "";
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  });
+}
+
+// ── Home: calendar ───────────────────────────────────────────────
+function renderTtCalendar(dir) {
+  const { slots, overrides, notes, today, calY, calM } = ttState;
+  ttEl("cal-title").textContent = `${TT_MONTHS[calM]} ${calY}`;
+
+  const first = new Date(calY, calM, 1);
+  const offset = (first.getDay() + 6) % 7; // week starts Monday
+  const gridStart = ttDateStr(new Date(calY, calM, 1 - offset));
+  const gridEnd = ttAddDays(gridStart, 41); // always 6 rows → no layout jump
+
+  const classDays = new Set();
+  ttBuildOccurrences(slots, overrides, gridStart, gridEnd).forEach((o) => { if (!o.cancelled) classDays.add(o.date); });
+  const noteDays = new Set(notes.filter((n) => n.date).map((n) => n.date));
+
+  const grid = ttEl("cal-grid");
+  grid.innerHTML = "";
+  for (let i = 0; i < 42; i++) {
+    const ds = ttAddDays(gridStart, i);
+    const [y, m, d] = ds.split("-").map(Number);
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cal-day" + (m - 1 !== calM ? " cal-out" : "") + (ds === today ? " is-today" : "");
+    btn.setAttribute("aria-label", ttFormatLong(ds));
+    const num = document.createElement("span");
+    num.className = "cal-num";
+    num.textContent = d;
+    const dots = document.createElement("span");
+    dots.className = "cal-dots";
+    if (classDays.has(ds)) dots.innerHTML += '<i class="cal-dot cal-dot-class"></i>';
+    if (noteDays.has(ds)) dots.innerHTML += '<i class="cal-dot cal-dot-note"></i>';
+    btn.append(num, dots);
+    btn.addEventListener("click", () => openTtDayModal(ds));
+    grid.appendChild(btn);
+  }
+  if (dir) playPanelIn(grid, dir);
+}
+
+function ttShiftMonth(delta) {
+  let m = ttState.calM + delta, y = ttState.calY;
+  if (m < 0) { m = 11; y -= 1; } else if (m > 11) { m = 0; y += 1; }
+  ttState.calM = m; ttState.calY = y;
+  renderTtCalendar(delta);
+}
+
+// ── Home: today's lectures ───────────────────────────────────────
+function renderTtToday() {
+  const { slots, overrides, today } = ttState;
+  ttEl("tt-today-date").textContent = ttFormatDateLabel(today);
+  const list = ttEl("tt-today-list");
+  list.innerHTML = "";
+  const items = ttBuildOccurrences(slots, overrides, today, today);
+  if (!items.length) {
+    list.innerHTML = '<p class="tt-empty-day">No lectures today.</p>';
+    return;
+  }
+  items.forEach((o) => list.appendChild(buildTtCard(o)));
+}
+
+// ── Timetable tab: Mon–Sun bar ───────────────────────────────────
+function wireTtDayBar() {
+  const bar = ttEl("tt-daybar");
+  bar.innerHTML = "";
+  const todayDow = ttDayOfWeek(ttState.today);
+  let current = TT_DOW_VALUE.indexOf(todayDow);
+  TT_DOW_SHORT.forEach((label, idx) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "seg-pill" + (idx === current ? " active" : "");
+    b.textContent = label;
+    b.addEventListener("click", () => {
+      if (idx === current) return;
+      const dir = idx > current ? 1 : -1;
+      current = idx;
+      bar.querySelectorAll(".seg-pill").forEach((x) => x.classList.toggle("active", x === b));
+      liquid.move();
+      renderTtDay(TT_DOW_VALUE[idx], dir);
+    });
+    bar.appendChild(b);
+  });
+  const liquid = attachLiquidTabs(bar, ".seg-pill");
+  renderTtDay(todayDow, 0);
+}
+
+// Shows the lectures for the next date (today included) that falls on
+// this weekday, so one-off cancellations/moves are reflected.
+function renderTtDay(dow, dir) {
+  const { slots, overrides, today } = ttState;
+  const diff = (dow - ttDayOfWeek(today) + 7) % 7;
+  const date = ttAddDays(today, diff);
+  const label = diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : TT_DAY_NAMES[dow];
+  ttEl("tt-day-heading").innerHTML = "";
+  const h = ttEl("tt-day-heading");
+  h.append(label + " ");
+  const sp = document.createElement("span");
+  sp.className = "tt-day-date";
+  sp.textContent = ttFormatDateLabel(date);
+  h.appendChild(sp);
+
+  const list = ttEl("tt-day-list");
+  list.innerHTML = "";
+  const items = ttBuildOccurrences(slots, overrides, date, date);
+  if (!items.length) list.innerHTML = '<p class="tt-empty-day">No lectures on this day.</p>';
+  else items.forEach((o) => list.appendChild(buildTtCard(o)));
+  if (dir) playPanelIn(list, dir);
+}
+
+// ── Lecture card (no attendance) ─────────────────────────────────
+function buildTtCard(o, markable) {
+  const card = document.createElement("div");
+  card.className = "tt-card" + (o.cancelled ? " tt-cancelled" : "");
+  card.style.setProperty("--tt-color", o.color || "#4C8DFF");
+
+  const timeCol = document.createElement("div");
+  timeCol.className = "tt-card-time-col";
+  timeCol.innerHTML = `<span class="tt-card-time">${ttFormatTime(o.startTime)}</span><span class="tt-card-time-end">${ttFormatTime(o.endTime)}</span>`;
+
+  const body = document.createElement("div");
+  body.className = "tt-card-body";
+  const topRow = document.createElement("div");
+  topRow.className = "tt-card-top-row";
+  const moduleEl = document.createElement("p");
+  moduleEl.className = "tt-card-module";
+  moduleEl.textContent = o.module || "Untitled module";
+  topRow.appendChild(moduleEl);
+  if (o.cancelled || o.moved) {
+    const badge = document.createElement("span");
+    badge.className = "tt-card-badge";
+    badge.textContent = o.cancelled ? "Cancelled" : "Rescheduled";
+    topRow.appendChild(badge);
+  }
+  body.appendChild(topRow);
+
+  const meta = document.createElement("p");
+  meta.className = "tt-card-meta";
+  const a = document.createElement("span"); a.textContent = `👤 ${o.lecturer || "TBA"}`;
+  const v = document.createElement("span"); v.textContent = `📍 ${o.venue || "TBA"}`;
+  meta.append(a, v);
+  body.appendChild(meta);
+
+  if (o.note) {
+    const note = document.createElement("p");
+    note.className = "tt-card-note";
+    note.textContent = o.note;
+    body.appendChild(note);
+  }
+  if (markable && !o.cancelled) {
+    const { myAttendance, uid } = ttState;
+    const key = `${o.slotId}_${o.date}`;
+    const attendBtn = document.createElement("button");
+    attendBtn.type = "button";
+    attendBtn.className = "tt-attend-btn" + (myAttendance.has(key) ? " marked" : "");
+    attendBtn.textContent = myAttendance.has(key) ? "✓ Attended" : "Mark attendance";
+    attendBtn.addEventListener("click", async () => {
+      attendBtn.disabled = true;
+      try {
+        if (myAttendance.has(key)) {
+          await deleteDoc(doc(db, "attendance", `${uid}_${key}`));
+          myAttendance.delete(key);
+          attendBtn.classList.remove("marked");
+          attendBtn.textContent = "Mark attendance";
+        } else {
+          await setDoc(doc(db, "attendance", `${uid}_${key}`), {
+            uid, slotId: o.slotId, date: o.date, module: o.module || "",
+            markedAt: serverTimestamp()
+          });
+          myAttendance.add(key);
+          attendBtn.classList.add("marked");
+          attendBtn.textContent = "✓ Attended";
+        }
+        renderMyAttendance(ttState.slots, ttState.overrides, myAttendance);
+      } catch (err) {
+        // leave state as-is; the button re-enables so they can retry
+      } finally {
+        attendBtn.disabled = false;
+      }
+    });
+    body.appendChild(attendBtn);
+  }
+
+  card.append(timeCol, body);
+  return card;
+}
+
+// ── Timetable tab: Schedule / Attendance switch ──────────────────
+function wireTtScheduleTabs() {
+  const bar = ttEl("tt-sched-seg");
+  const pills = [...bar.querySelectorAll(".seg-pill")];
+  const panels = { schedule: ttEl("tt-sub-schedule"), attendance: ttEl("tt-sub-attendance") };
+  const liquid = attachLiquidTabs(bar, ".seg-pill");
+  let current = 0;
+  pills.forEach((btn, idx) => {
+    btn.addEventListener("click", () => {
+      if (idx === current) return;
+      const dir = idx > current ? 1 : -1;
+      current = idx;
+      pills.forEach((b) => b.classList.toggle("active", b === btn));
+      liquid.move();
+      Object.entries(panels).forEach(([k, el]) => {
+        const on = k === btn.dataset.sub;
+        el.hidden = !on;
+        if (on) playPanelIn(el, dir);
+      });
+    });
+  });
+}
+
+// ── Notes tab ────────────────────────────────────────────────────
+function wireTtNotesTabs() {
+  const bar = ttEl("tt-notes-seg");
+  const pills = [...bar.querySelectorAll(".seg-pill")];
+  const panels = { notes: ttEl("tt-sub-notes"), todos: ttEl("tt-sub-todos") };
+  const liquid = attachLiquidTabs(bar, ".seg-pill");
+  let current = 0;
+  pills.forEach((btn, idx) => {
+    btn.addEventListener("click", () => {
+      if (idx === current) return;
+      const dir = idx > current ? 1 : -1;
+      current = idx;
+      pills.forEach((b) => b.classList.toggle("active", b === btn));
+      liquid.move();
+      Object.entries(panels).forEach(([k, el]) => {
+        const on = k === btn.dataset.sub;
+        el.hidden = !on;
+        if (on) playPanelIn(el, dir);
+      });
+    });
+  });
+  ttEl("tt-add-note").addEventListener("click", () => openTtNoteModal(null, { date: "", lockDate: false, fromDay: null }));
+  ttEl("tt-add-todo").addEventListener("click", () => openTtTodoModal());
+}
+
+function renderTtNotes() {
+  const grid = ttEl("tt-note-grid");
+  grid.innerHTML = "";
+  const notes = [...ttState.notes].sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  if (!notes.length) {
+    grid.innerHTML = '<p class="tt-empty-state">No notes yet. Tap “Add note” to create one.</p>';
+    return;
+  }
+  notes.forEach((n) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "note-card";
+    const h = document.createElement("p"); h.className = "note-card-title"; h.textContent = n.title;
+    card.appendChild(h);
+    if (n.body) { const b = document.createElement("p"); b.className = "note-card-body"; b.textContent = n.body; card.appendChild(b); }
+    const parts = [];
+    if (n.date) parts.push("📅 " + ttFormatShort(n.date));
+    if (n.time) parts.push("🕒 " + ttFormatTime(n.time));
+    if (parts.length) { const f = document.createElement("p"); f.className = "note-card-meta"; f.textContent = parts.join("  ·  "); card.appendChild(f); }
+    card.addEventListener("click", () => openTtNoteModal(n, { date: n.date || "", lockDate: false, fromDay: null }));
+    grid.appendChild(card);
+  });
+}
+
+function renderTtTodos() {
+  const list = ttEl("tt-todo-list");
+  list.innerHTML = "";
+  const todos = [...ttState.todos].sort((a, b) => (a.done - b.done) || (b.createdAt || 0) - (a.createdAt || 0));
+  if (!todos.length) {
+    list.innerHTML = '<p class="tt-empty-state">Nothing to do. Tap “Add to-do” to add a task.</p>';
+    return;
+  }
+  todos.forEach((t) => {
+    const row = document.createElement("div");
+    row.className = "todo-row" + (t.done ? " done" : "");
+    const check = document.createElement("button");
+    check.type = "button";
+    check.className = "todo-check";
+    check.setAttribute("aria-label", t.done ? "Mark as not done" : "Mark as done");
+    check.textContent = t.done ? "✓" : "";
+    check.addEventListener("click", async () => {
+      const next = !t.done;
+      try {
+        await updateDoc(doc(db, "userTodos", t.id), { done: next });
+        t.done = next;
+        renderTtTodos();
+      } catch (e) { /* leave as is */ }
+    });
+    const text = document.createElement("span");
+    text.className = "todo-text";
+    text.textContent = t.text;
+    const del = document.createElement("button");
+    del.type = "button";
+    del.className = "todo-del";
+    del.setAttribute("aria-label", "Delete to-do");
+    del.textContent = "✕";
+    del.addEventListener("click", async () => {
+      try {
+        await deleteDoc(doc(db, "userTodos", t.id));
+        ttState.todos = ttState.todos.filter((x) => x.id !== t.id);
+        renderTtTodos();
+      } catch (e) { /* leave as is */ }
+    });
+    row.append(check, text, del);
+    list.appendChild(row);
+  });
+}
+
+// ── Modals: day popup, note form, to-do form ─────────────────────
+function openTtDayModal(ds) {
+  const { slots, overrides } = ttState;
+  ttEl("tt-day-modal-title").textContent = ttFormatLong(ds);
+  const body = ttEl("tt-day-modal-body");
+  body.innerHTML = "";
+
+  const lectures = ttBuildOccurrences(slots, overrides, ds, ds);
+  if (lectures.length) {
+    const lab = document.createElement("p");
+    lab.className = "section-label";
+    lab.textContent = "Lectures";
+    body.appendChild(lab);
+    const l = document.createElement("div");
+    l.className = "tt-card-list";
+    lectures.forEach((o) => l.appendChild(buildTtCard(o, ds <= ttState.today))); // past + today can be marked
+    body.appendChild(l);
+  }
+
+  const lab2 = document.createElement("p");
+  lab2.className = "section-label";
+  lab2.textContent = "Notes";
+  body.appendChild(lab2);
+  const notes = ttNotesOn(ds);
+  if (!notes.length) {
+    const p = document.createElement("p");
+    p.className = "tt-empty-day";
+    p.textContent = "No notes";
+    body.appendChild(p);
+  } else {
+    const wrap = document.createElement("div");
+    wrap.className = "day-note-list";
+    notes.forEach((n) => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "day-note";
+      const top = document.createElement("div");
+      top.className = "day-note-top";
+      const t = document.createElement("span"); t.className = "day-note-title"; t.textContent = n.title;
+      top.appendChild(t);
+      if (n.time) { const tm = document.createElement("span"); tm.className = "day-note-time"; tm.textContent = ttFormatTime(n.time); top.appendChild(tm); }
+      item.appendChild(top);
+      if (n.body) { const b = document.createElement("p"); b.className = "day-note-body"; b.textContent = n.body; item.appendChild(b); }
+      item.addEventListener("click", () => {
+        ttEl("modal-tt-day").hidden = true;
+        openTtNoteModal(n, { date: ds, lockDate: true, fromDay: ds });
+      });
+      wrap.appendChild(item);
+    });
+    body.appendChild(wrap);
+  }
+
+  const add = ttEl("tt-day-add-note");
+  add.onclick = () => {
+    ttEl("modal-tt-day").hidden = true;
+    openTtNoteModal(null, { date: ds, lockDate: true, fromDay: ds });
+  };
+  ttEl("modal-tt-day").hidden = false;
+}
+
+function openTtNoteModal(note, ctx) {
+  ttState.noteCtx = { note, ...ctx };
+  ttEl("tt-note-modal-title").textContent = note ? "Edit note" : "New note";
+  ttEl("ttn-title").value = note ? note.title : "";
+  ttEl("ttn-body").value = note ? (note.body || "") : "";
+  ttEl("ttn-time").value = note ? (note.time || "") : "";
+  ttEl("ttn-date").value = ctx.date || "";
+  ttEl("ttn-date-wrap").hidden = !!ctx.lockDate;
+  ttEl("ttn-delete").hidden = !note;
+  const err = ttEl("ttn-error"); err.hidden = true; err.textContent = "";
+  ttEl("modal-tt-note").hidden = false;
+}
+
+function openTtTodoModal() {
+  ttEl("ttt-text").value = "";
+  const err = ttEl("ttt-error"); err.hidden = true; err.textContent = "";
+  ttEl("modal-tt-todo").hidden = false;
+}
+
+function wireTtModals() {
+  ["modal-tt-day", "modal-tt-note", "modal-tt-todo"].forEach((id) => {
+    const ov = ttEl(id);
+    ov.querySelectorAll("[data-close-modal]").forEach((b) => b.addEventListener("click", () => { ov.hidden = true; }));
+    ov.addEventListener("click", (e) => { if (e.target === ov) ov.hidden = true; });
+  });
+
+  ttEl("tt-cal-prev").addEventListener("click", () => ttShiftMonth(-1));
+  ttEl("tt-cal-next").addEventListener("click", () => ttShiftMonth(1));
+  ttEl("tt-cal-today").addEventListener("click", () => {
+    const [y, m] = ttState.today.split("-").map(Number);
+    const dir = (y * 12 + m - 1) > (ttState.calY * 12 + ttState.calM) ? 1 : -1;
+    if (y === ttState.calY && m - 1 === ttState.calM) return;
+    ttState.calY = y; ttState.calM = m - 1;
+    renderTtCalendar(dir);
+  });
+
+  const afterNoteChange = () => {
+    renderTtCalendar(0);
+    renderTtNotes();
+    const from = ttState.noteCtx && ttState.noteCtx.fromDay;
+    ttEl("modal-tt-note").hidden = true;
+    if (from) openTtDayModal(from);
+  };
+  const showErr = (el, msg) => { el.textContent = msg; el.hidden = false; };
+
+  ttEl("form-tt-note").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const err = ttEl("ttn-error");
+    const title = ttEl("ttn-title").value.trim();
+    if (!title) return showErr(err, "Please add a header.");
+    const ctx = ttState.noteCtx;
+    const data = {
+      uid: ttState.uid,
+      title,
+      body: ttEl("ttn-body").value.trim(),
+      date: ctx.lockDate ? ctx.date : ttEl("ttn-date").value || "",
+      time: ttEl("ttn-time").value || ""
+    };
+    const btn = ttEl("ttn-save");
+    btn.disabled = true;
+    try {
+      if (ctx.note) {
+        await updateDoc(doc(db, "userNotes", ctx.note.id), data);
+        Object.assign(ctx.note, data);
+      } else {
+        data.createdAt = Date.now();
+        const ref = await addDoc(collection(db, "userNotes"), data);
+        ttState.notes.push({ id: ref.id, ...data });
+      }
+      afterNoteChange();
+    } catch (ex) {
+      showErr(err, "Could not save the note. Please try again.");
+    } finally { btn.disabled = false; }
+  });
+
+  ttEl("ttn-delete").addEventListener("click", async () => {
+    const ctx = ttState.noteCtx;
+    if (!ctx || !ctx.note || !confirm("Delete this note?")) return;
+    try {
+      await deleteDoc(doc(db, "userNotes", ctx.note.id));
+      ttState.notes = ttState.notes.filter((n) => n.id !== ctx.note.id);
+      afterNoteChange();
+    } catch (ex) { showErr(ttEl("ttn-error"), "Could not delete the note."); }
+  });
+
+  ttEl("form-tt-todo").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const err = ttEl("ttt-error");
+    const text = ttEl("ttt-text").value.trim();
+    if (!text) return showErr(err, "Please enter a task.");
+    const data = { uid: ttState.uid, text, done: false, createdAt: Date.now() };
+    const btn = ttEl("ttt-save");
+    btn.disabled = true;
+    try {
+      const ref = await addDoc(collection(db, "userTodos"), data);
+      ttState.todos.push({ id: ref.id, ...data });
+      renderTtTodos();
+      ttEl("modal-tt-todo").hidden = true;
+    } catch (ex) {
+      showErr(err, "Could not save the to-do. Please try again.");
+    } finally { btn.disabled = false; }
+  });
 }
 
 // ── Admin: Timetable management ─────────────────────────────────
@@ -9643,7 +9950,6 @@ function skeletonHTML(kind = "list", n = 3) {
 // ═══════════════════════════════════════════════════════════════════
 const DASHBOARD_LAYOUT_DOC_PATH = ["config", "dashboardLayout"];
 const DASH_SRC_TOP = [
-  { key: "profile", label: "Profile header", items: [] },
   { key: "activeTasks", label: "Active Tasks", items: [] },
   { key: "prestige", label: "Prestige Points", items: [] },
   { key: "fund", label: "My Fund Donations", items: [] },
@@ -9787,14 +10093,63 @@ function buildDashBlock(b, lib) {
   return node;
 }
 
+// Tab indicator: one pill-shaped highlight that slides lightly under the
+// active tab. Used by both the admin tab bar and the dashboard tab bar.
+function attachLiquidTabs(bar, pillSel) {
+  if (!bar) return { move() {} };
+  let ind = bar.querySelector(":scope > .tab-liquid");
+  if (!ind) {
+    ind = document.createElement("span");
+    ind.className = "tab-liquid";
+    ind.setAttribute("aria-hidden", "true");
+    bar.prepend(ind);
+  }
+  let prevL = null;
+  function place(animate) {
+    const act = bar.querySelector(pillSel + ".active");
+    if (!act || !bar.clientWidth) return;
+    const l = act.offsetLeft, r = bar.clientWidth - (act.offsetLeft + act.offsetWidth);
+    if (!animate || prevL === null) {
+      ind.style.transition = "none";
+    } else {
+      ind.style.transition = "left .22s ease, right .22s ease";
+    }
+    ind.style.left = l + "px";
+    ind.style.right = r + "px";
+    prevL = l;
+  }
+  if (window.ResizeObserver) new ResizeObserver(() => place(false)).observe(bar);
+  window.addEventListener("resize", () => place(false));
+  requestAnimationFrame(() => place(false));
+  return { move: () => place(true), snap: () => place(false) };
+}
+
+// Plays the slide+fade transition on a tab panel. dir: 1 = from right, -1 = from left.
+function playPanelIn(panel, dir) {
+  panel.classList.remove("tab-panel-in-r", "tab-panel-in-l");
+  void panel.offsetWidth;
+  panel.classList.add(dir < 0 ? "tab-panel-in-l" : "tab-panel-in-r");
+}
+
 // Builds the tab bar + panels inside #dash-layout, MOVING the filled source
 // cards out of the hidden #dash-sources library into place.
+// The profile header is NOT part of any tab: it sits in #dash-header above
+// the tabs and stays visible whichever tab is active. The tab bar is a
+// floating bottom pill bar (same look as Admin), outside .content-area.
 function applyDashboardLayout(raw, schema) {
   const root = document.getElementById("dash-layout");
   const lib = document.getElementById("dash-sources");
+  const head = document.getElementById("dash-header");
   if (!root || !lib) return;
   const layout = normalizeDashLayout(raw, schema);
   root.innerHTML = "";
+
+  if (head && !head.contains(lib.querySelector('[data-src="profile"]') || head)) {
+    head.appendChild(lib.querySelector('[data-src="profile"]'));
+  }
+
+  const oldBar = document.getElementById("dash-tabbar");
+  if (oldBar) oldBar.remove();
 
   let activeId = layout.tabs[0].id;
   try {
@@ -9802,12 +10157,16 @@ function applyDashboardLayout(raw, schema) {
     if (saved && layout.tabs.some((t) => t.id === saved)) activeId = saved;
   } catch (e) { /* ignore */ }
 
-  const bar = document.createElement("div");
-  bar.className = "dash-tabs";
+  const bar = document.createElement("nav");
+  bar.className = "admin-tab-bar dash-tab-bar";
+  bar.id = "dash-tabbar";
   bar.setAttribute("role", "tablist");
   const panels = [];
+  const buttons = [];
+  let current = layout.tabs.findIndex((t) => t.id === activeId);
+  let liquid = null;
 
-  layout.tabs.forEach((t) => {
+  layout.tabs.forEach((t, idx) => {
     const panel = document.createElement("div");
     panel.className = "dash-panel";
     panel.dataset.tab = t.id;
@@ -9823,24 +10182,35 @@ function applyDashboardLayout(raw, schema) {
 
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "dash-tab" + (t.id === activeId ? " active" : "");
+    btn.className = "admin-tab-pill" + (t.id === activeId ? " active" : "");
     btn.setAttribute("role", "tab");
     btn.textContent = t.title;
     btn.addEventListener("click", () => {
-      bar.querySelectorAll(".dash-tab").forEach((x) => x.classList.toggle("active", x === btn));
+      if (idx === current) return;
+      const dir = idx > current ? 1 : -1;
+      current = idx;
+      buttons.forEach((x) => x.classList.toggle("active", x === btn));
+      if (liquid) liquid.move();
       panels.forEach((p) => {
         const on = p.dataset.tab === t.id;
         p.hidden = !on;
-        p.classList.remove("dash-panel-in");
-        if (on) { void p.offsetWidth; p.classList.add("dash-panel-in"); }
+        if (on) playPanelIn(p, dir);
       });
       try { sessionStorage.setItem("dashTab", t.id); } catch (e) { /* ignore */ }
+      window.scrollTo({ top: 0, behavior: "smooth" });
     });
+    buttons.push(btn);
     bar.appendChild(btn);
   });
 
-  if (layout.tabs.length > 1) root.appendChild(bar);
   panels.forEach((p) => root.appendChild(p));
+  if (layout.tabs.length > 1) {
+    root.classList.add("has-tabbar");
+    (root.closest(".app-shell") || document.body).appendChild(bar);
+    liquid = attachLiquidTabs(bar, ".admin-tab-pill");
+  } else {
+    root.classList.remove("has-tabbar");
+  }
 }
 
 // ── Admin → Danger → "Customize Dashboard" ─────────────────────────
