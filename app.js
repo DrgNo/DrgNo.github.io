@@ -1545,12 +1545,25 @@ async function initDashboardPage(user) {
 // schema instead of a fixed list — see the "Directory & Dashboard
 // field schema" block above. Re-run on every renderRecord() call, so
 // it first clears out whatever it inserted last time.
+// "Roles" is no longer its own dashboard card: it is shown as a field
+// inside the Campus Details group (key "roles", rendered as pills). If the
+// saved schema doesn't already place "roles" in some group, it's appended
+// to the group with id "campus" (or the first group) at render time.
+function withRolesField(groups) {
+  const list = (groups || []).map((g) => ({ ...g, fields: [...(g.fields || [])] }));
+  if (!list.length || list.some((g) => g.fields.some((f) => f.key === "roles"))) return list;
+  const target = list.find((g) => g.id === "campus") || list[0];
+  const maxOrder = target.fields.reduce((m, f) => Math.max(m, f.order || 0), -1);
+  target.fields.push({ key: "roles", label: "Roles", order: maxOrder + 1, public: false });
+  return list;
+}
+
 function renderDynamicFieldGroups(d, groups) {
   const anchor = document.getElementById("dynamic-field-groups-anchor");
   if (!anchor) return;
   document.querySelectorAll(".dyn-field-card").forEach((el) => el.remove());
 
-  const sortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const sortedGroups = withRolesField(groups).sort((a, b) => (a.order || 0) - (b.order || 0));
   let lastInserted = anchor;
 
   sortedGroups.forEach((g, gi) => {
@@ -1568,6 +1581,31 @@ function renderDynamicFieldGroups(d, groups) {
     const fields = [...(g.fields || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
     fields.forEach((f) => {
       const raw = d[f.key];
+      if (f.key === "roles") {
+        const rrow = fieldRow(f.label || "Roles", "");
+        rrow.dataset.item = "roles";
+        const list = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+        rrow.lastChild.remove();
+        const ul = document.createElement("ul");
+        ul.className = "pill-list";
+        if (!list.length) {
+          const none = document.createElement("span");
+          none.textContent = "—";
+          none.style.fontSize = "14px";
+          rrow.appendChild(none);
+        } else {
+          list.forEach((r) => {
+            const li = document.createElement("li");
+            li.textContent = r;
+            const c = colorForRole(r);
+            li.style.background = c.bg; li.style.borderColor = c.border; li.style.color = c.text;
+            ul.appendChild(li);
+          });
+          rrow.appendChild(ul);
+        }
+        rowsWrap.appendChild(rrow);
+        return;
+      }
       const value = Array.isArray(raw) ? raw.join(", ") : raw;
       const row = fieldRow(f.label || f.key, value);
       row.dataset.item = f.key;
@@ -8541,7 +8579,7 @@ function ttOccurrencesToDate(slot, overrides) {
 // Aggregates attendance by module name (a module can have more than
 // one weekly slot — e.g. lecture + lab — and both should count toward
 // the same module's percentage).
-function renderMyAttendance(slots, overrides, myAttendance) {
+function renderMyAttendance(slots, overrides, myAbsences) {
   const overallEl = document.getElementById("attend-overall-pct");
   const overallSubEl = document.getElementById("attend-overall-sub");
   const listEl = document.getElementById("attend-module-list");
@@ -8554,7 +8592,7 @@ function renderMyAttendance(slots, overrides, myAttendance) {
     if (!byModule.has(key)) byModule.set(key, { attended: 0, total: 0, color: slot.color || "#4C8DFF" });
     const entry = byModule.get(key);
     entry.total += occ.length;
-    occ.forEach((o) => { if (myAttendance.has(`${o.slotId}_${o.date}`)) entry.attended += 1; });
+    occ.forEach((o) => { if (!myAbsences.has(`${o.slotId}_${o.date}`)) entry.attended += 1; });  // attended unless marked absent
   });
 
   let grandAttended = 0, grandTotal = 0;
@@ -8632,21 +8670,21 @@ async function initTimetablePage(user) {
       tSnap.forEach((d) => todos.push({ id: d.id, ...d.data() }));
     } catch (e) { plannerError = true; }
 
-    const myAttendance = new Set();
+    const myAbsences = new Set();
     try {
-      const attendSnap = await getDocs(query(collection(db, "attendance"), where("uid", "==", user.uid)));
-      attendSnap.forEach((d) => myAttendance.add(`${d.data().slotId}_${d.data().date}`));
+      const attendSnap = await getDocs(query(collection(db, "absences"), where("uid", "==", user.uid)));
+      attendSnap.forEach((d) => myAbsences.add(`${d.data().slotId}_${d.data().date}`));
     } catch (e) { /* attendance unavailable — page still works */ }
 
     const [ty, tm] = today.split("-").map(Number);
-    ttState = { slots, overrides, myAttendance, notes, todos, uid: user.uid, today, plannerError, calY: ty, calM: tm - 1, noteCtx: null };
+    ttState = { slots, overrides, myAbsences, notes, todos, uid: user.uid, today, plannerError, calY: ty, calM: tm - 1, noteCtx: null };
 
     renderTtCalendar(0);
     renderTtToday();
     wireTtMainTabs();
     wireTtDayBar();
     wireTtScheduleTabs();
-    renderMyAttendance(slots, overrides, myAttendance);
+    renderMyAttendance(slots, overrides, myAbsences);
     wireTtNotesTabs();
     wireTtModals();
     renderTtNotes();
@@ -8836,30 +8874,30 @@ function buildTtCard(o, markable) {
     body.appendChild(note);
   }
   if (markable && !o.cancelled) {
-    const { myAttendance, uid } = ttState;
+    const { myAbsences, uid } = ttState;
     const key = `${o.slotId}_${o.date}`;
     const attendBtn = document.createElement("button");
     attendBtn.type = "button";
-    attendBtn.className = "tt-attend-btn" + (myAttendance.has(key) ? " marked" : "");
-    attendBtn.textContent = myAttendance.has(key) ? "✓ Attended" : "Mark attendance";
+    attendBtn.className = "tt-attend-btn" + (myAbsences.has(key) ? " marked" : "");
+    attendBtn.textContent = myAbsences.has(key) ? "✗ Absent" : "Mark as absent";
     attendBtn.addEventListener("click", async () => {
       attendBtn.disabled = true;
       try {
-        if (myAttendance.has(key)) {
-          await deleteDoc(doc(db, "attendance", `${uid}_${key}`));
-          myAttendance.delete(key);
+        if (myAbsences.has(key)) {
+          await deleteDoc(doc(db, "absences", `${uid}_${key}`));
+          myAbsences.delete(key);
           attendBtn.classList.remove("marked");
-          attendBtn.textContent = "Mark attendance";
+          attendBtn.textContent = "Mark as absent";
         } else {
-          await setDoc(doc(db, "attendance", `${uid}_${key}`), {
+          await setDoc(doc(db, "absences", `${uid}_${key}`), {
             uid, slotId: o.slotId, date: o.date, module: o.module || "",
             markedAt: serverTimestamp()
           });
-          myAttendance.add(key);
+          myAbsences.add(key);
           attendBtn.classList.add("marked");
-          attendBtn.textContent = "✓ Attended";
+          attendBtn.textContent = "✗ Absent";
         }
-        renderMyAttendance(ttState.slots, ttState.overrides, myAttendance);
+        renderMyAttendance(ttState.slots, ttState.overrides, myAbsences);
       } catch (err) {
         // leave state as-is; the button re-enables so they can retry
       } finally {
@@ -9426,7 +9464,7 @@ const DB_STORAGE_COLLECTIONS = [
   "announcements", "groupProjects", "wallOfFame",
   "events", "eventLabels", "badges", "badgeAssignments", "tasks",
   "directoryPrivacy", "pushSubscriptions", "prestigeLog", "groupProjectRatings",
-  "config", "timetableSlots", "timetableOverrides", "attendance"
+  "config", "timetableSlots", "timetableOverrides", "attendance", "absences"
 ];
 
 const dbTextEncoder = new TextEncoder();
@@ -9952,8 +9990,7 @@ const DASHBOARD_LAYOUT_DOC_PATH = ["config", "dashboardLayout"];
 const DASH_SRC_TOP = [
   { key: "activeTasks", label: "Active Tasks", items: [] },
   { key: "prestige", label: "Prestige Points", items: [] },
-  { key: "fund", label: "My Fund Donations", items: [] },
-  { key: "roles", label: "Roles", items: [] }
+  { key: "fund", label: "My Fund Donations", items: [] }
 ];
 const DASH_SRC_BOTTOM = [
   { key: "extra", label: "Extracurricular Details", items: [["sports", "Sports"], ["clubs", "Clubs"], ["skills", "Skills"]] },
@@ -9965,7 +10002,7 @@ function dashGroupKey(g, i) { return "group:" + (g.id || ("g" + i)); }
 
 // Every data section that can be placed, in the original page's order.
 function dashSourceList(schema) {
-  const groups = [...(schema || DEFAULT_DIRECTORY_FIELD_GROUPS)].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const groups = withRolesField(schema || DEFAULT_DIRECTORY_FIELD_GROUPS).sort((a, b) => (a.order || 0) - (b.order || 0));
   const mid = groups.map((g, i) => ({
     key: dashGroupKey(g, i),
     label: g.title || "Details",
