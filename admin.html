@@ -48,7 +48,7 @@
 
     <main class="content-area">
       <div class="dash-wrap" id="admin-page">
-        <div id="loading-state" class="state-msg">Checking access…</div>
+        <div id="loading-state" class="sk-wrap" aria-busy="true" aria-label="Loading"><span class="sk sk-title" style="width:22%"></span><div class="sk-grid"><span class="sk" style="height:48px;border-radius:12px"></span><span class="sk" style="height:48px;border-radius:12px"></span><span class="sk" style="height:48px;border-radius:12px"></span><span class="sk" style="height:48px;border-radius:12px"></span><span class="sk" style="height:48px;border-radius:12px"></span><span class="sk" style="height:48px;border-radius:12px"></span><span class="sk" style="height:48px;border-radius:12px"></span><span class="sk" style="height:48px;border-radius:12px"></span></div></div>
         <div id="access-denied" class="state-msg error-msg" hidden>You don't have access to this page.</div>
 
         <div id="admin-content" hidden>
@@ -222,6 +222,8 @@
               <button type="button" class="admin-section-btn" data-modal="modal-badbehavior" data-perm="badBehavior">Manage Bad Behavior Records</button>
               <button type="button" class="admin-section-btn" data-modal="modal-bulkfield" data-perm="bulkField">Add/Remove Field (All Batchmates)</button>
               <button type="button" class="admin-section-btn" data-modal="modal-fieldmanager" data-perm="fieldManager">Manage Profile Fields</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-dashcust" data-perm="dashboardLayout">Customize Dashboard</button>
+              <button type="button" class="admin-section-btn" data-modal="modal-csvimport" data-perm="csvImport">Import CSV Data</button>
               <button type="button" class="admin-section-btn" data-modal="modal-settingsfields" data-perm="settingsFields">Settings Change-Request Fields</button>
               <button type="button" class="admin-section-btn" data-modal="modal-dbstorage" data-perm="dbStorage">Database Storage</button>
               <button type="button" class="admin-section-btn" id="new-form-btn">New Form</button>
@@ -586,6 +588,12 @@
             <option value="complete">Complete</option>
           </select>
 
+          <label for="proj-membership-mode">Group membership</label>
+          <select id="proj-membership-mode">
+            <option value="one">One group per member (1:1)</option>
+            <option value="many">A member can be in many groups (1:many)</option>
+          </select>
+
           <p class="section-label" style="margin-top:6px;">Groups</p>
           <p class="fine-print" style="text-align:left; margin:0 0 14px;">Add one group if the whole batch works together — its name won't be shown. Add more if the project is split into separate groups.</p>
 
@@ -643,6 +651,12 @@
             <option value="starting">Starting</option>
             <option value="ongoing">Ongoing</option>
             <option value="complete">Complete</option>
+          </select>
+
+          <label for="projectedit-membership-mode">Group membership</label>
+          <select id="projectedit-membership-mode">
+            <option value="one">One group per member (1:1)</option>
+            <option value="many">A member can be in many groups (1:many)</option>
           </select>
 
           <p class="section-label" style="margin-top:6px;">Groups</p>
@@ -862,11 +876,11 @@
     <div class="modal-box">
       <button class="modal-close" data-close-modal="modal-bulkfield" aria-label="Close">✕</button>
       <div class="admin-modal-body">
-        <p class="section-label">Add/Remove Field (All Batchmates)</p>
+        <p class="section-label">Add/Remove/Rename Field (All Batchmates)</p>
         <p class="fine-print" style="text-align:left; margin:0 0 16px;">
           Adds or deletes one field across every document in the
           "batchmates" collection at once. This only touches "batchmates"
-          — if the field is also shown in the directory (fullName, gender,
+          — if the field is also shown in the directory (shortName, gender,
           birthday, primaryMobile, sports, clubs, skills, campusIndexNumber,
           photoUrl), update "batchmatesPublic" separately. This cannot be
           undone from here, so double-check the field name before applying.
@@ -876,11 +890,20 @@
           <select id="bulkfield-action">
             <option value="add">Add field (set on every batchmate)</option>
             <option value="remove">Remove field (delete from every batchmate)</option>
+            <option value="rename">Rename field (move the data to a new field name)</option>
           </select>
 
-          <label for="bulkfield-key">Field Name</label>
+          <label for="bulkfield-key" id="bulkfield-key-label">Field Name</label>
           <input type="text" id="bulkfield-key" placeholder="e.g. hobby" required>
-          <p class="fine-print" style="text-align:left; margin:-12px 0 18px;">Letters, numbers and underscores only, starting with a letter — matches how existing fields (e.g. fullName, bloodGroup) are named.</p>
+          <p class="fine-print" style="text-align:left; margin:-12px 0 18px;">Letters, numbers and underscores only, starting with a letter — matches how existing fields (e.g. shortName, bloodGroup) are named.</p>
+
+          <div id="bulkfield-rename-row" hidden>
+            <label for="bulkfield-newkey">New Field Name</label>
+            <input type="text" id="bulkfield-newkey" placeholder="e.g. shortName">
+            <label for="bulkfield-newlabel">New Label (optional)</label>
+            <input type="text" id="bulkfield-newlabel" placeholder="e.g. Short Name — blank keeps the current label">
+            <p class="fine-print" style="text-align:left; margin:-12px 0 18px;">Renames the field in every batchmate record, in the directory copy (batchmatesPublic) and in the profile-field list used by the Dashboard, so it keeps working exactly as before. Needs both the Bulk Field and Manage Profile Fields permissions.</p>
+          </div>
 
           <div id="bulkfield-value-row">
             <label for="bulkfield-value">Default Value (for new field)</label>
@@ -1077,6 +1100,33 @@
         <button type="button" id="fundtx-delete-btn" class="danger-btn">Delete This Transaction</button>
         <p class="error-msg" id="fundtx-error" hidden></p>
         <p class="success-msg" id="fundtx-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import CSV Data (Danger tab) — see initCsvImport() in app.js. -->
+  <div class="modal-overlay" id="modal-csvimport" hidden>
+    <div class="modal-box dc-box">
+      <button class="modal-close" data-close-modal="modal-csvimport" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Import CSV Data</p>
+        <div id="ci-root"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Customize Dashboard (Danger tab) — tabs, data sections, headings, free
+       text, buttons and spacing for the Dashboard page. Saved to
+       /config/dashboardLayout; see initDashboardCustomizer() in app.js. -->
+  <div class="modal-overlay" id="modal-dashcust" hidden>
+    <div class="modal-box dc-box">
+      <button class="modal-close" data-close-modal="modal-dashcust" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label">Customize Dashboard</p>
+        <p class="fine-print" style="text-align:left; margin:0 0 14px;">Build tabs, then add data sections, headings, text, buttons and spaces to each. Use the arrows to reorder; tap ✎ to edit formatting. The saved layout applies to every batchmate's Dashboard.</p>
+        <div id="dc-root"></div>
+        <p class="error-msg" id="dc-error" hidden></p>
+        <p class="success-msg" id="dc-success" hidden></p>
       </div>
     </div>
   </div>

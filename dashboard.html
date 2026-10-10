@@ -47,91 +47,107 @@
 
     <main class="content-area">
       <div class="dash-wrap">
-        <div id="loading-state" class="state-msg">Loading your record…</div>
+        <div id="loading-state" class="sk-wrap" aria-busy="true" aria-label="Loading"><div class="card sk-card"><div class="sk-row"><span class="sk sk-circle" style="width:64px;height:64px"></span><div class="sk-col"><span class="sk sk-line" style="width:44%;height:18px"></span><span class="sk sk-line" style="width:28%;"></span></div></div></div><div class="card sk-card"><span class="sk sk-title" style="width:24%"></span><div class="sk-grid"><span class="sk" style="height:64px"></span><span class="sk" style="height:64px"></span><span class="sk" style="height:64px"></span></div></div><div class="sk-grid2"><div class="card sk-card"><span class="sk sk-title" style="width:38%"></span><span class="sk" style="height:38px;width:30%;margin-bottom:14px"></span><span class="sk sk-line" style="width:94%;"></span><span class="sk sk-line" style="width:80%;"></span><span class="sk sk-line" style="width:58%;"></span></div><div class="card sk-card"><span class="sk sk-title" style="width:38%"></span><span class="sk sk-line" style="width:94%;"></span><span class="sk sk-line" style="width:80%;"></span><span class="sk sk-line" style="width:58%;"></span><span class="sk sk-line" style="width:70%;"></span></div><div class="card sk-card"><span class="sk sk-title" style="width:38%"></span><div class="sk-row"><span class="sk sk-circle" style="width:38px;height:38px"></span><div class="sk-col"><span class="sk sk-line" style="width:64%;"></span><span class="sk sk-line" style="width:38%;"></span></div></div><div class="sk-row"><span class="sk sk-circle" style="width:38px;height:38px"></span><div class="sk-col"><span class="sk sk-line" style="width:64%;"></span><span class="sk sk-line" style="width:38%;"></span></div></div></div><div class="card sk-card"><span class="sk sk-title" style="width:38%"></span><span class="sk sk-pill"></span><span class="sk sk-pill"></span><span class="sk sk-pill"></span></div></div></div>
         <div id="error-state" class="state-msg error-msg" hidden></div>
 
-        <section id="record" class="record-grid" hidden>
+        <section id="record" hidden>
+          <!-- The customizable layout (tabs + blocks) is built into this div by
+               applyDashboardLayout() (app.js) from /config/dashboardLayout.
+               The cards below are the "source" sections: they live in the hidden
+               library, get filled by the normal loaders, then are MOVED into the
+               layout. -->
+          <div id="dash-layout"></div>
 
-          <!-- Header strip -->
-          <div class="card profile-card full-span">
-            <div class="profile-head">
-              <div class="avatar-slot">
-                <img id="avatar-photo" class="avatar-photo" alt="" hidden>
-                <div class="avatar" id="avatar-initial"></div>
+          <div id="dash-sources" hidden>
+            <!-- Header strip -->
+            <div class="card profile-card" data-src="profile">
+              <div class="profile-head">
+                <div class="avatar-slot">
+                  <img id="avatar-photo" class="avatar-photo" alt="" hidden>
+                  <div class="avatar" id="avatar-initial"></div>
+                </div>
+                <div>
+                  <h1 id="f-shortName" class="profile-name"></h1>
+                  <p class="profile-sub"><span id="f-gender"></span> · <span id="f-district"></span></p>
+                </div>
               </div>
-              <div>
-                <h1 id="f-fullName" class="profile-name"></h1>
-                <p class="profile-sub"><span id="f-gender"></span> · <span id="f-district"></span></p>
+            </div>
+
+            <!-- Active Tasks -->
+            <div class="card" data-src="activeTasks">
+              <p class="section-label">Active Tasks</p>
+              <div class="task-box-grid" id="active-tasks-list"></div>
+            </div>
+
+            <!-- Prestige Points -->
+            <div class="card" data-src="prestige">
+              <div class="section-label-row">
+                <p class="section-label" style="margin:0;">Prestige Points</p>
+                <button type="button" id="prestige-info-btn" class="info-icon-btn" aria-label="How prestige points work">i</button>
+              </div>
+              <div class="prestige-total-row">
+                <span id="f-prestige-total" class="prestige-total-value">0</span>
+                <span class="prestige-total-label">total</span>
+              </div>
+              <p id="f-prestige-note" class="fine-print" style="text-align:left; margin:6px 0 14px; color:var(--warn, #e0a94a);" hidden></p>
+              <div id="prestige-log-list" class="prestige-log-list"></div>
+            </div>
+
+            <!-- My Fund Donations -->
+            <div class="card" data-src="fund">
+              <p class="section-label">My Fund Donations</p>
+              <div class="prestige-total-row">
+                <span id="f-fund-donated-value" class="prestige-total-value">Rs. 0</span>
+              </div>
+              <p class="fine-print" style="text-align:left; margin:6px 0 14px;">Total value you have added to the batch fund.</p>
+              <div id="fund-log-list" class="prestige-log-list"></div>
+            </div>
+
+            <!-- Roles -->
+            <div class="card" data-src="roles">
+              <p class="section-label">Roles</p>
+              <ul id="f-roles" class="pill-list"></ul>
+            </div>
+
+            <!-- Profile field sections (Person/Campus/... + admin-created) are
+                 inserted here by renderDynamicFieldGroups() as
+                 .dyn-field-card with data-src="group:<id>". -->
+            <div id="dynamic-field-groups-anchor"></div>
+
+            <!-- Extracurricular Details -->
+            <div class="card" data-src="extra">
+              <p class="section-label">Extracurricular Details</p>
+              <div class="dl-items">
+                <div data-item="sports">
+                  <p class="section-label" style="margin-top:14px;margin-bottom:6px;opacity:.7">Sports</p>
+                  <ul id="f-sports" class="pill-list"></ul>
+                </div>
+                <div data-item="clubs">
+                  <p class="section-label" style="margin-top:14px;margin-bottom:6px;opacity:.7">Clubs</p>
+                  <ul id="f-clubs" class="pill-list"></ul>
+                </div>
+                <div data-item="skills">
+                  <p class="section-label" style="margin-top:14px;margin-bottom:6px;opacity:.7">Skills</p>
+                  <ul id="f-skills" class="pill-list"></ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Records Details -->
+            <div class="card" data-src="records">
+              <p class="section-label">Records Details</p>
+              <div class="dl-items">
+                <div data-item="tasks">
+                  <p class="section-label" style="margin-top:18px;margin-bottom:6px;opacity:.7">Tasks Assigned</p>
+                  <ul id="f-tasks" class="line-list"></ul>
+                </div>
+                <div data-item="bad">
+                  <p class="section-label" style="margin-top:18px;margin-bottom:6px;opacity:.7">Bad Behavior Records</p>
+                  <ul id="f-bad" class="line-list muted-list"></ul>
+                </div>
               </div>
             </div>
           </div>
-
-          <!-- Active Tasks -->
-          <div class="card full-span" style="margin-bottom:18px;">
-            <p class="section-label">Active Tasks</p>
-            <div class="task-box-grid" id="active-tasks-list"></div>
-          </div>
-
-          <!-- Prestige Points -->
-          <div class="card" style="margin-bottom:18px;">
-            <div class="section-label-row">
-              <p class="section-label" style="margin:0;">Prestige Points</p>
-              <button type="button" id="prestige-info-btn" class="info-icon-btn" aria-label="How prestige points work">i</button>
-            </div>
-            <div class="prestige-total-row">
-              <span id="f-prestige-total" class="prestige-total-value">0</span>
-              <span class="prestige-total-label">total</span>
-            </div>
-            <p id="f-prestige-note" class="fine-print" style="text-align:left; margin:6px 0 14px; color:var(--warn, #e0a94a);" hidden></p>
-            <div id="prestige-log-list" class="prestige-log-list"></div>
-          </div>
-
-          <!-- My Fund Donations -->
-          <div class="card" style="margin-bottom:18px;">
-            <p class="section-label">My Fund Donations</p>
-            <div class="prestige-total-row">
-              <span id="f-fund-donated-value" class="prestige-total-value">Rs. 0</span>
-            </div>
-            <p class="fine-print" style="text-align:left; margin:6px 0 14px;">Total value you have added to the batch fund.</p>
-            <div id="fund-log-list" class="prestige-log-list"></div>
-          </div>
-
-          <!-- Roles (kept as its own fixed card; not part of the
-               admin-configurable field groups below) -->
-          <div class="card">
-            <p class="section-label">Roles</p>
-            <ul id="f-roles" class="pill-list"></ul>
-          </div>
-
-          <!-- Person/Campus/Contact/Residential/Medical/Emergency (and any
-               admin-created sections) are rendered here dynamically, driven
-               by the field schema an admin sets from Admin → Danger →
-               "Manage Profile Fields". This anchor is not itself a .card —
-               renderDynamicFieldGroups() (app.js) inserts one .card per
-               section as its siblings, in the schema's order. -->
-          <div id="dynamic-field-groups-anchor"></div>
-
-          <!-- Extracurricular Details -->
-          <div class="card">
-            <p class="section-label">Extracurricular Details</p>
-            <p class="section-label" style="margin-top:14px;margin-bottom:6px;opacity:.7">Sports</p>
-            <ul id="f-sports" class="pill-list"></ul>
-            <p class="section-label" style="margin-top:14px;margin-bottom:6px;opacity:.7">Clubs</p>
-            <ul id="f-clubs" class="pill-list"></ul>
-            <p class="section-label" style="margin-top:14px;margin-bottom:6px;opacity:.7">Skills</p>
-            <ul id="f-skills" class="pill-list"></ul>
-          </div>
-
-          <!-- Records Details -->
-          <div class="card">
-            <p class="section-label">Records Details</p>
-            
-            <p class="section-label" style="margin-top:18px;margin-bottom:6px;opacity:.7">Tasks Assigned</p>
-            <ul id="f-tasks" class="line-list"></ul>
-            <p class="section-label" style="margin-top:18px;margin-bottom:6px;opacity:.7">Bad Behavior Records</p>
-            <ul id="f-bad" class="line-list muted-list"></ul>
-          </div>
-
         </section>
       </div>
     </main>

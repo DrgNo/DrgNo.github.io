@@ -48,13 +48,16 @@
 
     <main class="content-area">
       <div class="dash-wrap" id="home-page">
-        <div id="loading-state" class="state-msg">Loading…</div>
+        <div id="loading-state" class="sk-wrap" aria-busy="true" aria-label="Loading"><span class="sk sk-h1"></span><span class="sk sk-line" style="width:55%;"></span><div class="card sk-card"><span class="sk sk-title" style="width:26%"></span><div class="sk-row"><span class="sk sk-circle" style="width:38px;height:38px"></span><div class="sk-col"><span class="sk sk-line" style="width:64%;"></span><span class="sk sk-line" style="width:38%;"></span></div></div><div class="sk-row"><span class="sk sk-circle" style="width:38px;height:38px"></span><div class="sk-col"><span class="sk sk-line" style="width:64%;"></span><span class="sk sk-line" style="width:38%;"></span></div></div><div class="sk-row"><span class="sk sk-circle" style="width:38px;height:38px"></span><div class="sk-col"><span class="sk sk-line" style="width:64%;"></span><span class="sk sk-line" style="width:38%;"></span></div></div></div><div class="card sk-card"><span class="sk sk-title" style="width:30%"></span><div class="sk-grid"><span class="sk" style="height:110px"></span><span class="sk" style="height:110px"></span><span class="sk" style="height:110px"></span></div></div><div class="card sk-card"><span class="sk sk-title" style="width:34%"></span><span class="sk sk-line" style="width:94%;"></span><span class="sk sk-line" style="width:80%;"></span><span class="sk sk-line" style="width:58%;"></span></div></div>
         <div id="error-state" class="state-msg error-msg" hidden></div>
 
         <div id="home-content" hidden>
 
           <h1 class="welcome-heading" id="welcome-heading">Welcome</h1>
           <p class="welcome-sub">Here's what's happening in the batch right now.</p>
+
+          <!-- Birthday banner (filled + shown by renderBirthdayBanner() only on someone's birthday) -->
+          <div class="card full-span bday-banner" id="bday-banner" style="margin-bottom:18px;" hidden></div>
 
           <!-- Announcement / Notice Board -->
           <div class="card full-span" style="margin-bottom:18px;">
@@ -175,7 +178,10 @@
         <p class="project-meta-label">Due Date</p>
         <p class="info-text" id="group-modal-due" style="margin:0 0 14px;"></p>
         <p class="project-meta-label">Members</p>
-        <ul class="pill-list" id="group-modal-members"></ul>
+        <div class="members-wrap">
+          <ul class="pill-list" id="group-modal-members"></ul>
+          <div class="members-secret-overlay" id="group-modal-members-secret" hidden>It's a state secret 🤫</div>
+        </div>
         <div id="group-modal-rating-area" style="margin-top:16px;"></div>
       </div>
     </div>

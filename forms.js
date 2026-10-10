@@ -166,7 +166,7 @@ const PROFILE_RESERVED = new Set(["campusIndexNumber", "campusRegNumber", "unive
 // Mirror of DEFAULT_DIRECTORY_FIELD_GROUPS in app.js — only used when /config/directoryFields doesn't exist yet. Keep in sync.
 const DEFAULT_PROFILE_GROUPS = [
   { id: "person", title: "Person Details", order: 0, fields: [
-    { key: "fullName", label: "Full Name", order: 0, public: true }, { key: "gender", label: "Gender", order: 1, public: true },
+    { key: "shortName", label: "Short Name", order: 0, public: true }, { key: "gender", label: "Gender", order: 1, public: true },
     { key: "birthday", label: "Birthday", order: 2, public: true }, { key: "nicNumber", label: "NIC Number", order: 3, public: false },
     { key: "address", label: "Address", order: 4, public: false }, { key: "district", label: "District", order: 5, public: false }] },
   { id: "campus", title: "Campus Details", order: 1, fields: [
@@ -227,6 +227,16 @@ function el(tag, props = {}, ...kids) {
   kids.flat().forEach((c) => c != null && e.append(c));
   return e;
 }
+
+// Animated skeleton placeholders (styles in style.css) — used instead of "Loading…".
+function skeletonHTML(kind = "list", n = 3) {
+  const ln = (w) => `<span class="sk sk-line" style="width:${w}%"></span>`;
+  let inner = "";
+  if (kind === "lines") inner = ln(92) + ln(78) + ln(56);
+  else for (let i = 0; i < n; i++) inner += `<div class="sk-row"><span class="sk sk-circle" style="width:36px;height:36px"></span><div class="sk-col">${ln(60 + ((i * 13) % 25))}${ln(34)}</div></div>`;
+  return `<div class="sk-wrap" aria-busy="true" aria-label="Loading">${inner}</div>`;
+}
+function skelEl(cls, kind) { const d = el("div", { class: cls || "" }); d.innerHTML = skeletonHTML(kind); return d; }
 const toDate = (v) => (v && v.toDate ? v.toDate() : v ? new Date(v) : null);
 const fmtDate = (d) => d ? d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "—";
 const pad = (n) => String(n).padStart(2, "0");
@@ -281,7 +291,7 @@ let rosterCache = null;
 async function getRoster() {
   if (rosterCache) return rosterCache;
   const snap = await getDocs(collection(db, "batchmatesPublic"));
-  rosterCache = snap.docs.map((d) => ({ uid: d.id, name: d.data().fullName || "Unnamed", index: d.data().campusIndexNumber || "" }))
+  rosterCache = snap.docs.map((d) => ({ uid: d.id, name: d.data().shortName || "Unnamed", index: d.data().campusIndexNumber || "" }))
     .sort((a, b) => a.name.localeCompare(b.name));
   return rosterCache;
 }
@@ -333,7 +343,7 @@ async function getMe() {
   if (me) return me;
   let d = {};
   try { const s = await getDoc(doc(db, "batchmatesPublic", auth.currentUser.uid)); if (s.exists()) d = s.data(); } catch (e) {}
-  me = { uid: auth.currentUser.uid, name: d.fullName || auth.currentUser.email, index: d.campusIndexNumber || "" };
+  me = { uid: auth.currentUser.uid, name: d.shortName || auth.currentUser.email, index: d.campusIndexNumber || "" };
   return me;
 }
 
@@ -579,7 +589,7 @@ async function openFill(formId, onDone, skipDraft = false) {
   ov.innerHTML = "";
   const box = el("div", { class: "modal-box fm-box" }, closeBtn(ov));
   ov.append(box);
-  box.append(el("p", { class: "fm-loading", text: "Loading…" }));
+  box.append(skelEl("fm-loading", "list"));
   let f, resp = null;
   try {
     const s = await getDoc(doc(db, "forms", formId));
@@ -842,7 +852,7 @@ async function initAdmin() {
       const m = '<p class="info-text" style="color:var(--muted)">⚠ You don\'t have access to Forms.</p>';
       activeBox.innerHTML = histBox.innerHTML = m; return;
     }
-    activeBox.innerHTML = histBox.innerHTML = '<p class="info-text" style="color:var(--muted)">Loading…</p>';
+    activeBox.innerHTML = histBox.innerHTML = skeletonHTML("list");
     formsCache = await fetchForms();
     const act = formsCache.filter(isActive).sort((a, b) => toDate(a.dueAt) - toDate(b.dueAt));
     const old = formsCache.filter((f) => !isActive(f)).sort((a, b) => toDate(b.dueAt) - toDate(a.dueAt));
@@ -1409,7 +1419,7 @@ function rvRows() {
 async function openResponses(form) {
   const ov = $("#fm-resp") || overlay("fm-resp", "fm-wide fm-xwide");
   ov.hidden = false; ov.innerHTML = "";
-  const box = el("div", { class: "modal-box" }, closeBtn(ov), el("div", { class: "admin-modal-body", id: "fm-resp-body" }, el("p", { class: "info-text", text: "Loading…" })));
+  const box = el("div", { class: "modal-box" }, closeBtn(ov), el("div", { class: "admin-modal-body", id: "fm-resp-body" }, skelEl("", "lines")));
   ov.append(box);
   let saved = []; try { saved = JSON.parse(localStorage.getItem(`fmProfCols:${form.id}`) || "[]"); } catch (e) {}
   R = { form, mode: "responses", sort: { key: null, dir: "asc" }, filterKey: "", filterText: "", responses: [], pending: [],
@@ -1521,7 +1531,7 @@ async function openProfileImport() {
   ov.append(box);
   box.append(el("h2", { class: "fm-title", text: "Import to private profiles" }),
     el("p", { class: "fm-desc", text: "Tick the answers to write into each person's private profile (their batchmate record). Blank answers are skipped and never overwrite existing data. Imported fields are never shown in the public directory." }));
-  const status = el("p", { class: "info-text", text: "Loading…" });
+  const status = skelEl("", "lines");
   box.append(status);
   let groups;
   try { groups = JSON.parse(JSON.stringify(await loadProfileGroups(true))); } catch (e) { status.textContent = "Could not load the profile sections."; return; }
@@ -1627,7 +1637,7 @@ async function openProfileColumns() {
   ov.append(box);
   box.append(el("h2", { class: "fm-title", text: "Add profile columns" }),
     el("p", { class: "fm-desc", text: "Tick profile details to show as extra columns for everyone in this table (e.g. email, phone). They are included in the Excel and PDF downloads. Fields marked private are not visible to other students, so handle downloaded files carefully." }));
-  const status = el("p", { class: "info-text", text: "Loading…" });
+  const status = skelEl("", "lines");
   box.append(status);
   let groups;
   try { groups = await loadProfileGroups(true); } catch (e) { status.textContent = "Could not load the profile fields."; return; }
@@ -1940,7 +1950,7 @@ function openBoard(b) {
   resetCompose();
   M.listLabel.textContent = "Notes";
   M.list.innerHTML = "";
-  M.list.append(el("p", { class: "ib-empty", text: "Loading…" }));
+  M.list.append(skelEl("", "list"));
   M.ov.hidden = false;
   M.box.scrollTop = 0;
 

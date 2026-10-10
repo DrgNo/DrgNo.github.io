@@ -475,6 +475,8 @@ const ADMIN_PERMISSION_LIST = [
   ["bulkField", "Add/Remove Field (All Batchmates)"],
   ["fieldManager", "Manage Profile Fields"],
   ["settingsFields", "Settings Change-Request Fields"],
+  ["dashboardLayout", "Customize Dashboard"],
+  ["csvImport", "Import CSV Data to Profiles"],
   ["dbStorage", "Database Storage"],
   ["dataTable", "Data Table (full data)"]
 ];
@@ -497,7 +499,7 @@ function initManageAdminsPanel() {
   const successEl = document.getElementById("manageadmins-success");
   if (!listEl || !searchInput || !addBtn) return;
 
-  let selectedNewAdmin = null; // { uid, fullName }
+  let selectedNewAdmin = null; // { uid, shortName }
 
   function buildPermChecklist(container, checkedKeys) {
     container.innerHTML = "";
@@ -525,7 +527,7 @@ function initManageAdminsPanel() {
   }
 
   async function renderExistingAdmins() {
-    listEl.innerHTML = '<p class="info-text" style="color:var(--muted)">Loading…</p>';
+    listEl.innerHTML = skeletonHTML("lines");
     let snap;
     try {
       snap = await getDocs(collection(db, "admins"));
@@ -636,16 +638,16 @@ function initManageAdminsPanel() {
     resultsEl.innerHTML = "";
     if (!term) return;
     const people = await getBatchmatesPublicList();
-    const matches = people.filter((p) => p.fullName.toLowerCase().includes(term)).slice(0, 15);
+    const matches = people.filter((p) => p.shortName.toLowerCase().includes(term)).slice(0, 15);
     matches.forEach((p) => {
       const row = document.createElement("div");
       row.className = "leader-picker-row";
-      row.textContent = `${p.fullName}${p.campusIndexNumber ? " — " + p.campusIndexNumber : ""}`;
+      row.textContent = `${p.shortName}${p.campusIndexNumber ? " — " + p.campusIndexNumber : ""}`;
       row.style.cursor = "pointer";
       row.style.padding = "8px 10px";
       row.addEventListener("click", () => {
         selectedNewAdmin = p;
-        selectedEl.textContent = `Selected: ${p.fullName}`;
+        selectedEl.textContent = `Selected: ${p.shortName}`;
         resultsEl.innerHTML = "";
         searchInput.value = "";
       });
@@ -665,11 +667,11 @@ function initManageAdminsPanel() {
     addBtn.textContent = "Adding…";
     try {
       await setDoc(doc(db, "admins", selectedNewAdmin.uid), {
-        name: selectedNewAdmin.fullName,
+        name: selectedNewAdmin.shortName,
         superAdmin: newSuperCb.checked,
         permissions: readPermChecklist(newPermsEl)
       });
-      successEl.textContent = `${selectedNewAdmin.fullName} is now an admin.`;
+      successEl.textContent = `${selectedNewAdmin.shortName} is now an admin.`;
       successEl.hidden = false;
       selectedNewAdmin = null;
       selectedEl.textContent = "";
@@ -1514,7 +1516,7 @@ async function initDashboardPage(user) {
       return;
     }
 
-    const fieldSchema = await getDirectoryFieldSchema();
+    const [fieldSchema, layoutDoc] = await Promise.all([getDirectoryFieldSchema(), getDashboardLayoutDoc()]);
     renderRecord(snap.data(), fieldSchema);
     await loadAndRenderTasks(user.uid);
     markTasksSeenNow(user.uid);
@@ -1525,6 +1527,10 @@ async function initDashboardPage(user) {
     wirePrestigeInfoModal();
     wirePrestigeNoteModal();
     wireFundNoteModal();
+    // Arrange the filled sections into the admin-configured tabs/blocks.
+    // If the layout is bad for any reason, fall back to the default page.
+    try { applyDashboardLayout(layoutDoc, fieldSchema); }
+    catch (layoutErr) { applyDashboardLayout(null, fieldSchema); }
     loadingState.hidden = true;
     recordSection.hidden = false;
   } catch (err) {
@@ -1542,14 +1548,15 @@ async function initDashboardPage(user) {
 function renderDynamicFieldGroups(d, groups) {
   const anchor = document.getElementById("dynamic-field-groups-anchor");
   if (!anchor) return;
-  anchor.parentElement.querySelectorAll(".dyn-field-card").forEach((el) => el.remove());
+  document.querySelectorAll(".dyn-field-card").forEach((el) => el.remove());
 
   const sortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
   let lastInserted = anchor;
 
-  sortedGroups.forEach((g) => {
+  sortedGroups.forEach((g, gi) => {
     const card = document.createElement("div");
     card.className = "card dyn-field-card";
+    card.dataset.src = dashGroupKey(g, gi);
 
     const label = document.createElement("p");
     label.className = "section-label";
@@ -1557,11 +1564,14 @@ function renderDynamicFieldGroups(d, groups) {
     card.appendChild(label);
 
     const rowsWrap = document.createElement("div");
+    rowsWrap.className = "dl-items";
     const fields = [...(g.fields || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
     fields.forEach((f) => {
       const raw = d[f.key];
       const value = Array.isArray(raw) ? raw.join(", ") : raw;
-      rowsWrap.appendChild(fieldRow(f.label || f.key, value));
+      const row = fieldRow(f.label || f.key, value);
+      row.dataset.item = f.key;
+      rowsWrap.appendChild(row);
     });
     card.appendChild(rowsWrap);
 
@@ -1570,14 +1580,152 @@ function renderDynamicFieldGroups(d, groups) {
   });
 }
 
+// ── Birthday effects ─────────────────────────────────────────────
+// On a batchmate's birthday (device-local date), their profile gets a
+// celebration layer: confetti/particles falling, balloons rising,
+// sparkles, and a glowing avatar + shimmering name. Everything is DOM +
+// CSS keyframes (no canvas / no libraries), kept to ~50 light elements,
+// and reduced to a static glow for prefers-reduced-motion users.
+// Birthday values may be "YYYY-MM-DD", "DD/MM/YYYY", a Firestore
+// Timestamp, or free text Date() can parse — parseBirthdayMD() copes
+// with all of them and returns just { month, day } (the year is never
+// needed, so a missing/odd year can't break it).
+function parseBirthdayMD(raw) {
+  if (raw == null || raw === "") return null;
+  if (typeof raw === "object" && typeof raw.toDate === "function") {
+    const d = raw.toDate();
+    return isNaN(d) ? null : { month: d.getMonth() + 1, day: d.getDate() };
+  }
+  if (raw instanceof Date) return isNaN(raw) ? null : { month: raw.getMonth() + 1, day: raw.getDate() };
+  const s = String(raw).trim();
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);            // 2003-05-17
+  if (m) return validMD(+m[2], +m[3]);
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})$/);              // 17/05/2003 (day first)
+  if (m) {
+    let day = +m[1], month = +m[2];
+    if (month > 12 && day <= 12) [day, month] = [month, day];          // 05/17/2003 → swap
+    return validMD(month, day);
+  }
+  const d = new Date(s);                                                // "May 17, 2003"
+  return isNaN(d) ? null : { month: d.getMonth() + 1, day: d.getDate() };
+}
+function validMD(month, day) {
+  return month >= 1 && month <= 12 && day >= 1 && day <= 31 ? { month, day } : null;
+}
+function isBirthdayToday(raw) {
+  const md = parseBirthdayMD(raw);
+  if (!md) return false;
+  const now = new Date();
+  const y = now.getFullYear();
+  const leap = (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+  // Feb 29 babies celebrate on Feb 28 in non-leap years.
+  const day = (md.month === 2 && md.day === 29 && !leap) ? 28 : md.day;
+  return now.getMonth() + 1 === md.month && now.getDate() === day;
+}
+
+const BDAY_COLORS = ["#ff5d8f", "#ffc857", "#4cc9f0", "#7bed9f", "#b388ff", "#ff9f43"];
+
+// Builds the falling-confetti / rising-balloon / sparkle layer inside
+// `host`. Returns a remove() function. `host` needs position: relative;
+// for scrolling popups pass sticky:true so the layer stays put.
+function startBirthdayEffect(host, opts) {
+  if (!host) return () => {};
+  stopBirthdayEffect(host);
+  const sticky = !!(opts && opts.sticky);
+  const full = !!(opts && opts.fullscreen);   // fixed over the whole viewport (host = document.body)
+  const reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  const layer = document.createElement("div");
+  layer.className = "bday-fx" + (sticky ? " bday-fx-sticky" : "") + (full ? " bday-fx-full" : "");
+  layer.setAttribute("aria-hidden", "true");
+  const inner = document.createElement("div");
+  inner.className = "bday-fx-inner";
+  layer.appendChild(inner);
+
+  if (!reduce) {
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    // Falling confetti / particles
+    for (let i = 0; i < 28; i++) {
+      const p = document.createElement("span");
+      p.className = "bday-confetti" + (i % 3 === 0 ? " round" : "");
+      p.style.left = rnd(0, 100) + "%";
+      p.style.background = BDAY_COLORS[i % BDAY_COLORS.length];
+      p.style.animationDuration = rnd(3.6, 6.8) + "s";
+      p.style.animationDelay = (-rnd(0, 6.8)) + "s";
+      p.style.setProperty("--sway", rnd(-26, 26) + "px");
+      p.style.setProperty("--spin", rnd(200, 720) + "deg");
+      inner.appendChild(p);
+    }
+    // Balloons rising
+    for (let i = 0; i < 7; i++) {
+      const b = document.createElement("span");
+      b.className = "bday-balloon";
+      b.style.left = (6 + i * 14 + rnd(-4, 4)) + "%";
+      b.style.setProperty("--bc", BDAY_COLORS[(i + 2) % BDAY_COLORS.length]);
+      b.style.animationDuration = rnd(7, 11) + "s";
+      b.style.animationDelay = (-rnd(0, 10)) + "s";
+      b.style.setProperty("--sway", rnd(-18, 18) + "px");
+      inner.appendChild(b);
+    }
+    // Twinkling sparkles
+    for (let i = 0; i < 12; i++) {
+      const s = document.createElement("span");
+      s.className = "bday-sparkle";
+      s.style.left = rnd(2, 98) + "%";
+      s.style.top = rnd(2, 95) + "%";
+      s.style.animationDelay = (-rnd(0, 3)) + "s";
+      s.style.animationDuration = rnd(1.6, 3) + "s";
+      inner.appendChild(s);
+    }
+  }
+
+  if (sticky) host.insertBefore(layer, host.firstChild);
+  else host.appendChild(layer);
+  if (!full) host.classList.add("bday-host"); // fullscreen layer must not restyle <body>
+  return () => stopBirthdayEffect(host);
+}
+function stopBirthdayEffect(host) {
+  if (!host) return;
+  host.querySelectorAll(":scope > .bday-fx").forEach((n) => n.remove());
+  host.classList.remove("bday-host");
+}
+
+// Own profile (dashboard): effect on the header card + glowing avatar,
+// shimmering name, and a greeting line.
+function applyDashboardBirthday(d) {
+  const card = document.querySelector(".profile-card");
+  if (!card) return;
+  const avatarSlot = card.querySelector(".avatar-slot");
+  const nameEl = document.getElementById("f-shortName");
+  const old = card.querySelector(".bday-greeting");
+  if (old) old.remove();
+
+  if (!isBirthdayToday(d.birthday)) {
+    stopBirthdayEffect(card);
+    if (avatarSlot) avatarSlot.classList.remove("bday-glow");
+    if (nameEl) nameEl.classList.remove("bday-name");
+    return;
+  }
+  startBirthdayEffect(card);
+  if (avatarSlot) avatarSlot.classList.add("bday-glow");
+  if (nameEl) {
+    nameEl.classList.add("bday-name");
+    const g = document.createElement("p");
+    g.className = "bday-greeting";
+    g.textContent = "🎂 Happy Birthday, " + ((d.shortName || "").split(" ")[0] || "friend") + "! 🎉";
+    nameEl.parentElement.appendChild(g);
+  }
+}
+
 function renderRecord(d, fieldSchema) {
-  const fullName = d.fullName || "—";
-  document.getElementById("f-fullName").textContent = fullName;
+  const shortName = d.shortName || "—";
+  document.getElementById("f-shortName").textContent = shortName;
+  applyDashboardBirthday(d);
 
   const avatarPhoto = document.getElementById("avatar-photo");
   const avatarInitial = document.getElementById("avatar-initial");
   const photoUrl = (d.photoUrl || "").trim();
-  avatarInitial.textContent = fullName.charAt(0).toUpperCase();
+  avatarInitial.textContent = shortName.charAt(0).toUpperCase();
 
   if (photoUrl) {
     avatarPhoto.onerror = () => {
@@ -1856,18 +2004,18 @@ async function initProfilePhotoSection(user) {
   const statusEl = document.getElementById("photo-status");
   if (!avatarSlot || !fileInput || !uploadBtn) return;
 
-  let fullName = "", photoUrl = "";
+  let shortName = "", photoUrl = "";
   try {
     const snap = await getDoc(doc(db, "batchmates", user.uid));
     if (snap.exists()) {
-      fullName = snap.data().fullName || "";
+      shortName = snap.data().shortName || "";
       photoUrl = snap.data().photoUrl || "";
     }
   } catch (err) { /* leave blank, still lets the user try uploading */ }
 
   function renderAvatar() {
     avatarSlot.innerHTML = "";
-    avatarSlot.appendChild(buildAvatar(fullName, photoUrl).firstChild);
+    avatarSlot.appendChild(buildAvatar(shortName, photoUrl).firstChild);
   }
   renderAvatar();
 
@@ -1974,7 +2122,7 @@ const CHANGE_REQUEST_GROUPS = [
   {
     label: "Person Details",
     fields: [
-      { key: "fullName", label: "Full Name", public: true },
+      { key: "shortName", label: "Short Name", public: true },
       { key: "birthday", label: "Birthday", public: true },
       { key: "nicNumber", label: "NIC Number" },
       { key: "address", label: "Address" },
@@ -2047,7 +2195,7 @@ CHANGE_REQUEST_GROUPS.forEach((group) => {
 const DIRECTORY_FIELDS_DOC_PATH = ["config", "directoryFields"];
 const DEFAULT_DIRECTORY_FIELD_GROUPS = [
   { id: "person", title: "Person Details", order: 0, fields: [
-      { key: "fullName", label: "Full Name", order: 0, public: true },
+      { key: "shortName", label: "Short Name", order: 0, public: true },
       { key: "gender", label: "Gender", order: 1, public: true },
       { key: "birthday", label: "Birthday", order: 2, public: true },
       { key: "nicNumber", label: "NIC Number", order: 3, public: false },
@@ -2329,7 +2477,7 @@ async function initChangeRequestSection(user) {
       } else {
         await addDoc(collection(db, "changeRequests"), {
           uid: user.uid,
-          requesterName: liveData.fullName || "",
+          requesterName: liveData.shortName || "",
           requesterIndex: liveData.campusIndexNumber || "",
           changes,
           previousValues,
@@ -2354,6 +2502,10 @@ async function initChangeRequestSection(user) {
 // and shared, read-only collections: "announcements" and "groupProjects".
 // Both are batch-wide — every signed-in batchmate sees the same content,
 // nobody writes to them from the app itself.
+// Filled by renderWelcome() so renderBirthdayBanner() can use it once the
+// directory has loaded too.
+let homeOwnBirthday = null; // { uid, firstName, birthday }
+
 async function initHomePage(user) {
   const loadingState = document.getElementById("loading-state");
   const errorState = document.getElementById("error-state");
@@ -2367,6 +2519,8 @@ async function initHomePage(user) {
       renderBatchmateDirectory(),
       renderProjects()
     ]);
+
+    renderBirthdayBanner(user);
 
     wireNoticeModal();
     wireEventModal();
@@ -2389,13 +2543,84 @@ async function renderWelcome(user) {
   let displayName = user.email;
   try {
     const snap = await getDoc(doc(db, "batchmates", user.uid));
-    if (snap.exists() && snap.data().fullName) {
-      displayName = snap.data().fullName.split(" ")[0]; // first name
+    if (snap.exists() && snap.data().shortName) {
+      displayName = snap.data().shortName.split(" ")[0]; // first name
+    }
+    if (snap.exists()) {
+      homeOwnBirthday = { uid: user.uid, firstName: displayName, birthday: snap.data().birthday };
     }
   } catch (err) {
     // Fall back to email if the profile lookup fails for any reason.
   }
   document.getElementById("welcome-heading").textContent = `Welcome, ${displayName}`;
+}
+
+// Birthday banner at the top of Home. Shows (1) a big celebration for the
+// signed-in user on their own birthday — plus a one-time full-screen burst
+// of confetti/balloons per browser session so it's the first thing they
+// see — and (2) a "Birthdays today" strip for other batchmates, tappable
+// to open their profile. People who hid their profile in Directory
+// Privacy are left out (their birthday stays private).
+function renderBirthdayBanner(user) {
+  const banner = document.getElementById("bday-banner");
+  if (!banner) return;
+  banner.innerHTML = "";
+  stopBirthdayEffect(banner);
+
+  const own = homeOwnBirthday && isBirthdayToday(homeOwnBirthday.birthday) ? homeOwnBirthday : null;
+  const others = allBatchmates.filter((b) =>
+    b.uid !== (user && user.uid) && batchmatePrivacyMap[b.uid] !== true && isBirthdayToday(b.birthday));
+
+  if (!own && others.length === 0) { banner.hidden = true; return; }
+
+  if (own) {
+    const h = document.createElement("h2");
+    h.className = "bday-banner-title bday-name";
+    h.textContent = "🎂 Happy Birthday, " + own.firstName + "!";
+    banner.appendChild(h);
+    const p = document.createElement("p");
+    p.className = "bday-banner-sub";
+    p.textContent = "Wishing you an amazing year ahead from the whole batch 🎉";
+    banner.appendChild(p);
+  }
+
+  if (others.length) {
+    const label = document.createElement("p");
+    label.className = "bday-banner-label";
+    label.textContent = own ? "Also celebrating today" : "🎉 Birthdays today";
+    banner.appendChild(label);
+    const row = document.createElement("div");
+    row.className = "bday-chip-row";
+    others.forEach((b) => {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "bday-chip";
+      chip.appendChild(buildAvatar(b.shortName, b.photoUrl));
+      const nm = document.createElement("span");
+      nm.textContent = "🎂 " + (b.shortName || "Unnamed").split(" ")[0];
+      chip.appendChild(nm);
+      chip.addEventListener("click", () => openBatchmateModal(b));
+      row.appendChild(chip);
+    });
+    banner.appendChild(row);
+  }
+
+  banner.classList.toggle("bday-banner-own", !!own);
+  banner.hidden = false;
+  startBirthdayEffect(banner);
+
+  // Own birthday: one full-screen burst per session, fades out after ~9s.
+  if (own) {
+    let seen = false;
+    try { seen = sessionStorage.getItem("bday-burst-" + own.uid) === new Date().toDateString(); } catch (e) {}
+    if (!seen) {
+      try { sessionStorage.setItem("bday-burst-" + own.uid, new Date().toDateString()); } catch (e) {}
+      startBirthdayEffect(document.body, { fullscreen: true });
+      const layer = document.body.querySelector(":scope > .bday-fx-full");
+      setTimeout(() => { if (layer) layer.classList.add("bday-fx-fade"); }, 7500);
+      setTimeout(() => stopBirthdayEffect(document.body), 9000);
+    }
+  }
 }
 
 // Hides the whole home-page card around `el` when it has nothing to show.
@@ -2647,7 +2872,7 @@ async function renderProjects() {
 
         const leader = document.createElement("div");
         leader.className = "group-box-leader";
-        leader.textContent = "Leader: " + (g.leader || "—");
+        leader.textContent = "Leader: " + (canSeeGroupMembers(g) ? (g.leader || "—") : "🤫 secret");
 
         const count = document.createElement("div");
         count.className = "group-box-count";
@@ -2669,17 +2894,44 @@ async function renderProjects() {
   });
 }
 
+// A group with "Hide members" on shows its leader + member list only to
+// its own leader and members. Everyone else (other groups' members and
+// batchmates outside the project) gets the "It's a state secret" blur.
+function canSeeGroupMembers(g) {
+  if (!g || g.hideMembers !== true) return true;
+  const uid = auth.currentUser && auth.currentUser.uid;
+  if (!uid) return false;
+  if (g.leaderUid === uid) return true;
+  return Array.isArray(g.memberUids) && g.memberUids.includes(uid);
+}
+
 function openGroupModal(project, groupIndex) {
   const g = (project.groups || [])[groupIndex] || {};
   document.getElementById("group-modal-title").textContent = g.groupName || project.title;
 
-  document.getElementById("group-modal-leader").textContent = g.leader || "—";
+  const canSee = canSeeGroupMembers(g);
+  document.getElementById("group-modal-leader").textContent = canSee ? (g.leader || "—") : "It's a state secret 🤫";
   document.getElementById("group-modal-due").textContent = g.dueDate ? formatPlainDate(g.dueDate) : "No due date set.";
 
   const membersList = document.getElementById("group-modal-members");
+  const secretOverlay = document.getElementById("group-modal-members-secret");
   membersList.innerHTML = "";
   const members = Array.isArray(g.members) ? g.members : [];
-  if (members.length === 0) {
+  const hideMembers = !canSee;
+  membersList.classList.toggle("members-blur", hideMembers);
+  if (secretOverlay) secretOverlay.hidden = !hideMembers;
+  if (hideMembers) {
+    // Real names are never put in the DOM while hidden — the blur is
+    // only decoration over placeholder pills, so inspecting the page
+    // shows nothing. Placeholder count = real headcount so the blurred
+    // shape still looks natural.
+    const n = Math.max(members.length, 3);
+    for (let i = 0; i < n; i++) {
+      const li = document.createElement("li");
+      li.textContent = "Hidden member " + (i + 1);
+      membersList.appendChild(li);
+    }
+  } else if (members.length === 0) {
     emptyPill(membersList, "No members listed.");
   } else {
     members.forEach((m) => {
@@ -2750,7 +3002,7 @@ function isGroupPastDeadline(g) {
 // Home page's own rating area (renderGroupRatingArea) and the Admin
 // panel's rating controls, so both surfaces show identically who on the
 // roster still hasn't submitted their ratings.
-function buildRosterProgressUI(roster, submittedUids) {
+function buildRosterProgressUI(roster, submittedUids, hideNames) {
   const wrap = document.createElement("div");
 
   const progress = document.createElement("p");
@@ -2773,7 +3025,8 @@ function buildRosterProgressUI(roster, submittedUids) {
     const rated = submittedUids.has(person.uid);
     const chip = document.createElement("span");
     chip.className = "rating-roster-chip " + (rated ? "rated" : "pending");
-    chip.textContent = (rated ? "✓ " : "… ") + person.name;
+    // When the project's member list is hidden, show status only — no names.
+    chip.textContent = (rated ? "✓ " : "… ") + (hideNames ? "Member " + (roster.indexOf(person) + 1) : person.name);
     rosterMini.appendChild(chip);
   });
   wrap.appendChild(rosterMini);
@@ -3002,7 +3255,7 @@ function openRateModal(project, groupIndex, group) {
 
   titleEl.textContent = "Rate Group Members" + (group.groupName ? " — " + group.groupName : "");
   statusEl.textContent = "";
-  listEl.innerHTML = "Loading…";
+  listEl.innerHTML = skeletonHTML("list");
   submitBtn.hidden = true;
 
   const roster = getGroupRoster(group);
@@ -3723,6 +3976,12 @@ async function initAdminPage(isAdmin) {
   // Manage Profile Fields (Dashboard sections + directory "public" flags)
   initFieldManagerPanel();
 
+  // Customize Dashboard (tabs / sections / headings / text / buttons)
+  initDashboardCustomizer();
+
+  // Import CSV Data (match by name → profile fields)
+  initCsvImport();
+
   // Settings Change-Request Fields (tick list)
   initSettingsFieldsPanel();
 
@@ -3781,12 +4040,12 @@ async function initBadBehaviorPanel() {
   people.forEach((p) => {
     const opt = document.createElement("option");
     opt.value = p.uid;
-    opt.textContent = p.fullName;
+    opt.textContent = p.shortName;
     select.appendChild(opt);
   });
 
   async function renderListFor(uid) {
-    listEl.innerHTML = "Loading…";
+    listEl.innerHTML = skeletonHTML("list");
     const snap = await getDoc(doc(db, "batchmates", uid));
     const records = snap.exists() && Array.isArray(snap.data().badBehaviorRecords)
       ? snap.data().badBehaviorRecords
@@ -3884,12 +4143,12 @@ async function initBadgeAssignmentPanel() {
   people.forEach((p) => {
     const opt = document.createElement("option");
     opt.value = p.uid;
-    opt.textContent = p.fullName;
+    opt.textContent = p.shortName;
     select.appendChild(opt);
   });
 
   async function renderChecklistFor(uid) {
-    checklist.innerHTML = "Loading…";
+    checklist.innerHTML = skeletonHTML("checks");
     statusEl.textContent = "";
     const earned = new Set(await getBadgeAssignment(uid));
     checklist.innerHTML = "";
@@ -3945,7 +4204,7 @@ async function initBadgeAssignmentPanel() {
   select.addEventListener("change", () => renderChecklistFor(select.value));
 }
 
-// Cached list of { uid, fullName, campusIndexNumber } from batchmatesPublic —
+// Cached list of { uid, shortName, campusIndexNumber } from batchmatesPublic —
 // shared by the "Assign Task" dropdown and the group project member pickers,
 // so it's only fetched once per admin page load.
 let batchmatesPublicListCache = null;
@@ -3955,9 +4214,9 @@ async function getBatchmatesPublicList() {
   const list = [];
   snap.forEach((docSnap) => {
     const d = docSnap.data();
-    list.push({ uid: docSnap.id, fullName: d.fullName || "Unnamed", campusIndexNumber: d.campusIndexNumber || "", photoUrl: d.photoUrl || "" });
+    list.push({ uid: docSnap.id, shortName: d.shortName || "Unnamed", campusIndexNumber: d.campusIndexNumber || "", photoUrl: d.photoUrl || "" });
   });
-  list.sort((a, b) => a.fullName.localeCompare(b.fullName));
+  list.sort((a, b) => a.shortName.localeCompare(b.shortName));
   batchmatesPublicListCache = list;
   return list;
 }
@@ -3984,6 +4243,7 @@ async function initProjectForm() {
   });
 
   addGroupBtn.addEventListener("click", () => createGroupBlock());
+  document.getElementById("proj-membership-mode").addEventListener("change", () => refreshMemberExclusions());
 
   groupsContainer.innerHTML = "";
   await createGroupBlock(); // start with exactly one empty group block
@@ -4008,14 +4268,26 @@ async function initProjectForm() {
           leaderUid: leaderSelect.value || "",
           dueDate: block.querySelector(".group-duedate-input").value,
           members: checked.map((cb) => cb.dataset.displayName),
-          memberUids: checked.map((cb) => cb.value)
+          memberUids: checked.map((cb) => cb.value),
+          hideMembers: block.querySelector(".group-hide-members").checked
         });
       });
+
+      const sharedMembers = document.getElementById("proj-membership-mode").value === "many";
+      if (!sharedMembers) {
+        const dup = findCrossGroupDuplicate(groups);
+        if (dup) {
+          errorEl.textContent = `${dup} is in more than one group. Switch Group membership to "A member can be in many groups", or remove the duplicate.`;
+          errorEl.hidden = false;
+          return;
+        }
+      }
 
       const data = {
         title: document.getElementById("proj-title").value.trim(),
         description: document.getElementById("proj-description").value.trim(),
         status: document.getElementById("proj-status").value || "starting",
+        sharedMembers,
         groups
       };
       const orderVal = document.getElementById("proj-order").value;
@@ -4080,16 +4352,16 @@ async function initFundTransactionForm() {
   people.forEach((p) => {
     const row = document.createElement("label");
     row.className = "member-check-row";
-    row.dataset.name = (p.fullName + " " + p.campusIndexNumber).toLowerCase();
+    row.dataset.name = (p.shortName + " " + p.campusIndexNumber).toLowerCase();
 
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.className = "fund-student-checkbox";
     cb.value = p.uid;
-    cb.dataset.displayName = p.fullName;
+    cb.dataset.displayName = p.shortName;
 
     const label = document.createElement("span");
-    label.textContent = `${p.fullName} — ${p.campusIndexNumber}`;
+    label.textContent = `${p.shortName} — ${p.campusIndexNumber}`;
 
     row.appendChild(cb);
     row.appendChild(label);
@@ -4234,9 +4506,13 @@ async function createGroupBlock(containerId = "groups-container") {
     <input type="text" class="group-name-input">
     <label>Leader</label>
     <select class="group-leader-select"></select>
-    <p class="fine-print" style="text-align:left; margin:-12px 0 14px;">Picking a leader here removes them from every other group's leader/member lists for this project, same as members below.</p>
+    <p class="fine-print" style="text-align:left; margin:-12px 0 14px;">In "One group per member" mode, picking a leader here removes them from every other group's leader/member lists for this project, same as members below.</p>
     <label>Due Date</label>
     <input type="date" class="group-duedate-input">
+    <label class="hide-members-row" style="margin:0 0 14px;">
+      <input type="checkbox" class="group-hide-members">
+      <span>Hide this group's members (only the group itself can see them — "It's a state secret" for everyone else)</span>
+    </label>
     <label>Members</label>
     <input type="text" class="group-member-search" placeholder="Search students by name or index…">
     <div class="member-checklist"></div>
@@ -4267,16 +4543,16 @@ async function buildMemberChecklist(block) {
     const row = document.createElement("label");
     row.className = "member-check-row";
     row.dataset.uid = p.uid;
-    row.dataset.name = (p.fullName + " " + p.campusIndexNumber).toLowerCase();
+    row.dataset.name = (p.shortName + " " + p.campusIndexNumber).toLowerCase();
 
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.className = "member-checkbox";
     cb.value = p.uid;
-    cb.dataset.displayName = `${p.fullName} (${p.campusIndexNumber})`;
+    cb.dataset.displayName = `${p.shortName} (${p.campusIndexNumber})`;
 
     const label = document.createElement("span");
-    label.textContent = `${p.fullName} — ${p.campusIndexNumber}`;
+    label.textContent = `${p.shortName} — ${p.campusIndexNumber}`;
 
     row.appendChild(cb);
     row.appendChild(label);
@@ -4300,8 +4576,8 @@ async function buildLeaderSelect(block, containerId = "groups-container") {
   people.forEach((p) => {
     const opt = document.createElement("option");
     opt.value = p.uid;
-    opt.dataset.displayName = `${p.fullName} (${p.campusIndexNumber})`;
-    opt.textContent = `${p.fullName} — ${p.campusIndexNumber}`;
+    opt.dataset.displayName = `${p.shortName} (${p.campusIndexNumber})`;
+    opt.textContent = `${p.shortName} — ${p.campusIndexNumber}`;
     select.appendChild(opt);
   });
 
@@ -4328,6 +4604,12 @@ function applyRowVisibility(block) {
 function refreshMemberExclusions(containerId = "groups-container") {
   const root = document.getElementById(containerId);
   if (!root) return;
+  // Project-level "Group membership" setting (1:1 vs 1:many). In 1:many
+  // mode the same student may be a member/leader in several groups, so
+  // the cross-group exclusion is skipped — only "a leader can't also be
+  // a listed member of their own group" still applies.
+  const modeEl = document.getElementById(containerId === "projectedit-groups-container" ? "projectedit-membership-mode" : "proj-membership-mode");
+  const shared = !!modeEl && modeEl.value === "many";
   const takenBy = {}; // uid -> the blockId that currently has them (member or leader)
   root.querySelectorAll(".group-block").forEach((block) => {
     block.querySelectorAll(".member-checkbox:checked").forEach((cb) => {
@@ -4339,7 +4621,7 @@ function refreshMemberExclusions(containerId = "groups-container") {
 
   root.querySelectorAll(".group-block").forEach((block) => {
     block.querySelectorAll(".member-check-row").forEach((row) => {
-      const owner = takenBy[row.dataset.uid];
+      const owner = shared ? null : takenBy[row.dataset.uid];
       row.dataset.excluded = (owner && owner !== block.dataset.blockId) ? "true" : "false";
       // A member checkbox for someone who is THIS block's own leader is
       // also excluded — a leader can't also be a listed member.
@@ -4352,11 +4634,31 @@ function refreshMemberExclusions(containerId = "groups-container") {
     if (leaderSelect) {
       Array.from(leaderSelect.options).forEach((opt) => {
         if (!opt.value) return;
-        const owner = takenBy[opt.value];
+        const owner = shared ? null : takenBy[opt.value];
         opt.hidden = !!(owner && owner !== block.dataset.blockId && opt.value !== leaderSelect.value);
       });
     }
   });
+}
+
+// First person (display name) who appears in more than one group of a
+// project, or null. Used to refuse switching a project back to 1:1 while
+// someone is still in several groups.
+function findCrossGroupDuplicate(groups) {
+  const seen = new Set();
+  for (const g of groups || []) {
+    const uids = new Set();
+    if (g.leaderUid) uids.add(g.leaderUid);
+    (Array.isArray(g.memberUids) ? g.memberUids : []).forEach((u) => uids.add(u));
+    for (const u of uids) {
+      if (seen.has(u)) {
+        const idx = (Array.isArray(g.memberUids) ? g.memberUids : []).indexOf(u);
+        return (u === g.leaderUid ? g.leader : (g.members && g.members[idx])) || "A student";
+      }
+    }
+    uids.forEach((u) => seen.add(u));
+  }
+  return null;
 }
 
 function updateRemoveButtonsVisibility(containerId = "groups-container") {
@@ -4388,16 +4690,16 @@ async function populateTaskBatchmateChecklist() {
   people.forEach((p) => {
     const row = document.createElement("label");
     row.className = "member-check-row";
-    row.dataset.name = (p.fullName + " " + p.campusIndexNumber).toLowerCase();
+    row.dataset.name = (p.shortName + " " + p.campusIndexNumber).toLowerCase();
 
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.className = "task-member-checkbox";
     cb.value = p.uid;
-    cb.dataset.displayName = `${p.fullName} (${p.campusIndexNumber})`;
+    cb.dataset.displayName = `${p.shortName} (${p.campusIndexNumber})`;
 
     const label = document.createElement("span");
-    label.textContent = `${p.fullName} — ${p.campusIndexNumber}`;
+    label.textContent = `${p.shortName} — ${p.campusIndexNumber}`;
 
     row.appendChild(cb);
     row.appendChild(label);
@@ -4430,7 +4732,7 @@ async function renderAdminActiveTasks() {
   const container = document.getElementById("admin-active-tasks");
   const filterSelect = document.getElementById("active-tasks-filter");
   if (!container) return;
-  container.innerHTML = "Loading…";
+  container.innerHTML = skeletonHTML("list");
 
   const q = query(collection(db, "tasks"), where("status", "in", ["ongoing", "pending"]));
   const snap = await getDocs(q);
@@ -4825,7 +5127,7 @@ async function renderAdminCompletedTasks() {
   const container = document.getElementById("admin-completed-tasks");
   const filterSelect = document.getElementById("completed-tasks-filter");
   if (!container) return;
-  container.innerHTML = "Loading…";
+  container.innerHTML = skeletonHTML("list");
 
   const q = query(collection(db, "tasks"), where("status", "==", "complete"));
   const snap = await getDocs(q);
@@ -5002,7 +5304,7 @@ let fundTransactionsCache = null;
 async function renderAdminFundTransactions() {
   const container = document.getElementById("admin-fund-transactions");
   if (!container) return;
-  container.innerHTML = "Loading…";
+  container.innerHTML = skeletonHTML("list");
 
   const q = query(collection(db, "fundTransactions"), orderBy("date", "desc"));
   const snap = await getDocs(q);
@@ -5251,7 +5553,7 @@ let activeEventsCache = null;
 async function renderAdminActiveEvents() {
   const container = document.getElementById("admin-active-events");
   if (!container) return;
-  container.innerHTML = "Loading…";
+  container.innerHTML = skeletonHTML("list");
 
   const snap = await getDocs(collection(db, "events"));
   activeEventsCache = [];
@@ -5354,7 +5656,7 @@ function wireEventEditModal() {
 async function renderAdminActiveAnnouncements() {
   const container = document.getElementById("admin-active-announcements");
   if (!container) return;
-  container.innerHTML = "Loading…";
+  container.innerHTML = skeletonHTML("list");
 
   const snap = await getDocs(collection(db, "announcements"));
   const items = [];
@@ -5464,7 +5766,7 @@ const PROJECT_STATUSES = [
 async function renderAdminActiveProjects() {
   const container = document.getElementById("admin-active-projects");
   if (!container) return;
-  container.innerHTML = "Loading…";
+  container.innerHTML = skeletonHTML("list");
 
   const snap = await getDocs(collection(db, "groupProjects"));
 
@@ -5566,6 +5868,82 @@ async function renderAdminActiveProjects() {
 
     box.appendChild(toggles);
 
+    // Membership mode switch — "One group per member" (1:1) vs "A member
+    // can be in many groups" (1:many). Flips instantly. Going back to 1:1
+    // is refused while someone is still in several groups.
+    const modeRow = document.createElement("label");
+    modeRow.className = "hide-members-row";
+    const modeInput = document.createElement("input");
+    modeInput.type = "checkbox";
+    modeInput.checked = p.sharedMembers === true;
+    const modeText = document.createElement("span");
+    modeText.textContent = "Allow members in multiple groups (1:many)";
+    modeRow.appendChild(modeInput);
+    modeRow.appendChild(modeText);
+    modeInput.addEventListener("change", async () => {
+      if (!guardPerm('projects', 'Edit Group Project')) { modeInput.checked = !modeInput.checked; return; }
+      const next = modeInput.checked;
+      modeInput.disabled = true;
+      try {
+        const ref = doc(db, "groupProjects", p.id);
+        const fresh = await getDoc(ref);
+        if (!next) {
+          const dup = findCrossGroupDuplicate(fresh.data().groups);
+          if (dup) {
+            modeInput.checked = true;
+            alert(`${dup} is in more than one group. Remove them from the extra group(s) via Edit Project first, then switch back to one group per member.`);
+            return;
+          }
+        }
+        await updateDoc(ref, { sharedMembers: next });
+        p.sharedMembers = next;
+      } catch (err) {
+        modeInput.checked = !next;
+        alert("Could not update the membership setting. Please try again.");
+      } finally {
+        modeInput.disabled = false;
+      }
+    });
+    box.appendChild(modeRow);
+
+    // Per-group "Hide members" switches — flip instantly, any time. A hidden
+    // group's roster is visible only to that group (see canSeeGroupMembers).
+    // Re-reads the project first so a stale copy can never overwrite fields
+    // other flows write into groups[] (e.g. ratingsFinalized).
+    (Array.isArray(p.groups) ? p.groups : []).forEach((g, gi) => {
+      const hideRow = document.createElement("label");
+      hideRow.className = "hide-members-row";
+      const hideInput = document.createElement("input");
+      hideInput.type = "checkbox";
+      hideInput.checked = g.hideMembers === true;
+      const hideText = document.createElement("span");
+      const multi = p.groups.length > 1;
+      hideText.textContent = multi
+        ? `Hide members — ${g.groupName || "Group " + (gi + 1)}`
+        : "Hide members";
+      hideRow.appendChild(hideInput);
+      hideRow.appendChild(hideText);
+      hideInput.addEventListener("change", async () => {
+        if (!guardPerm('projects', 'Edit Group Project')) { hideInput.checked = !hideInput.checked; return; }
+        const next = hideInput.checked;
+        hideInput.disabled = true;
+        try {
+          const ref = doc(db, "groupProjects", p.id);
+          const fresh = await getDoc(ref);
+          const groups = Array.isArray(fresh.data().groups) ? fresh.data().groups.slice() : [];
+          groups[gi] = { ...groups[gi], hideMembers: next };
+          await updateDoc(ref, { groups });
+          p.groups = groups;
+        } catch (err) {
+          hideInput.checked = !next;
+          alert("Could not update the hide setting. Please try again.");
+        } finally {
+          hideInput.disabled = false;
+        }
+      });
+      box.appendChild(hideRow);
+    });
+
     const editBtn = document.createElement("button");
     editBtn.type = "button";
     editBtn.className = "ghost-btn";
@@ -5603,6 +5981,8 @@ async function openProjectEditModal(p) {
   document.getElementById("projectedit-status").value = p.status || "starting";
   document.getElementById("projectedit-order").value = (p.order === undefined || p.order === null) ? "" : p.order;
 
+  document.getElementById("projectedit-membership-mode").value = p.sharedMembers === true ? "many" : "one";
+
   const container = document.getElementById("projectedit-groups-container");
   container.innerHTML = "";
   await getBatchmatesPublicList(); // warm the cache before building blocks
@@ -5618,6 +5998,7 @@ async function openProjectEditModal(p) {
     block.querySelectorAll(".member-checkbox").forEach((cb) => {
       cb.checked = memberUids.has(cb.value);
     });
+    block.querySelector(".group-hide-members").checked = g.hideMembers === true;
   }
   refreshMemberExclusions("projectedit-groups-container");
   updateRemoveButtonsVisibility("projectedit-groups-container");
@@ -5640,6 +6021,7 @@ function initProjectEditForm() {
   });
 
   addGroupBtn.addEventListener("click", () => createGroupBlock("projectedit-groups-container"));
+  document.getElementById("projectedit-membership-mode").addEventListener("change", () => refreshMemberExclusions("projectedit-groups-container"));
 
   form.addEventListener("submit", async (e) => {
     if (!guardPerm('projects', 'Edit Group Project')) return;
@@ -5663,14 +6045,26 @@ function initProjectEditForm() {
           leaderUid: leaderSelect.value || "",
           dueDate: block.querySelector(".group-duedate-input").value,
           members: checked.map((cb) => cb.dataset.displayName),
-          memberUids: checked.map((cb) => cb.value)
+          memberUids: checked.map((cb) => cb.value),
+          hideMembers: block.querySelector(".group-hide-members").checked
         });
       });
+
+      const sharedMembers = document.getElementById("projectedit-membership-mode").value === "many";
+      if (!sharedMembers) {
+        const dup = findCrossGroupDuplicate(groups);
+        if (dup) {
+          errorEl.textContent = `${dup} is in more than one group. Switch Group membership to "A member can be in many groups", or remove the duplicate.`;
+          errorEl.hidden = false;
+          return;
+        }
+      }
 
       const updates = {
         title: document.getElementById("projectedit-title").value.trim(),
         description: document.getElementById("projectedit-description").value.trim(),
         status: document.getElementById("projectedit-status").value || "starting",
+        sharedMembers,
         groups
       };
       const orderVal = document.getElementById("projectedit-order").value;
@@ -5989,7 +6383,7 @@ async function renderAdminCompletedProjects() {
   const container = document.getElementById("admin-completed-projects");
   const sortSelect = document.getElementById("completed-projects-sort");
   if (!container) return;
-  container.innerHTML = "Loading…";
+  container.innerHTML = skeletonHTML("list");
 
   const snap = await getDocs(collection(db, "groupProjects"));
   completedProjectsCache = [];
@@ -6046,7 +6440,7 @@ async function openProjectDetailModal(p) {
   const overlay = document.getElementById("modal-project-detail");
   if (!body || !overlay) return;
   overlay.hidden = false;
-  body.innerHTML = "Loading…";
+  body.innerHTML = skeletonHTML("lines");
 
   const groups = Array.isArray(p.groups) ? p.groups : [];
 
@@ -6095,7 +6489,7 @@ async function openProjectDetailModal(p) {
 async function renderAdminChangeRequests() {
   const container = document.getElementById("admin-change-requests");
   if (!container) return;
-  container.innerHTML = "Loading…";
+  container.innerHTML = skeletonHTML("list");
 
   const q = query(collection(db, "changeRequests"), where("status", "==", "pending"));
   const snap = await getDocs(q);
@@ -6247,6 +6641,65 @@ async function approveChangeRequest(req) {
 // Applies to the "batchmates" collection only (see the note in the
 // popup) — deliberately not "batchmatesPublic", so this can't silently
 // widen or corrupt that curated, directory-facing set of fields.
+// Renames one profile field everywhere: every /batchmates doc, the
+// /batchmatesPublic mirror, and the field list in /config/directoryFields
+// (which drives the Dashboard, directory popup and the customizer). Data is
+// moved, not copied — the old key is deleted from each document.
+async function renameFieldEverywhere(oldKey, newKey, newLabel, btn, errorEl, successEl) {
+  const KEY_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+  const SYSTEM = ["campusIndexNumber", "campusRegNumber", "universityEmail", "roles", "tasks", "photoUrl", "prestigePoints", "fundDonated", "badBehaviorRecords", "badBehaviorRecords", "id"];
+  const fail = (m) => { errorEl.textContent = m; errorEl.hidden = false; };
+  if (!guardPerm("fieldManager", "Manage Profile Fields")) return;
+  if (!KEY_RE.test(newKey)) return fail("New field name must start with a letter and contain only letters, numbers and underscores.");
+  if (oldKey === newKey) return fail("The new name is the same as the current one.");
+  if (SYSTEM.includes(oldKey) || SYSTEM.includes(newKey)) return fail("System fields (index/registration numbers, university email, roles, tasks, photo, prestige, fund, bad-behavior records) can't be renamed here.");
+
+  const original = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Renaming…";
+  try {
+    const groups = cloneFieldGroups(await getDirectoryFieldSchema(true));
+    if (groups.some((g) => (g.fields || []).some((f) => f.key === newKey))) {
+      return fail(`"${newKey}" is already a profile field. Pick a name that isn't used yet.`);
+    }
+    if (!confirm(`Rename "${oldKey}" to "${newKey}" in every batchmate record, the directory copy and the profile-field list? Make sure the site files already use "${newKey}" before you do this.`)) return;
+
+    const [bm, pub] = await Promise.all([getDocs(collection(db, "batchmates")), getDocs(collection(db, "batchmatesPublic"))]);
+    const ops = [];
+    [bm, pub].forEach((snap) => snap.forEach((ds) => {
+      const d = ds.data();
+      if (!(oldKey in d)) return;
+      const upd = { [oldKey]: deleteField() };
+      const cur = d[newKey];
+      // Never overwrite a value already stored under the new name.
+      if (cur === undefined || cur === null || cur === "") upd[newKey] = d[oldKey];
+      ops.push([ds.ref, upd]);
+    }));
+    for (let i = 0; i < ops.length; i += 400) {
+      const batch = writeBatch(db);
+      ops.slice(i, i + 400).forEach(([ref, upd]) => batch.update(ref, upd));
+      await batch.commit();
+    }
+
+    let schemaTouched = false;
+    groups.forEach((g) => (g.fields || []).forEach((f) => {
+      if (f.key === oldKey) { f.key = newKey; if (newLabel) f.label = newLabel; schemaTouched = true; }
+    }));
+    if (schemaTouched) {
+      await setDoc(doc(db, ...DIRECTORY_FIELDS_DOC_PATH), { groups, updatedAt: serverTimestamp() });
+      directoryFieldSchemaCache = null;
+    }
+    batchmatesPublicListCache = null;
+    successEl.textContent = `Done — renamed "${oldKey}" to "${newKey}" on ${ops.length} record(s)${schemaTouched ? " and in the profile-field list" : ""}.`;
+    successEl.hidden = false;
+  } catch (err) {
+    fail("Could not rename the field — please try again. Some records may already be updated; running it again is safe.");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = original;
+  }
+}
+
 function initBulkFieldForm() {
   const form = document.getElementById("form-bulkfield");
   if (!form) return;
@@ -6259,15 +6712,21 @@ function initBulkFieldForm() {
   const submitBtn = form.querySelector("button[type=submit]");
   const originalLabel = submitBtn.textContent;
 
+  const renameRow = document.getElementById("bulkfield-rename-row");
+  const newKeyInput = document.getElementById("bulkfield-newkey");
+  const newLabelInput = document.getElementById("bulkfield-newlabel");
+  const keyLabel = document.getElementById("bulkfield-key-label");
   function syncValueRow() {
     valueRow.hidden = actionSelect.value !== "add";
+    if (renameRow) renameRow.hidden = actionSelect.value !== "rename";
+    if (keyLabel) keyLabel.textContent = actionSelect.value === "rename" ? "Current Field Name" : "Field Name";
   }
   actionSelect.addEventListener("change", syncValueRow);
   syncValueRow();
 
   form.addEventListener("submit", async (e) => {
-    if (!guardPerm('bulkField', 'Bulk Field Edit')) return;
     e.preventDefault();
+    if (!guardPerm('bulkField', 'Bulk Field Edit')) return;
     errorEl.hidden = true;
     successEl.hidden = true;
 
@@ -6277,6 +6736,11 @@ function initBulkFieldForm() {
     if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(key)) {
       errorEl.textContent = "Field name must start with a letter and contain only letters, numbers and underscores.";
       errorEl.hidden = false;
+      return;
+    }
+
+    if (action === "rename") {
+      await renameFieldEverywhere(key, newKeyInput.value.trim(), newLabelInput.value.trim(), submitBtn, errorEl, successEl);
       return;
     }
 
@@ -6342,7 +6806,7 @@ function initFieldManagerPanel() {
   openBtn.addEventListener("click", async () => {
     errorEl.hidden = true;
     successEl.hidden = true;
-    sectionsEl.innerHTML = '<p class="info-text" style="color:var(--muted)">Loading…</p>';
+    sectionsEl.innerHTML = skeletonHTML("lines");
     const groups = await getDirectoryFieldSchema(true); // always start from the last saved copy
     fieldMgrState = cloneFieldGroups(groups);
     fieldMgrRemovedKeys = [];
@@ -6701,7 +7165,7 @@ async function deletePrestigeLogEntry(entry, d, listEl) {
   const finalAmount = Number(entry.finalAmount) || 0;
   const label = entry.note || (entry.source ? humanizeKey(entry.source) : "this prestige record");
   const sign = finalAmount > 0 ? "+" : "";
-  const confirmMsg = `Delete "${label}"?\n\nThis will permanently remove the record and adjust ${d.fullName || "this batchmate"}'s prestige total by ${sign}${-finalAmount} (reversing the ${sign}${finalAmount} it originally awarded). This cannot be undone.`;
+  const confirmMsg = `Delete "${label}"?\n\nThis will permanently remove the record and adjust ${d.shortName || "this batchmate"}'s prestige total by ${sign}${-finalAmount} (reversing the ${sign}${finalAmount} it originally awarded). This cannot be undone.`;
   if (!confirm(confirmMsg)) return;
 
   try {
@@ -6744,7 +7208,7 @@ async function renderAdminDirectoryDetail(d) {
   container.innerHTML = "";
 
   const schema = await getDirectoryFieldSchema();
-  const knownKeys = new Set(["fullName", "photoUrl"]);
+  const knownKeys = new Set(["shortName", "photoUrl"]);
 
   const sortedGroups = [...schema].sort((a, b) => (a.order || 0) - (b.order || 0));
   sortedGroups.forEach((g) => {
@@ -6875,6 +7339,29 @@ async function renderAdminDirectoryDetail(d) {
     });
     container.appendChild(otherGroup);
   }
+
+  // Make every section collapsible — only the first one starts open.
+  container.querySelectorAll(":scope > .admindir-detail-group").forEach((group, i) => {
+    const title = group.querySelector(":scope > .admindir-detail-group-title");
+    if (!title) return;
+    const bodyWrap = document.createElement("div");
+    bodyWrap.className = "admindir-detail-group-body";
+    Array.from(group.childNodes).forEach((n) => { if (n !== title) bodyWrap.appendChild(n); });
+    group.appendChild(bodyWrap);
+
+    title.setAttribute("role", "button");
+    title.setAttribute("tabindex", "0");
+    const setOpen = (open) => {
+      group.classList.toggle("is-collapsed", !open);
+      title.setAttribute("aria-expanded", open ? "true" : "false");
+    };
+    setOpen(i === 0);
+    const toggle = () => setOpen(group.classList.contains("is-collapsed"));
+    title.addEventListener("click", toggle);
+    title.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); }
+    });
+  });
 }
 
 // ── Admin: Data Table (Data tab) ─────────────────────────────────────
@@ -6897,9 +7384,9 @@ function loadDataTableColumns() {
   try {
     const raw = localStorage.getItem(DATATABLE_COLUMNS_KEY);
     const parsed = raw ? JSON.parse(raw) : null;
-    return Array.isArray(parsed) && parsed.length ? parsed : ["fullName", "campusIndexNumber"];
+    return Array.isArray(parsed) && parsed.length ? parsed.map((k) => (k === "fullName" ? "shortName" : k)) : ["shortName", "campusIndexNumber"];
   } catch (err) {
-    return ["fullName", "campusIndexNumber"];
+    return ["shortName", "campusIndexNumber"];
   }
 }
 function saveDataTableColumns() {
@@ -7067,8 +7554,8 @@ function renderDataTable() {
     tr.addEventListener("click", async () => {
       const avatarEl = document.getElementById("admindir-detail-avatar");
       avatarEl.innerHTML = "";
-      avatarEl.appendChild(buildAvatar(r.fullName, r.photoUrl).firstChild);
-      document.getElementById("admindir-detail-name").textContent = r.fullName || "Unnamed";
+      avatarEl.appendChild(buildAvatar(r.shortName, r.photoUrl).firstChild);
+      document.getElementById("admindir-detail-name").textContent = r.shortName || "Unnamed";
       document.getElementById("admindir-detail-index").textContent = r.campusIndexNumber || "—";
       await renderAdminDirectoryDetail(r);
       document.getElementById("modal-admindirectory-detail").hidden = false;
@@ -7222,7 +7709,7 @@ async function initDataTablePanel() {
     if (body) body.innerHTML = "";
     const snap = await getDocs(collection(db, "batchmates"));
     dataTableRows = [];
-    const keySet = new Set(["fullName", "campusIndexNumber", "photoUrl"]);
+    const keySet = new Set(["shortName", "campusIndexNumber", "photoUrl"]);
     snap.forEach((docSnap) => {
       const d = { uid: docSnap.id, ...docSnap.data() };
       dataTableRows.push(d);
@@ -7234,7 +7721,7 @@ async function initDataTablePanel() {
 
     dataTableFieldKeys = Array.from(keySet).sort((a, b) => humanizeKey(a).localeCompare(humanizeKey(b)));
     dataTableRows.sort((a, b) =>
-      (a.fullName || "").localeCompare(b.fullName || "", undefined, { numeric: true, sensitivity: "base" })
+      (a.shortName || "").localeCompare(b.shortName || "", undefined, { numeric: true, sensitivity: "base" })
     );
     populateDataTableFilterField();
     refreshDataTableFilterValues();
@@ -7305,7 +7792,7 @@ function initSettingsFieldsPanel() {
   openBtn.addEventListener("click", async () => {
     errorEl.hidden = true;
     successEl.hidden = true;
-    sectionsEl.innerHTML = '<p class="info-text" style="color:var(--muted)">Loading…</p>';
+    sectionsEl.innerHTML = skeletonHTML("lines");
     const enabledKeys = await getSettingsEnabledKeys(true);
     sectionsEl.innerHTML = "";
     CHANGE_REQUEST_GROUPS.forEach((group) => {
@@ -7646,7 +8133,7 @@ async function renderBatchmateDirectory() {
       return;
     }
     const filtered = allBatchmates.filter((b) => {
-      const name = (b.fullName || "").toLowerCase();
+      const name = (b.shortName || "").toLowerCase();
       const idx = (b.campusIndexNumber || "").toLowerCase();
       return name.includes(term) || idx.includes(term);
     });
@@ -7654,7 +8141,7 @@ async function renderBatchmateDirectory() {
   });
 }
 
-function buildAvatar(fullName, photoUrl) {
+function buildAvatar(shortName, photoUrl) {
   const slot = document.createElement("div");
   slot.className = "avatar-slot";
   const url = (photoUrl || "").trim();
@@ -7668,7 +8155,7 @@ function buildAvatar(fullName, photoUrl) {
   } else {
     const initial = document.createElement("div");
     initial.className = "avatar";
-    initial.textContent = (fullName || "?").charAt(0).toUpperCase();
+    initial.textContent = (shortName || "?").charAt(0).toUpperCase();
     slot.appendChild(initial);
   }
   return slot;
@@ -7687,7 +8174,7 @@ function displayBatchmates(list) {
     const card = document.createElement("div");
     card.className = "batchmate-card";
 
-    const avatarSlot = buildAvatar(b.fullName, b.photoUrl);
+    const avatarSlot = buildAvatar(b.shortName, b.photoUrl);
     if (typeof b.prestigeLevel === "number") {
       const levelBadge = document.createElement("span");
       levelBadge.className = "level-badge";
@@ -7695,11 +8182,19 @@ function displayBatchmates(list) {
       levelBadge.title = `${LEVEL_NAME} ${b.prestigeLevel}`;
       avatarSlot.appendChild(levelBadge);
     }
+    if (batchmatePrivacyMap[b.uid] !== true && isBirthdayToday(b.birthday)) {
+      avatarSlot.classList.add("bday-glow");
+      const cake = document.createElement("span");
+      cake.className = "bday-cake";
+      cake.textContent = "🎂";
+      cake.title = "Birthday today!";
+      avatarSlot.appendChild(cake);
+    }
     card.appendChild(avatarSlot);
 
     const name = document.createElement("div");
     name.className = "batchmate-card-name";
-    name.textContent = (b.fullName || "Unnamed").split(" ")[0];
+    name.textContent = (b.shortName || "Unnamed").split(" ")[0];
 
     const index = document.createElement("div");
     index.className = "batchmate-card-index";
@@ -7768,14 +8263,14 @@ function showPillsIfAny(listId, items) {
 }
 
 function openBatchmateModal(b) {
-  document.getElementById("bm-modal-name").textContent = b.fullName || "Unnamed";
+  document.getElementById("bm-modal-name").textContent = b.shortName || "Unnamed";
 
   const avatarSlot = document.getElementById("bm-modal-avatar-slot");
   avatarSlot.innerHTML = "";
-  avatarSlot.appendChild(buildAvatar(b.fullName, b.photoUrl).firstChild);
+  avatarSlot.appendChild(buildAvatar(b.shortName, b.photoUrl).firstChild);
 
   const publicFields = flattenFieldGroups(directoryFieldSchemaCache || DEFAULT_DIRECTORY_FIELD_GROUPS)
-    .filter((f) => f.public && f.key !== "fullName");
+    .filter((f) => f.public && f.key !== "shortName");
   // Only fields this person has actually filled in are shown.
   const fieldRows = publicFields
     .map((f) => { const raw = b[f.key]; return [f.label || f.key, Array.isArray(raw) ? raw.filter(hasValue).join(", ") : raw]; })
@@ -7813,11 +8308,25 @@ function openBatchmateModal(b) {
 
   contentEl.classList.toggle("bm-privacy-blur", isHidden);
   if (isHidden) {
-    const firstName = (b.fullName || "This batchmate").split(" ")[0];
+    const firstName = (b.shortName || "This batchmate").split(" ")[0];
     overlayEl.textContent = `${firstName} decided not to show ${genderPronoun(b.gender)} profile to public.`;
     overlayEl.hidden = false;
   } else {
     overlayEl.hidden = true;
+  }
+
+  // Birthday celebration in the popup — never for a profile the person
+  // opted to hide (that would leak the date), nor if no birthday is shared.
+  const bmBox = document.querySelector("#batchmate-modal-overlay .modal-box");
+  const bmAvatar = document.getElementById("bm-modal-avatar-slot");
+  const bmName = document.getElementById("bm-modal-name");
+  stopBirthdayEffect(bmBox);
+  bmAvatar.classList.remove("bday-glow");
+  bmName.classList.remove("bday-name");
+  if (!isHidden && isBirthdayToday(b.birthday)) {
+    startBirthdayEffect(bmBox, { sticky: true });
+    bmAvatar.classList.add("bday-glow");
+    bmName.classList.add("bday-name");
   }
 
   document.getElementById("batchmate-modal-overlay").hidden = false;
@@ -7868,7 +8377,7 @@ function wireBatchmateModal() {
   const overlay = document.getElementById("batchmate-modal-overlay");
   const closeBtn = document.getElementById("batchmate-modal-close");
 
-  function closeModal() { overlay.hidden = true; }
+  function closeModal() { overlay.hidden = true; stopBirthdayEffect(overlay.querySelector(".modal-box")); }
 
   closeBtn.addEventListener("click", closeModal);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) closeModal(); });
@@ -8385,7 +8894,7 @@ function initTimetableForm() {
 async function renderAdminTimetable() {
   const container = document.getElementById("admin-timetable-list");
   if (!container) return;
-  container.innerHTML = "Loading…";
+  container.innerHTML = skeletonHTML("list");
 
   const { slots } = await fetchTimetableData(true);
 
@@ -8730,7 +9239,7 @@ async function initRequestsPage(user, isAdmin) {
 
   try {
     const bmSnap = await getDoc(doc(db, "batchmates", user.uid));
-    reqMyFullName = bmSnap.exists() ? (bmSnap.data().fullName || "") : "";
+    reqMyFullName = bmSnap.exists() ? (bmSnap.data().shortName || "") : "";
 
     wireNewRequestModal();
     wireResolveModal();
@@ -8803,7 +9312,7 @@ function wireNewRequestModal() {
 async function renderRequestsList() {
   const pendingList = document.getElementById("req-pending-list");
   const resolvedList = document.getElementById("req-resolved-list");
-  pendingList.innerHTML = "Loading…";
+  pendingList.innerHTML = skeletonHTML("list");
   resolvedList.innerHTML = "";
 
   // An admin's Firestore rule allows a plain read of the whole
@@ -9098,3 +9607,812 @@ function wireResolveModal() {
 } 
 
 
+
+// ═══════════════════════════════════════════════════════════════════
+// Skeleton loaders — animated placeholders used instead of "Loading…".
+// Styles live in style.css (.sk*). kind: "list" | "lines" | "checks" | "cards"
+// ═══════════════════════════════════════════════════════════════════
+function skeletonHTML(kind = "list", n = 3) {
+  const ln = (w) => `<span class="sk sk-line" style="width:${w}%"></span>`;
+  let inner = "";
+  if (kind === "lines") {
+    inner = ln(92) + ln(78) + ln(56);
+  } else if (kind === "checks") {
+    for (let i = 0; i < Math.max(n, 4); i++) inner += `<div class="sk-row"><span class="sk" style="width:18px;height:18px;border-radius:5px"></span><div class="sk-col">${ln(40 + ((i * 17) % 40))}</div></div>`;
+  } else if (kind === "cards") {
+    for (let i = 0; i < n; i++) inner += `<div class="card sk-card"><span class="sk sk-title"></span>${ln(90)}${ln(64)}</div>`;
+  } else {
+    for (let i = 0; i < n; i++) inner += `<div class="sk-row"><span class="sk sk-circle" style="width:36px;height:36px"></span><div class="sk-col">${ln(60 + ((i * 13) % 25))}${ln(34)}</div></div>`;
+  }
+  return `<div class="sk-wrap" aria-busy="true" aria-label="Loading">${inner}</div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Customizable Dashboard
+// Layout lives at /config/dashboardLayout as
+//   { version, tabs: [{ id, title, blocks: [Block] }], knownSources: [key] }
+// Block = one of
+//   { id, type:"section", source, title?, hideTitle?, style, width, density,
+//     fieldLayout, accent, items?: [{key, hidden}] }
+//   { id, type:"heading", text, level, align, width }
+//   { id, type:"text",    text, size, align, look, width }
+//   { id, type:"button",  label, url, look, newTab, align, width }
+//   { id, type:"spacer",  size }
+// "source" is a data section (profile header, tasks, prestige, a profile-field
+// group …). No doc yet → default layout that reproduces the original page.
+// ═══════════════════════════════════════════════════════════════════
+const DASHBOARD_LAYOUT_DOC_PATH = ["config", "dashboardLayout"];
+const DASH_SRC_TOP = [
+  { key: "profile", label: "Profile header", items: [] },
+  { key: "activeTasks", label: "Active Tasks", items: [] },
+  { key: "prestige", label: "Prestige Points", items: [] },
+  { key: "fund", label: "My Fund Donations", items: [] },
+  { key: "roles", label: "Roles", items: [] }
+];
+const DASH_SRC_BOTTOM = [
+  { key: "extra", label: "Extracurricular Details", items: [["sports", "Sports"], ["clubs", "Clubs"], ["skills", "Skills"]] },
+  { key: "records", label: "Records Details", items: [["tasks", "Tasks Assigned"], ["bad", "Bad Behavior Records"]] }
+];
+
+function dashId() { return "b" + Math.random().toString(36).slice(2, 9); }
+function dashGroupKey(g, i) { return "group:" + (g.id || ("g" + i)); }
+
+// Every data section that can be placed, in the original page's order.
+function dashSourceList(schema) {
+  const groups = [...(schema || DEFAULT_DIRECTORY_FIELD_GROUPS)].sort((a, b) => (a.order || 0) - (b.order || 0));
+  const mid = groups.map((g, i) => ({
+    key: dashGroupKey(g, i),
+    label: g.title || "Details",
+    items: [...(g.fields || [])].sort((a, b) => (a.order || 0) - (b.order || 0)).map((f) => [f.key, f.label || f.key])
+  }));
+  return [...DASH_SRC_TOP, ...mid, ...DASH_SRC_BOTTOM];
+}
+
+function dashDefaultSection(key) {
+  return { id: dashId(), type: "section", source: key, width: (key === "profile" || key === "activeTasks") ? "full" : "half" };
+}
+
+// Turns whatever is stored (or nothing) into a clean layout: drops sections
+// whose source no longer exists, and appends brand-new sources (e.g. a profile
+// section an admin just created) to the first tab so nothing silently vanishes.
+function normalizeDashLayout(raw, schema) {
+  const sources = dashSourceList(schema);
+  const keys = new Set(sources.map((s) => s.key));
+  if (!raw || !Array.isArray(raw.tabs) || raw.tabs.length === 0) {
+    return { tabs: [{ id: "t" + dashId(), title: "Overview", blocks: sources.map((s) => dashDefaultSection(s.key)) }], knownSources: sources.map((s) => s.key) };
+  }
+  const tabs = raw.tabs.map((t) => ({
+    id: t.id || ("t" + dashId()),
+    title: t.title || "Tab",
+    blocks: (Array.isArray(t.blocks) ? t.blocks : [])
+      .filter((b) => b && b.type && (b.type !== "section" || keys.has(b.source)))
+      .map((b) => ({ ...b, id: b.id || dashId() }))
+  }));
+  const known = new Set(Array.isArray(raw.knownSources) ? raw.knownSources : []);
+  const placed = new Set();
+  tabs.forEach((t) => t.blocks.forEach((b) => { if (b.type === "section") placed.add(b.source); }));
+  sources.forEach((s) => { if (!known.has(s.key) && !placed.has(s.key)) tabs[0].blocks.push(dashDefaultSection(s.key)); });
+  return { tabs, knownSources: sources.map((s) => s.key) };
+}
+
+async function getDashboardLayoutDoc() {
+  try {
+    const snap = await getDoc(doc(db, ...DASHBOARD_LAYOUT_DOC_PATH));
+    return snap.exists() ? snap.data() : null;
+  } catch (err) { return null; }
+}
+
+// Allows https/http/mailto/tel and same-site pages (home.html, ./x, #id).
+// Anything with another scheme (javascript:, data: …) is rejected.
+function dashSafeUrl(raw) {
+  const u = String(raw || "").trim();
+  if (!u || u.startsWith("//")) return "";
+  if (/^(https?:|mailto:|tel:)/i.test(u)) return u;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return "";
+  if (/^(\.\/|\/|#)/.test(u) || /^[\w-]+\.html?([?#].*)?$/i.test(u)) return u;
+  if (/^[\w-]+(\.[\w-]+)+([/?#]\S*)?$/.test(u)) return "https://" + u;
+  return "";
+}
+
+function applyDashSectionFormat(node, b) {
+  node.classList.add("dl-sec", "dl-style-" + (b.style || "card"), "dl-w-" + (b.width === "full" ? "full" : "half"), "dl-fl-" + (b.fieldLayout || "stacked"));
+  if (b.density === "compact") node.classList.add("dl-dense");
+  if (b.accent && LABEL_COLORS[b.accent]) {
+    node.classList.add("dl-accent");
+    node.style.setProperty("--dl-accent", LABEL_COLORS[b.accent].border);
+  }
+  const label = node.querySelector(":scope > .section-label, :scope > .section-label-row .section-label");
+  if (label) {
+    if (b.title && b.title.trim()) label.textContent = b.title.trim();
+    if (b.hideTitle) label.hidden = true;
+  }
+  const cont = node.querySelector(".dl-items");
+  if (cont && Array.isArray(b.items)) {
+    const map = new Map([...cont.children].map((c) => [c.dataset.item, c]));
+    b.items.forEach((it) => {
+      const c = map.get(it.key);
+      if (!c) return;
+      c.hidden = !!it.hidden;
+      cont.appendChild(c);
+      map.delete(it.key);
+    });
+    map.forEach((c) => cont.appendChild(c));
+  }
+}
+
+function buildDashBlock(b, lib) {
+  if (b.type === "section") {
+    const node = [...lib.querySelectorAll("[data-src]")].find((n) => n.dataset.src === b.source);
+    if (!node) return null;
+    applyDashSectionFormat(node, b);
+    return node;
+  }
+  if (b.type === "spacer") {
+    const d = document.createElement("div");
+    d.className = "dl-spacer";
+    d.style.height = (({ sm: 12, md: 28, lg: 56 })[b.size] || 28) + "px";
+    d.setAttribute("aria-hidden", "true");
+    return d;
+  }
+  let node;
+  if (b.type === "heading") {
+    const lvl = ["h1", "h2", "h3"].includes(b.level) ? b.level : "h2";
+    node = document.createElement(lvl);
+    node.className = "dl-heading dl-" + lvl;
+    node.textContent = b.text || "";
+    if (!b.text) return null;
+  } else if (b.type === "text") {
+    node = document.createElement("p");
+    node.className = "dl-text dl-fs-" + (["s", "m", "l"].includes(b.size) ? b.size : "m") + (b.look === "callout" ? " callout" : b.look === "muted" ? " muted" : "");
+    node.textContent = b.text || "";
+    if (!b.text) return null;
+  } else if (b.type === "button") {
+    const url = dashSafeUrl(b.url);
+    if (!url || !b.label) return null;
+    const wrap = document.createElement("div");
+    wrap.className = "dl-btn-wrap";
+    wrap.style.justifyContent = b.align === "center" ? "center" : b.align === "right" ? "flex-end" : "flex-start";
+    const a = document.createElement("a");
+    a.className = "dl-btn" + (b.look === "ghost" ? " ghost" : "") + (b.width === "full" ? " block" : "");
+    a.href = url;
+    a.textContent = b.label;
+    if (b.newTab) { a.target = "_blank"; a.rel = "noopener noreferrer"; }
+    wrap.appendChild(a);
+    node = wrap;
+    if (b.width === "full") node.classList.add("dl-w-full");
+    return node;
+  } else return null;
+  if (b.align) node.style.textAlign = b.align;
+  if (b.width !== "half") node.classList.add("dl-w-full");
+  return node;
+}
+
+// Builds the tab bar + panels inside #dash-layout, MOVING the filled source
+// cards out of the hidden #dash-sources library into place.
+function applyDashboardLayout(raw, schema) {
+  const root = document.getElementById("dash-layout");
+  const lib = document.getElementById("dash-sources");
+  if (!root || !lib) return;
+  const layout = normalizeDashLayout(raw, schema);
+  root.innerHTML = "";
+
+  let activeId = layout.tabs[0].id;
+  try {
+    const saved = sessionStorage.getItem("dashTab");
+    if (saved && layout.tabs.some((t) => t.id === saved)) activeId = saved;
+  } catch (e) { /* ignore */ }
+
+  const bar = document.createElement("div");
+  bar.className = "dash-tabs";
+  bar.setAttribute("role", "tablist");
+  const panels = [];
+
+  layout.tabs.forEach((t) => {
+    const panel = document.createElement("div");
+    panel.className = "dash-panel";
+    panel.dataset.tab = t.id;
+    t.blocks.forEach((b) => { const n = buildDashBlock(b, lib); if (n) panel.appendChild(n); });
+    if (!panel.children.length) {
+      const p = document.createElement("p");
+      p.className = "fine-print dl-w-full";
+      p.textContent = "Nothing here yet.";
+      panel.appendChild(p);
+    }
+    panel.hidden = t.id !== activeId;
+    panels.push(panel);
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "dash-tab" + (t.id === activeId ? " active" : "");
+    btn.setAttribute("role", "tab");
+    btn.textContent = t.title;
+    btn.addEventListener("click", () => {
+      bar.querySelectorAll(".dash-tab").forEach((x) => x.classList.toggle("active", x === btn));
+      panels.forEach((p) => {
+        const on = p.dataset.tab === t.id;
+        p.hidden = !on;
+        p.classList.remove("dash-panel-in");
+        if (on) { void p.offsetWidth; p.classList.add("dash-panel-in"); }
+      });
+      try { sessionStorage.setItem("dashTab", t.id); } catch (e) { /* ignore */ }
+    });
+    bar.appendChild(btn);
+  });
+
+  if (layout.tabs.length > 1) root.appendChild(bar);
+  panels.forEach((p) => root.appendChild(p));
+}
+
+// ── Admin → Danger → "Customize Dashboard" ─────────────────────────
+function initDashboardCustomizer() {
+  const openBtn = document.querySelector('.admin-section-btn[data-modal="modal-dashcust"]');
+  const root = document.getElementById("dc-root");
+  const errEl = document.getElementById("dc-error");
+  const okEl = document.getElementById("dc-success");
+  if (!openBtn || !root || !errEl || !okEl) return;
+
+  let st = null; // { tabs, sel, open, sources, schema }
+
+  const E = (tag, props = {}, ...kids) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (v === false || v == null) continue;
+      if (k === "class") e.className = v;
+      else if (k === "text") e.textContent = v;
+      else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? "" : v);
+    }
+    kids.flat().forEach((c) => c != null && e.append(c));
+    return e;
+  };
+  const showErr = (m) => { okEl.hidden = true; errEl.textContent = m; errEl.hidden = false; };
+  const showOk = (m) => { errEl.hidden = true; okEl.textContent = m; okEl.hidden = false; };
+  const curTab = () => st.tabs.find((t) => t.id === st.sel) || st.tabs[0];
+  const srcOf = (key) => st.sources.find((s) => s.key === key);
+  const placedKeys = () => { const s = new Set(); st.tabs.forEach((t) => t.blocks.forEach((b) => { if (b.type === "section") s.add(b.source); })); return s; };
+  const swap = (arr, i, j) => { if (j < 0 || j >= arr.length) return; [arr[i], arr[j]] = [arr[j], arr[i]]; };
+
+  const TYPE_LABEL = { section: "Data", heading: "Heading", text: "Text", button: "Button", spacer: "Space" };
+  function summary(b) {
+    if (b.type === "section") { const s = srcOf(b.source); return (b.title && b.title.trim()) || (s ? s.label : b.source); }
+    if (b.type === "heading") return b.text || "(empty heading)";
+    if (b.type === "text") return (b.text || "(empty text)").replace(/\s+/g, " ").slice(0, 60);
+    if (b.type === "button") return b.label || "(unnamed button)";
+    return ({ sm: "Small", md: "Medium", lg: "Large" })[b.size || "md"] + " space";
+  }
+
+  // Ordered list of a section's inner items (stored order first, new ones appended).
+  function itemsFor(b, src) {
+    const known = new Map((src ? src.items : []).map(([k, l]) => [k, l]));
+    const out = [];
+    (b.items || []).forEach((it) => { if (known.has(it.key)) { out.push({ key: it.key, label: known.get(it.key), hidden: !!it.hidden }); known.delete(it.key); } });
+    known.forEach((label, key) => out.push({ key, label, hidden: false }));
+    return out;
+  }
+
+  function sel(label, obj, key, opts, dflt, onChange, cls) {
+    const s = E("select");
+    opts.forEach(([v, l]) => s.append(E("option", { value: v, text: l })));
+    s.value = obj[key] != null ? obj[key] : dflt;
+    s.addEventListener("change", () => { obj[key] = s.value; if (onChange) onChange(); });
+    return E("label", { class: cls || "" }, label, s);
+  }
+  function inp(label, obj, key, attrs, onChange, cls) {
+    const i = E("input", { type: "text", ...attrs });
+    i.value = obj[key] || "";
+    i.addEventListener("input", () => { obj[key] = i.value; if (onChange) onChange(); });
+    return E("label", { class: cls || "" }, label, i);
+  }
+  function chk(label, checked, onChange) {
+    const c = E("input", { type: "checkbox" });
+    c.checked = checked;
+    c.addEventListener("change", () => onChange(c.checked));
+    return E("label", { class: "dc-check" }, c, label);
+  }
+
+  function blockEl(b, i, tab) {
+    const open = st.open === b.id;
+    const sum = E("span", { class: "dc-sum", text: summary(b) });
+    const upd = () => { sum.textContent = summary(b); };
+    const move = (d) => () => { swap(tab.blocks, i, i + d); render(); };
+    const head = E("div", { class: "dc-head" },
+      E("span", { class: "dc-type", text: TYPE_LABEL[b.type] }), sum,
+      E("button", { type: "button", title: "Move up", text: "↑", disabled: i === 0, onclick: move(-1) }),
+      E("button", { type: "button", title: "Move down", text: "↓", disabled: i === tab.blocks.length - 1, onclick: move(1) }),
+      E("button", { type: "button", title: "Edit", text: open ? "▴" : "✎", onclick: () => { st.open = open ? null : b.id; render(); } }),
+      E("button", { type: "button", title: "Remove", text: "✕", onclick: () => { tab.blocks.splice(i, 1); if (st.open === b.id) st.open = null; render(); } })
+    );
+    const box = E("div", { class: "dc-block" }, head);
+    if (!open) return box;
+
+    const body = E("div", { class: "dc-body" });
+    const WIDTH = [["half", "Half width"], ["full", "Full width"]];
+    const ALIGN = [["left", "Left"], ["center", "Center"], ["right", "Right"]];
+
+    if (b.type === "section") {
+      const src = srcOf(b.source);
+      if (b.source !== "profile") {
+        body.append(inp("Title (blank = default)", b, "title", { maxlength: "60", placeholder: src ? src.label : "" }, upd, "dc-wide"));
+        body.append(chk("Show title", !b.hideTitle, (v) => { b.hideTitle = !v; }));
+      }
+      body.append(
+        sel("Look", b, "style", [["card", "Card"], ["outline", "Outline only"], ["plain", "Plain (no box)"]], "card"),
+        sel("Width", b, "width", WIDTH, "half"),
+        sel("Spacing", b, "density", [["comfortable", "Comfortable"], ["compact", "Compact"]], "comfortable"),
+        sel("Data layout", b, "fieldLayout", [["stacked", "Stacked"], ["inline", "Label left, value right"], ["grid", "Grid columns"]], "stacked"),
+        sel("Accent bar", b, "accent", [["", "None"], ...Object.keys(LABEL_COLORS).map((k) => [k, k[0].toUpperCase() + k.slice(1)])], "")
+      );
+      const items = itemsFor(b, src);
+      if (items.length > 1) {
+        const commit = () => { b.items = items.map(({ key, hidden }) => ({ key, hidden })); render(); };
+        const wrap = E("div", { class: "dc-items" }, E("div", { class: "fine-print", style: "text-align:left;margin:0 0 4px;", text: "Order and visibility of the data inside this section" }));
+        items.forEach((it, k) => {
+          const c = E("input", { type: "checkbox" });
+          c.checked = !it.hidden;
+          c.addEventListener("change", () => { it.hidden = !c.checked; commit(); });
+          wrap.append(E("div", { class: "dc-item" }, c, E("span", { text: it.label }),
+            E("button", { type: "button", text: "↑", onclick: () => { swap(items, k, k - 1); commit(); } }),
+            E("button", { type: "button", text: "↓", onclick: () => { swap(items, k, k + 1); commit(); } })));
+        });
+        body.append(wrap);
+      }
+    } else if (b.type === "heading") {
+      body.append(
+        inp("Heading text", b, "text", { maxlength: "120" }, upd, "dc-wide"),
+        sel("Size", b, "level", [["h1", "Large"], ["h2", "Medium"], ["h3", "Small"]], "h2"),
+        sel("Align", b, "align", ALIGN, "left"),
+        sel("Width", b, "width", WIDTH, "full")
+      );
+    } else if (b.type === "text") {
+      const ta = E("textarea", { rows: "4", maxlength: "2000" });
+      ta.value = b.text || "";
+      ta.addEventListener("input", () => { b.text = ta.value; upd(); });
+      body.append(E("label", { class: "dc-wide" }, "Text", ta),
+        sel("Size", b, "size", [["s", "Small"], ["m", "Normal"], ["l", "Large"]], "m"),
+        sel("Look", b, "look", [["normal", "Normal"], ["muted", "Muted"], ["callout", "Callout box"]], "normal"),
+        sel("Align", b, "align", ALIGN, "left"),
+        sel("Width", b, "width", WIDTH, "full"));
+    } else if (b.type === "button") {
+      body.append(
+        inp("Button label", b, "label", { maxlength: "40" }, upd),
+        inp("Link (https://…, mailto:, or a page like timetable.html)", b, "url", { maxlength: "500" }, null),
+        sel("Look", b, "look", [["primary", "Filled"], ["ghost", "Outline"]], "primary"),
+        sel("Align", b, "align", ALIGN, "left"),
+        sel("Width", b, "width", [["auto", "Fit text"], ["full", "Full width"]], "auto"),
+        chk("Open in a new tab", !!b.newTab, (v) => { b.newTab = v; })
+      );
+    } else if (b.type === "spacer") {
+      body.append(sel("Height", b, "size", [["sm", "Small"], ["md", "Medium"], ["lg", "Large"]], "md", upd));
+    }
+
+    if (st.tabs.length > 1) {
+      const mv = E("select");
+      mv.append(E("option", { value: "", text: "Move to tab…" }));
+      st.tabs.filter((t) => t !== tab).forEach((t) => mv.append(E("option", { value: t.id, text: t.title || "Untitled" })));
+      mv.addEventListener("change", () => {
+        const dest = st.tabs.find((t) => t.id === mv.value);
+        if (!dest) return;
+        tab.blocks.splice(i, 1);
+        dest.blocks.push(b);
+        st.sel = dest.id;
+        render();
+      });
+      body.append(E("label", { class: "dc-wide" }, "Move this to another tab", mv));
+    }
+    box.append(body);
+    return box;
+  }
+
+  function addBlock(b) {
+    b.id = dashId();
+    curTab().blocks.push(b);
+    st.open = b.id;
+    render();
+  }
+
+  function render() {
+    root.innerHTML = "";
+    const tab = curTab();
+    const idx = st.tabs.indexOf(tab);
+
+    const chips = E("div", { class: "dc-tabs" });
+    st.tabs.forEach((t) => chips.append(E("button", { type: "button", class: "dc-chip" + (t === tab ? " active" : ""), text: t.title || "Untitled", onclick: () => { st.sel = t.id; st.open = null; render(); } })));
+    chips.append(E("button", { type: "button", class: "dc-chip", text: "＋ Tab", onclick: () => {
+      const t = { id: "t" + dashId(), title: "Tab " + (st.tabs.length + 1), blocks: [] };
+      st.tabs.push(t); st.sel = t.id; st.open = null; render();
+    } }));
+    root.append(chips);
+
+    const name = E("input", { type: "text", maxlength: "30", placeholder: "Tab name" });
+    name.value = tab.title;
+    name.addEventListener("input", () => { tab.title = name.value; chips.children[idx].textContent = name.value || "Untitled"; });
+    root.append(E("div", { class: "dc-bar" }, name,
+      E("button", { type: "button", class: "ghost-btn dc-mini", text: "◀", title: "Move tab left", disabled: idx === 0, onclick: () => { swap(st.tabs, idx, idx - 1); render(); } }),
+      E("button", { type: "button", class: "ghost-btn dc-mini", text: "▶", title: "Move tab right", disabled: idx === st.tabs.length - 1, onclick: () => { swap(st.tabs, idx, idx + 1); render(); } }),
+      E("button", { type: "button", class: "ghost-btn dc-mini", text: "Delete tab", disabled: st.tabs.length === 1, onclick: () => {
+        if (!confirm(`Delete the tab "${tab.title}" and everything in it?`)) return;
+        st.tabs.splice(idx, 1); st.sel = st.tabs[Math.max(0, idx - 1)].id; st.open = null; render();
+      } })));
+
+    tab.blocks.forEach((b, i) => root.append(blockEl(b, i, tab)));
+    if (!tab.blocks.length) root.append(E("p", { class: "fine-print", style: "text-align:center;margin:14px 0;", text: "This tab is empty — add something below." }));
+
+    const free = st.sources.filter((s) => !placedKeys().has(s.key));
+    const picker = E("select");
+    if (free.length) free.forEach((s) => picker.append(E("option", { value: s.key, text: s.label })));
+    else picker.append(E("option", { value: "", text: "All data sections are in use" }));
+    picker.disabled = !free.length;
+    root.append(E("div", { class: "dc-add" }, picker,
+      E("button", { type: "button", class: "ghost-btn dc-mini", text: "＋ Data section", disabled: !free.length, onclick: () => { if (picker.value) addBlock(dashDefaultSection(picker.value)); } })));
+    root.append(E("div", { class: "dc-add", style: "border-top:none;margin-top:0;padding-top:0;" },
+      E("button", { type: "button", class: "ghost-btn dc-mini", text: "＋ Heading", onclick: () => addBlock({ type: "heading", text: "New heading", level: "h2", align: "left", width: "full" }) }),
+      E("button", { type: "button", class: "ghost-btn dc-mini", text: "＋ Text", onclick: () => addBlock({ type: "text", text: "", size: "m", look: "normal", align: "left", width: "full" }) }),
+      E("button", { type: "button", class: "ghost-btn dc-mini", text: "＋ Button", onclick: () => addBlock({ type: "button", label: "Open", url: "", look: "primary", align: "left", width: "auto" }) }),
+      E("button", { type: "button", class: "ghost-btn dc-mini", text: "＋ Space", onclick: () => addBlock({ type: "spacer", size: "md" }) })));
+
+    root.append(E("div", { class: "dc-foot" },
+      E("button", { type: "button", class: "btn-primary", text: "Save Layout", onclick: save }),
+      E("button", { type: "button", class: "ghost-btn", text: "Reset to default", onclick: reset })));
+  }
+
+  async function save() {
+    if (!guardPerm("dashboardLayout", "Customize Dashboard")) return;
+    errEl.hidden = true; okEl.hidden = true;
+    for (const t of st.tabs) {
+      for (const b of t.blocks) {
+        if (b.type !== "button") continue;
+        const u = dashSafeUrl(b.url);
+        if (!(b.label || "").trim() || !u) {
+          st.sel = t.id; st.open = b.id; render();
+          showErr("A button needs a label and a valid link (https://…, mailto:, or a page like timetable.html).");
+          return;
+        }
+        b.url = u;
+      }
+    }
+    const tabs = st.tabs.map((t, i) => ({ id: t.id, title: (t.title || "").trim() || ("Tab " + (i + 1)), blocks: t.blocks }));
+    const payload = JSON.parse(JSON.stringify({ version: 1, tabs, knownSources: st.sources.map((s) => s.key) }));
+    try {
+      await setDoc(doc(db, ...DASHBOARD_LAYOUT_DOC_PATH), { ...payload, updatedAt: serverTimestamp() });
+      showOk("Saved. Every batchmate sees the new dashboard layout on their next load.");
+    } catch (err) {
+      showErr("Could not save the layout. Please try again.");
+    }
+  }
+
+  async function reset() {
+    if (!guardPerm("dashboardLayout", "Customize Dashboard")) return;
+    if (!confirm("Reset the dashboard to the original single-page layout?")) return;
+    try {
+      await deleteDoc(doc(db, ...DASHBOARD_LAYOUT_DOC_PATH));
+      await load();
+      showOk("Dashboard reset to the default layout.");
+    } catch (err) { showErr("Could not reset the layout. Please try again."); }
+  }
+
+  async function load() {
+    root.innerHTML = skeletonHTML("list", 4);
+    const schema = await getDirectoryFieldSchema(true);
+    const raw = await getDashboardLayoutDoc();
+    const layout = normalizeDashLayout(raw, schema);
+    st = { tabs: layout.tabs, sel: layout.tabs[0].id, open: null, sources: dashSourceList(schema), schema };
+    render();
+  }
+
+  openBtn.addEventListener("click", async () => {
+    if (!hasAdminPerm("dashboardLayout")) return;
+    errEl.hidden = true; okEl.hidden = true;
+    try { await load(); } catch (err) { root.innerHTML = ""; showErr("Could not load the layout. Please close and try again."); }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Admin → Danger → "Import CSV Data"
+// Upload a CSV, match each row to a batchmate by the NAME column, map the
+// other columns onto existing profile fields (or create new ones), then
+// write the values to /batchmates/{uid}. New fields are added to the profile
+// schema (/config/directoryFields) as private fields, so they appear on the
+// Dashboard automatically and can be arranged in Customize Dashboard.
+// ═══════════════════════════════════════════════════════════════════
+const CSV_PROTECTED_KEYS = ["shortName", "campusIndexNumber", "campusRegNumber", "universityEmail", "roles", "tasks", "photoUrl", "prestigePoints", "fundDonated", "badBehaviorRecords"];
+
+// RFC-4180-ish parser: quotes, escaped quotes, CRLF, BOM, ; or tab delimiters.
+function parseCsvText(text) {
+  text = String(text || "").replace(/^\uFEFF/, "");
+  const first = text.split(/\r?\n/, 1)[0] || "";
+  const counts = { ",": 0, ";": 0, "\t": 0 };
+  let q = false;
+  for (const ch of first) { if (ch === '"') q = !q; else if (!q && ch in counts) counts[ch]++; }
+  const delim = Object.keys(counts).sort((a, b) => counts[b] - counts[a])[0];
+  const rows = [];
+  let row = [], cell = "", inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else inQ = false; }
+      else cell += c;
+    } else if (c === '"') inQ = true;
+    else if (c === delim) { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      if (row.some((x) => x.trim() !== "")) rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  row.push(cell);
+  if (row.some((x) => x.trim() !== "")) rows.push(row);
+  return rows;
+}
+
+const csvNorm = (s) => String(s || "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+function initCsvImport() {
+  const openBtn = document.querySelector('.admin-section-btn[data-modal="modal-csvimport"]');
+  const root = document.getElementById("ci-root");
+  if (!openBtn || !root) return;
+
+  const E = (tag, props = {}, ...kids) => {
+    const e = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (v === false || v == null) continue;
+      if (k === "class") e.className = v;
+      else if (k === "text") e.textContent = v;
+      else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+      else e.setAttribute(k, v === true ? "" : v);
+    }
+    kids.flat().forEach((c) => c != null && e.append(c));
+    return e;
+  };
+  const msg = (cls, text) => E("p", { class: cls, text });
+
+  let mates = [];          // [{ uid, name, norm, data }]
+  let schema = [];         // cloned field groups
+  let csv = null;          // { headers, rows }
+  let cfg = null;          // { nameCol, cols:[{idx,header,target,label,section}], newSection, overwrite }
+
+  async function start() {
+    root.innerHTML = skeletonHTML("list", 3);
+    const [snap, groups] = await Promise.all([getDocs(collection(db, "batchmates")), getDirectoryFieldSchema(true)]);
+    mates = [];
+    snap.forEach((s) => { const d = s.data() || {}; mates.push({ uid: s.id, name: d.shortName || "", norm: csvNorm(d.shortName), data: d }); });
+    schema = cloneFieldGroups(groups);
+    csv = null; cfg = null;
+    pickStage();
+  }
+
+  function pickStage(err) {
+    root.innerHTML = "";
+    const file = E("input", { type: "file", accept: ".csv,text/csv,text/plain" });
+    file.addEventListener("change", async () => {
+      const f = file.files && file.files[0];
+      if (!f) return;
+      try {
+        const rows = parseCsvText(await f.text());
+        if (rows.length < 2) return pickStage("That file has no data rows. The first row must be column headings.");
+        const headers = rows[0].map((h) => h.trim());
+        if (headers.length < 2) return pickStage("Need at least two columns: a name column and one data column.");
+        csv = { headers, rows: rows.slice(1) };
+        initCfg();
+        mapStage();
+      } catch (e) { pickStage("Could not read that file."); }
+    });
+    root.append(
+      E("p", { class: "fine-print", style: "text-align:left;margin:0 0 12px;", text: `First row = column headings. One column must hold each person's full name (matched against ${mates.length} batchmate profile${mates.length === 1 ? "" : "s"}); every other column becomes profile data.` }),
+      file, err ? msg("error-msg", err) : null);
+  }
+
+  // Fields an import may write to (everything in the schema except protected/system ones).
+  function targetFields() {
+    const out = [];
+    schema.forEach((g) => (g.fields || []).forEach((f) => { if (!CSV_PROTECTED_KEYS.includes(f.key)) out.push({ ...f, group: g.title || "Section" }); }));
+    return out;
+  }
+
+  function initCfg() {
+    const h = csv.headers;
+    let nameCol = h.findIndex((x) => /^(short\s*|full\s*)?name$/i.test(x.trim()));
+    if (nameCol < 0) nameCol = h.findIndex((x) => /name/i.test(x));
+    if (nameCol < 0) nameCol = 0;
+    const fields = targetFields();
+    cfg = {
+      nameCol, newSection: "Imported Data", overwrite: true,
+      cols: h.map((header, idx) => {
+        const n = csvNorm(header);
+        const hit = fields.find((f) => csvNorm(f.label) === n || csvNorm(f.key) === n);
+        return { idx, header, target: hit ? "key:" + hit.key : "new", label: header, section: "__new" };
+      })
+    };
+  }
+
+  function mapStage(err) {
+    root.innerHTML = "";
+    const nameSel = E("select");
+    csv.headers.forEach((h, i) => nameSel.append(E("option", { value: String(i), text: h || `Column ${i + 1}` })));
+    nameSel.value = String(cfg.nameCol);
+    nameSel.addEventListener("change", () => { cfg.nameCol = Number(nameSel.value); mapStage(); });
+    root.append(E("label", { class: "fine-print", style: "display:block;text-align:left;" }, "Name column (matched to each batchmate's full name)", nameSel));
+
+    const fields = targetFields();
+    const list = E("div", { style: "margin-top:12px;" });
+    cfg.cols.forEach((c) => {
+      if (c.idx === cfg.nameCol) return;
+      const sample = (csv.rows.find((r) => (r[c.idx] || "").trim()) || [])[c.idx] || "";
+      const t = E("select");
+      t.append(E("option", { value: "skip", text: "Skip this column" }), E("option", { value: "new", text: "＋ New profile field" }));
+      schema.forEach((g) => {
+        const og = E("optgroup", { label: g.title || "Section" });
+        (g.fields || []).filter((f) => !CSV_PROTECTED_KEYS.includes(f.key)).forEach((f) => og.append(E("option", { value: "key:" + f.key, text: f.label || f.key })));
+        if (og.children.length) t.append(og);
+      });
+      t.value = c.target;
+      t.addEventListener("change", () => { c.target = t.value; mapStage(); });
+      const row = E("div", { class: "ci-row" },
+        E("div", { class: "ci-head" }, E("strong", { text: c.header || `Column ${c.idx + 1}` }), E("span", { class: "fine-print", style: "margin:0;", text: sample ? `e.g. ${sample.slice(0, 40)}` : "(empty)" })), t);
+      if (c.target === "new") {
+        const lab = E("input", { type: "text", maxlength: "60", placeholder: "Field label" });
+        lab.value = c.label;
+        lab.addEventListener("input", () => { c.label = lab.value; });
+        const sec = E("select");
+        schema.forEach((g, gi) => sec.append(E("option", { value: "g:" + gi, text: "In: " + (g.title || "Section") })));
+        sec.append(E("option", { value: "__new", text: "In: new section" }));
+        sec.value = c.section;
+        sec.addEventListener("change", () => { c.section = sec.value; mapStage(); });
+        row.append(E("div", { class: "ci-new" }, lab, sec));
+      }
+      list.append(row);
+    });
+    root.append(list);
+
+    if (cfg.cols.some((c) => c.idx !== cfg.nameCol && c.target === "new" && c.section === "__new")) {
+      const ns = E("input", { type: "text", maxlength: "40" });
+      ns.value = cfg.newSection;
+      ns.addEventListener("input", () => { cfg.newSection = ns.value; });
+      root.append(E("label", { class: "fine-print", style: "display:block;text-align:left;margin-top:12px;" }, "New section name (new fields are private and shown on the Dashboard)", ns));
+    }
+    const ow = E("input", { type: "checkbox" });
+    ow.checked = cfg.overwrite;
+    ow.addEventListener("change", () => { cfg.overwrite = ow.checked; });
+    root.append(E("label", { class: "dc-check", style: "margin-top:12px;" }, ow, "Replace values that already exist (blank cells never erase anything)"));
+    if (err) root.append(msg("error-msg", err));
+    root.append(E("div", { class: "dc-foot" },
+      E("button", { type: "button", class: "btn-primary", text: "Preview import", onclick: previewStage }),
+      E("button", { type: "button", class: "ghost-btn", text: "Choose another file", onclick: () => pickStage() })));
+  }
+
+  // New-field keys: camelCase from the label, unique against the schema,
+  // existing profile data, protected keys and each other.
+  function makeKey(label, taken) {
+    const words = String(label).replace(/[^A-Za-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+    let k = words.map((w, i) => i === 0 ? w.charAt(0).toLowerCase() + w.slice(1) : w.charAt(0).toUpperCase() + w.slice(1)).join("");
+    if (!k) k = "importedField";
+    if (/^[0-9]/.test(k)) k = "f" + k.charAt(0).toUpperCase() + k.slice(1);
+    let out = k, n = 2;
+    while (taken.has(out)) out = k + n++;
+    taken.add(out);
+    return out;
+  }
+
+  function buildPlan() {
+    const taken = new Set([...CSV_PROTECTED_KEYS, "id"]);
+    schema.forEach((g) => (g.fields || []).forEach((f) => taken.add(f.key)));
+    mates.forEach((m) => Object.keys(m.data).forEach((k) => taken.add(k)));
+    const active = cfg.cols.filter((c) => c.idx !== cfg.nameCol && c.target !== "skip");
+    const newCols = [];
+    active.forEach((c) => {
+      if (c.target === "new") {
+        c.finalLabel = (c.label || "").trim() || c.header || "Imported field";
+        c.key = makeKey(c.finalLabel, taken);
+        newCols.push(c);
+      } else c.key = c.target.slice(4);
+    });
+    const byName = new Map();
+    mates.forEach((m) => { if (!m.norm) return; if (!byName.has(m.norm)) byName.set(m.norm, []); byName.get(m.norm).push(m); });
+    const updates = new Map(); // uid -> { mate, fields }
+    const unmatched = [], ambiguous = []; let blank = 0, dupRows = 0;
+    csv.rows.forEach((r) => {
+      const name = (r[cfg.nameCol] || "").trim();
+      if (!name) { blank++; return; }
+      const cand = byName.get(csvNorm(name));
+      if (!cand) { unmatched.push(name); return; }
+      if (cand.length > 1) { ambiguous.push(name); return; }
+      const m = cand[0];
+      const entry = updates.get(m.uid) || { mate: m, fields: {} };
+      if (updates.has(m.uid)) dupRows++;
+      active.forEach((c) => {
+        const v = (r[c.idx] || "").trim();
+        if (!v) return;
+        const cur = m.data[c.key];
+        const has = !(cur === undefined || cur === null || cur === "" || (Array.isArray(cur) && !cur.length));
+        if (has && !cfg.overwrite) return;
+        entry.fields[c.key] = v;
+      });
+      updates.set(m.uid, entry);
+    });
+    return { active, newCols, updates: [...updates.values()].filter((u) => Object.keys(u.fields).length), unmatched, ambiguous, blank, dupRows };
+  }
+
+  function previewStage() {
+    if (!cfg.cols.some((c) => c.idx !== cfg.nameCol && c.target !== "skip")) return mapStage("Choose at least one column to import.");
+    const plan = buildPlan();
+    root.innerHTML = "";
+    const fieldCount = plan.updates.reduce((n, u) => n + Object.keys(u.fields).length, 0);
+    root.append(E("p", { class: "info-text", style: "margin-bottom:10px;", text: `${plan.updates.length} profile${plan.updates.length === 1 ? "" : "s"} will be updated (${fieldCount} value${fieldCount === 1 ? "" : "s"}).` }));
+    if (plan.newCols.length) root.append(E("p", { class: "fine-print", style: "text-align:left;", text: "New fields: " + plan.newCols.map((c) => c.finalLabel).join(", ") }));
+    if (plan.unmatched.length) root.append(E("div", { class: "ci-warn" }, E("strong", { text: `${plan.unmatched.length} name${plan.unmatched.length === 1 ? "" : "s"} not matched (skipped):` }), E("p", { class: "fine-print", style: "text-align:left;margin:4px 0 0;", text: plan.unmatched.join(", ") })));
+    if (plan.ambiguous.length) root.append(E("div", { class: "ci-warn" }, E("strong", { text: "More than one profile has this name (skipped):" }), E("p", { class: "fine-print", style: "text-align:left;margin:4px 0 0;", text: [...new Set(plan.ambiguous)].join(", ") })));
+    if (plan.dupRows) root.append(msg("fine-print", `${plan.dupRows} repeated name row(s): later rows win for the same field.`));
+    if (plan.blank) root.append(msg("fine-print", `${plan.blank} row(s) with an empty name were ignored.`));
+    const sample = plan.updates.slice(0, 3);
+    if (sample.length) {
+      const box = E("div", { class: "ci-sample" }, E("p", { class: "fine-print", style: "text-align:left;margin:0 0 6px;", text: "Sample" }));
+      sample.forEach((u) => box.append(E("div", { class: "ci-sample-row", text: `${u.mate.name}: ` + Object.entries(u.fields).slice(0, 4).map(([k, v]) => `${k} = ${v.slice(0, 24)}`).join(" · ") })));
+      root.append(box);
+    }
+    const err = msg("error-msg", ""); err.hidden = true;
+    const go = E("button", { type: "button", class: "btn-primary", text: "Import now", disabled: !plan.updates.length });
+    go.addEventListener("click", () => runImport(plan, go, err));
+    root.append(err, E("div", { class: "dc-foot" }, go, E("button", { type: "button", class: "ghost-btn", text: "Back", onclick: () => mapStage() })));
+  }
+
+  async function runImport(plan, btn, err) {
+    if (!guardPerm("csvImport", "Import CSV Data")) return;
+    btn.disabled = true; btn.textContent = "Importing…"; err.hidden = true;
+    try {
+      // 1. New fields → profile schema (private by default).
+      if (plan.newCols.length) {
+        const groups = cloneFieldGroups(await getDirectoryFieldSchema(true));
+        const maxGroup = groups.reduce((m, g) => Math.max(m, g.order || 0), -1);
+        let newGroup = null;
+        plan.newCols.forEach((c) => {
+          let g;
+          if (c.section === "__new") {
+            if (!newGroup) {
+              const title = (cfg.newSection || "").trim() || "Imported Data";
+              let id = "imp_" + (csvNorm(title).replace(/ /g, "_") || "data"), n = 2;
+              while (groups.some((x) => x.id === id)) id = id.replace(/\d+$/, "") + n++;
+              newGroup = { id, title, order: maxGroup + 1, fields: [] };
+              groups.push(newGroup);
+            }
+            g = newGroup;
+          } else g = groups[Number(c.section.slice(2))] || groups[0];
+          const maxF = (g.fields || []).reduce((m, f) => Math.max(m, f.order || 0), -1);
+          (g.fields = g.fields || []).push({ key: c.key, label: c.finalLabel, order: maxF + 1, public: false });
+        });
+        await setDoc(doc(db, ...DIRECTORY_FIELDS_DOC_PATH), { groups, updatedAt: serverTimestamp() });
+        directoryFieldSchemaCache = null;
+      }
+      // 2. Values → /batchmates (and the public mirror for fields flagged public).
+      const flat = flattenFieldGroups(await getDirectoryFieldSchema(true));
+      const publicKeys = new Set(flat.filter((f) => f.public).map((f) => f.key));
+      for (let i = 0; i < plan.updates.length; i += 200) {
+        const batch = writeBatch(db);
+        plan.updates.slice(i, i + 200).forEach((u) => {
+          batch.update(doc(db, "batchmates", u.mate.uid), u.fields);
+          const pub = {};
+          Object.entries(u.fields).forEach(([k, v]) => { if (publicKeys.has(k)) pub[k] = v; });
+          if (Object.keys(pub).length) batch.set(doc(db, "batchmatesPublic", u.mate.uid), pub, { merge: true });
+        });
+        await batch.commit();
+      }
+      doneStage(plan);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = "Import now";
+      err.textContent = "Import failed — check that your admin account has the Import CSV permission and the updated Firestore rules are published.";
+      err.hidden = false;
+    }
+  }
+
+  function doneStage(plan) {
+    root.innerHTML = "";
+    root.append(msg("success-msg", `Done — ${plan.updates.length} profile${plan.updates.length === 1 ? "" : "s"} updated.`));
+    if (plan.newCols.length) root.append(msg("fine-print", "New fields appear on each Dashboard automatically (added to the first tab). Open Customize Dashboard to arrange them, or Manage Profile Fields to make any of them visible in the directory."));
+    if (plan.unmatched.length || plan.ambiguous.length) root.append(msg("fine-print", `${plan.unmatched.length + plan.ambiguous.length} row(s) were skipped — fix those names in the CSV and import again.`));
+    root.append(E("div", { class: "dc-foot" }, E("button", { type: "button", class: "btn-primary", text: "Import another file", onclick: () => start().catch(() => pickStage()) })));
+  }
+
+  openBtn.addEventListener("click", async () => {
+    if (!hasAdminPerm("csvImport")) return;
+    try { await start(); } catch (e) { root.innerHTML = ""; root.append(msg("error-msg", "Could not load batchmates. Please close and try again.")); }
+  });
+}
