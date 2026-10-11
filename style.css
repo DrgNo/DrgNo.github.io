@@ -948,7 +948,7 @@ html.page-exit .content-area, html.page-exit .page-center {
 /* Urgency colour (set from JS): the closer the event, the stronger the tint. */
 .event-card[data-urgent] {
   border-color: color-mix(in srgb, var(--ev-color) var(--ev-mix, 20%), var(--panel-border));
-  box-shadow: 0 0 var(--ev-glow, 0px) color-mix(in srgb, var(--ev-color) 2%, transparent);
+  box-shadow: 0 0 var(--ev-glow, 0px) color-mix(in srgb, var(--ev-color) 55%, transparent);
 }
 .event-card-left { font-size: 11.5px; font-weight: 600; margin: 0 0 6px; color: var(--ev-color, var(--muted)); }
 .assign-row { border: 1px solid var(--panel-border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--surface); }
@@ -2893,3 +2893,42 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--blue); outline-
 .tt-attend-btn:hover { color: var(--text); opacity: 1; }
 .tt-attend-btn.marked { color: var(--tt-color, var(--blue)); font-weight: 600; text-decoration: none; opacity: 1; }
 .tt-attend-btn:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Admin: event assignment — full-screen, two clean tables side by side */
+.modal-overlay.assign-fullscreen { padding: 0; align-items: stretch; }
+.assign-fullscreen .modal-box { max-width: none; width: 100vw; max-height: none; height: 100vh; border-radius: 0; display: flex; flex-direction: column; overflow: hidden; }
+.assign-fullscreen .admin-modal-body { max-width: none; width: 100%; box-sizing: border-box; flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 18px 24px 20px; }
+.assign-fullscreen .section-label { margin: 0; }
+.assign-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 24px; margin-top: 14px; }
+.assign-panel { display: flex; flex-direction: column; min-height: 0; }
+.assign-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-bottom: 10px; }
+.assign-head .section-label span { color: var(--muted); font-weight: 400; }
+.assign-toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+.assign-toolbar input, .assign-toolbar select { width: auto; min-width: 0; height: 34px; padding: 0 10px; font-size: 12.5px; margin: 0; }
+.assign-toolbar input { width: 150px; }
+.assign-wrap { flex: 1; min-height: 0; overflow: auto; border: 1px solid var(--panel-border); border-radius: 12px; background: var(--surface); }
+.assign-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 13px; }
+.assign-table th { position: sticky; top: 0; z-index: 1; background: var(--surface); padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--panel-border); white-space: nowrap; user-select: none; }
+.assign-table td { padding: 8px 12px; border-bottom: 1px solid color-mix(in srgb, var(--panel-border) 60%, transparent); vertical-align: middle; overflow-wrap: anywhere; }
+.assign-table tbody tr:last-child td { border-bottom: 0; }
+.assign-table tbody tr:hover { background: var(--surface-hover); }
+.assign-f th:nth-child(1) { width: 20%; } .assign-f th:nth-child(2) { width: 17%; }
+.assign-f th:nth-child(3), .assign-f th:nth-child(4) { width: 24%; } .assign-f th:nth-child(5) { width: 15%; }
+.assign-m th:nth-child(1) { width: 35%; }
+.assign-name-cell { font-weight: 600; }
+.assign-muted { color: var(--muted); }
+.assign-warn { display: block; margin-top: 2px; font-size: 11px; font-weight: 500; color: var(--danger); }
+.assign-select { width: 100%; height: 34px; margin: 0; padding: 0 8px; font-size: 12.5px; border-radius: 8px; }
+.assign-seg { display: inline-flex; border: 1px solid var(--panel-border); border-radius: 8px; overflow: hidden; }
+.assign-seg button { width: 30px; height: 30px; border: 0; background: transparent; color: var(--muted); font-weight: 600; cursor: pointer; }
+.assign-seg button + button { border-left: 1px solid var(--panel-border); }
+.assign-seg button.on { background: var(--blue); color: #fff; cursor: default; }
+.assign-seg button:disabled:not(.on) { opacity: .35; cursor: not-allowed; }
+@media (max-width: 1000px) {
+  .assign-fullscreen .modal-box { overflow-y: auto; }
+  .assign-fullscreen .admin-modal-body { padding: 14px 14px 20px; display: block; }
+  .assign-grid { display: flex; flex-direction: column; gap: 22px; }
+  .assign-wrap { max-height: 60vh; flex: none; }
+  .assign-table { min-width: 560px; }
+  .assign-m { min-width: 0; }
+}

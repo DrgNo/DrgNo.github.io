@@ -5632,13 +5632,13 @@ async function openEventAssignModal(ev) {
   if (!guardPerm('events', 'Assign Event Pairings')) return;
   document.getElementById("assign-title").textContent = `Assign: ${ev.name || "Event"}`;
   document.getElementById("assign-event-id").value = ev.id;
+  wireAssignToolbars();
   document.getElementById("modal-event-assign").hidden = false;
   await loadAssignData(ev.id);
 }
 
 async function loadAssignData(eventId) {
-  const listEl = document.getElementById("assign-list");
-  listEl.innerHTML = skeletonHTML("list");
+  document.getElementById("assign-f-table").innerHTML = "<tbody><tr><td>Loading…</td></tr></tbody>";
   const [gSnap, aSnap] = await Promise.all([
     getDocs(collection(db, "events", eventId, "going")),
     getDocs(collection(db, "events", eventId, "assignments"))
@@ -5647,8 +5647,18 @@ async function loadAssignData(eventId) {
   gSnap.forEach((d) => going.push(d.data()));
   const assigns = {};
   aSnap.forEach((d) => { assigns[d.id] = d.data(); });
+  // Auto-switch: active male is no longer going and a backup is → use the backup.
+  const goingUids = new Set(going.map((g) => g.uid));
+  for (const [fuid, a] of Object.entries(assigns)) {
+    if (a.activeMaleUid && !goingUids.has(a.activeMaleUid) && a.backupMaleUid && goingUids.has(a.backupMaleUid) && a.activeMaleUid !== a.backupMaleUid) {
+      try {
+        await updateDoc(doc(db, "events", eventId, "assignments", fuid), { activeMaleUid: a.backupMaleUid });
+        a.activeMaleUid = a.backupMaleUid;
+      } catch (e) {}
+    }
+  }
   assignState = { eventId, going, assigns };
-  renderAssignList();
+  renderAssignTables();
 }
 
 function statusKey(s) { return canonResidence(s); }
@@ -5659,122 +5669,184 @@ function showAssignMsg(ok, text) {
   (ok ? suc : err).textContent = text;
 }
 
-function renderAssignList() {
-  const listEl = document.getElementById("assign-list");
-  listEl.innerHTML = "";
+const assignUI = {
+  f: { q: "", status: "", assigned: "", sort: "name", dir: 1 },
+  m: { q: "", has: "", sort: "name", dir: 1 }
+};
+let assignWired = false;
+function wireAssignToolbars() {
+  if (assignWired) return;
+  assignWired = true;
+  const bind = (id, obj, key) => {
+    const el = document.getElementById(id);
+    el.addEventListener("input", () => { obj[key] = el.value.trim().toLowerCase(); renderAssignTables(); });
+  };
+  bind("assign-f-q", assignUI.f, "q");
+  bind("assign-m-q", assignUI.m, "q");
+  document.getElementById("assign-f-status").addEventListener("change", (e) => { assignUI.f.status = e.target.value; renderAssignTables(); });
+  document.getElementById("assign-f-assigned").addEventListener("change", (e) => { assignUI.f.assigned = e.target.value; renderAssignTables(); });
+  document.getElementById("assign-m-has").addEventListener("change", (e) => { assignUI.m.has = e.target.value; renderAssignTables(); });
+}
+
+function assignActiveName(a) {
+  if (!a || !a.activeMaleUid) return "";
+  return a.activeMaleUid === a.backupMaleUid ? (a.backupMaleName || "") : (a.primaryMaleName || "");
+}
+
+function assignHeader(cols, ui) {
+  const tr = document.createElement("tr");
+  cols.forEach(([label, key]) => {
+    const th = document.createElement("th");
+    th.textContent = label + (ui.sort === key ? (ui.dir > 0 ? " ▲" : " ▼") : "");
+    th.style.cursor = "pointer";
+    th.addEventListener("click", () => {
+      if (ui.sort === key) ui.dir = -ui.dir; else { ui.sort = key; ui.dir = 1; }
+      renderAssignTables();
+    });
+    tr.appendChild(th);
+  });
+  const thead = document.createElement("thead");
+  thead.appendChild(tr);
+  return thead;
+}
+const cmpStr = (a, b) => String(a || "").localeCompare(String(b || ""), undefined, { sensitivity: "base", numeric: true });
+
+function renderAssignTables() {
   const { going, assigns } = assignState;
   const females = going.filter((g) => normGender(g.gender) === "female");
   const males = going.filter((g) => normGender(g.gender) === "male");
   const maleUids = new Set(males.map((m) => m.uid));
 
-  if (!females.length) {
-    listEl.innerHTML = '<p class="info-text" style="color:var(--muted)">No females have said they are going yet.</p>';
-    return;
-  }
-
-  // Group females by residential state (Hostel / Boarding / From home ...)
-  const groups = {};
-  females.forEach((f) => {
-    const k = canonResidence(f.residentialStatus) || "(not set)";
-    (groups[k] = groups[k] || []).push(f);
+  // ── Females table ──
+  const fu = assignUI.f;
+  let frows = females.map((f) => {
+    const a = assigns[f.uid] || null;
+    return { f, a, state: canonResidence(f.residentialStatus), male: assignActiveName(a) };
+  }).filter((r) => {
+    if (fu.q && !`${r.f.name} ${r.male}`.toLowerCase().includes(fu.q)) return false;
+    if (fu.status === "(not set)" ? r.state : (fu.status && r.state !== fu.status)) return false;
+    if (fu.assigned === "assigned" && !(r.a && r.a.activeMaleUid)) return false;
+    if (fu.assigned === "unassigned" && (r.a && r.a.activeMaleUid)) return false;
+    return true;
   });
+  const fkey = { name: (r) => r.f.name, state: (r) => r.state, male: (r) => (r.a && r.a.primaryMaleName) || "", backup: (r) => (r.a && r.a.backupMaleName) || "", active: (r) => (r.a && r.a.activeMaleUid ? (r.a.activeMaleUid === r.a.backupMaleUid ? "2" : "1") : "") };
+  frows.sort((x, y) => fu.dir * cmpStr(fkey[fu.sort](x), fkey[fu.sort](y)));
+  document.getElementById("assign-f-count").textContent = `(${frows.length}/${females.length})`;
 
-  const order = [...RESIDENCE_STATES, "(not set)"];
-  Object.keys(groups).sort((a, b) => order.indexOf(a) - order.indexOf(b)).forEach((k) => {
-    const h = document.createElement("div");
-    h.className = "assign-group";
-    h.textContent = `${k === "(not set)" ? "Residential state not set" : k} (${groups[k].length})`;
-    listEl.appendChild(h);
+  const ft = document.getElementById("assign-f-table");
+  ft.innerHTML = "";
+  ft.appendChild(assignHeader([["Short name", "name"], ["Residence", "state"], ["1st choice", "male"], ["2nd choice", "backup"], ["Active", "active"]], fu));
+  const fb = document.createElement("tbody");
+  if (!frows.length) {
+    fb.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">No females match.</td></tr>';
+  }
+  frows.forEach(({ f, a, state }) => {
+    const tr = document.createElement("tr");
+    const nameTd = document.createElement("td");
+    nameTd.className = "assign-name-cell";
+    nameTd.textContent = f.name || "Student";
+    if (a && a.activeMaleUid && !maleUids.has(a.activeMaleUid)) {
+      const w = document.createElement("span");
+      w.className = "assign-warn";
+      w.textContent = `${assignActiveName(a)} is not coming`;
+      nameTd.appendChild(w);
+    }
+    tr.appendChild(nameTd);
+    const stTd = document.createElement("td");
+    stTd.className = "assign-muted";
+    stTd.textContent = state || "Not set";
+    tr.appendChild(stTd);
 
-    groups[k].forEach((f) => {
-      const a = assigns[f.uid] || {};
-      const row = document.createElement("div");
-      row.className = "assign-row";
-      const nm = document.createElement("div");
-      nm.className = "assign-name";
-      nm.textContent = f.name || "Student";
-      row.appendChild(nm);
-
-      const sub = document.createElement("div");
-      sub.className = "assign-sub";
-      const activeName = a.activeMaleUid === a.backupMaleUid && a.backupMaleUid ? a.backupMaleName : a.primaryMaleName;
-      sub.textContent = a.activeMaleUid ? `Active: ${activeName}${a.activeMaleUid === a.backupMaleUid ? " (backup)" : ""}` : "Not assigned";
-      row.appendChild(sub);
-
-      if (a.activeMaleUid && !maleUids.has(a.activeMaleUid)) {
-        const w = document.createElement("div");
-        w.className = "assign-warn";
-        w.textContent = `⚠ ${activeName} is no longer going.${a.backupMaleUid && maleUids.has(a.backupMaleUid) && a.activeMaleUid !== a.backupMaleUid ? " Switch to backup." : " Pick another male."}`;
-        row.appendChild(w);
-      }
-
-      const mkSelect = (selectedUid, placeholder) => {
-        const sel = document.createElement("select");
-        const none = document.createElement("option");
-        none.value = ""; none.textContent = placeholder;
-        sel.appendChild(none);
-        const fk = statusKey(f.residentialStatus);
-        const same = males.filter((m) => fk && statusKey(m.residentialStatus) === fk);
-        const other = males.filter((m) => !same.includes(m));
-        const addGroup = (title, arr) => {
-          if (!arr.length) return;
-          const og = document.createElement("optgroup");
-          og.label = title;
-          arr.forEach((m) => {
-            const o = document.createElement("option");
-            o.value = m.uid;
-            o.textContent = `${m.name || "Student"} — ${canonResidence(m.residentialStatus) || "not set"}`;
-            og.appendChild(o);
-          });
-          sel.appendChild(og);
-        };
-        addGroup("Same residential state", same);
-        addGroup("Other residential states", other);
-        sel.value = selectedUid || "";
-        return sel;
+    const mkSelect = (selectedUid, placeholder, savedName) => {
+      const sel = document.createElement("select");
+      sel.className = "assign-select";
+      const none = document.createElement("option");
+      none.value = ""; none.textContent = placeholder;
+      sel.appendChild(none);
+      const same = males.filter((m) => state && statusKey(m.residentialStatus) === state);
+      const other = males.filter((m) => !same.includes(m));
+      const addGroup = (title, arr) => {
+        if (!arr.length) return;
+        const og = document.createElement("optgroup");
+        og.label = title;
+        arr.forEach((m) => {
+          const o = document.createElement("option");
+          o.value = m.uid;
+          o.textContent = m.name || "Student";
+          og.appendChild(o);
+        });
+        sel.appendChild(og);
       };
-
-      const prim = mkSelect(a.primaryMaleUid, "First choice: none");
-      const back = mkSelect(a.backupMaleUid, "Second choice (backup): none");
-      prim.addEventListener("change", () => saveAssign(f, prim.value, back.value, "primary"));
-      back.addEventListener("change", () => saveAssign(f, prim.value, back.value, "backup"));
-      row.appendChild(prim);
-      row.appendChild(back);
-
-      if (a.backupMaleUid && a.activeMaleUid !== a.backupMaleUid) {
-        const sw = document.createElement("button");
-        sw.type = "button";
-        sw.className = "ghost-btn";
-        sw.style.cssText = "margin-top:8px; padding:6px 12px; font-size:12px;";
-        sw.textContent = "Switch to backup";
-        sw.addEventListener("click", () => saveAssign(f, prim.value, back.value, "switch"));
-        row.appendChild(sw);
+      addGroup("Same residential state", same);
+      addGroup("Other states", other);
+      if (selectedUid && !maleUids.has(selectedUid)) {
+        const o = document.createElement("option");
+        o.value = selectedUid;
+        o.textContent = `${savedName || "Student"} (not coming)`;
+        sel.appendChild(o);
       }
-      listEl.appendChild(row);
-    });
-  });
+      sel.value = selectedUid || "";
+      return sel;
+    };
+    const pc = document.createElement("td");
+    const prim = mkSelect(a && a.primaryMaleUid, "Unassigned", a && a.primaryMaleName);
+    pc.appendChild(prim);
+    const bc = document.createElement("td");
+    const back = mkSelect(a && a.backupMaleUid, "None", a && a.backupMaleName);
+    bc.appendChild(back);
+    prim.addEventListener("change", () => saveAssign(f, prim.value, back.value, "primary"));
+    back.addEventListener("change", () => saveAssign(f, prim.value, back.value, "backup"));
+    tr.appendChild(pc);
+    tr.appendChild(bc);
 
-  // Per-male summary (a female appears under exactly one male: her active one)
-  const sum = document.createElement("div");
-  sum.className = "assign-group";
-  sum.textContent = "Per male (active assignments)";
-  listEl.appendChild(sum);
-  let any = false;
-  males.forEach((m) => {
-    const fs = Object.values(assigns).filter((x) => x.activeMaleUid === m.uid).map((x) => x.femaleName);
-    if (!fs.length) return;
-    any = true;
-    const p = document.createElement("div");
-    p.className = "assign-sub";
-    p.textContent = `${m.name}: ${fs.join(", ")}`;
-    listEl.appendChild(p);
+    const ac = document.createElement("td");
+    const seg = document.createElement("div");
+    seg.className = "assign-seg";
+    [["1", "first", a && a.activeMaleUid && a.activeMaleUid === a.primaryMaleUid, a && a.primaryMaleUid],
+     ["2", "switch", a && a.activeMaleUid && a.activeMaleUid === a.backupMaleUid, a && a.backupMaleUid]].forEach(([lbl, mode, isActive, enabled]) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = lbl;
+      b.className = isActive ? "on" : "";
+      b.disabled = !enabled || !!isActive;
+      b.title = lbl === "1" ? "Use 1st choice" : "Use 2nd choice";
+      b.addEventListener("click", () => saveAssign(f, prim.value, back.value, mode));
+      seg.appendChild(b);
+    });
+    ac.appendChild(seg);
+    tr.appendChild(ac);
+    fb.appendChild(tr);
   });
-  if (!any) {
-    const p = document.createElement("div");
-    p.className = "assign-sub";
-    p.textContent = "No assignments yet.";
-    listEl.appendChild(p);
-  }
+  ft.appendChild(fb);
+
+  // ── Males table ──
+  const mu = assignUI.m;
+  let mrows = males.map((m) => {
+    const mine = females.filter((f) => { const a = assigns[f.uid]; return a && a.activeMaleUid === m.uid; });
+    return { m, names: mine.map((f) => f.name || "Student") };
+  }).filter((r) => {
+    if (mu.q && !`${r.m.name} ${r.names.join(" ")}`.toLowerCase().includes(mu.q)) return false;
+    if (mu.has === "with" && !r.names.length) return false;
+    if (mu.has === "without" && r.names.length) return false;
+    return true;
+  });
+  const mkey = { name: (r) => r.m.name, females: (r) => r.names.join(", ") };
+  mrows.sort((x, y) => mu.dir * cmpStr(mkey[mu.sort](x), mkey[mu.sort](y)));
+  document.getElementById("assign-m-count").textContent = `(${mrows.length}/${males.length})`;
+
+  const mt = document.getElementById("assign-m-table");
+  mt.innerHTML = "";
+  mt.appendChild(assignHeader([["Short name", "name"], ["Assigned females", "females"]], mu));
+  const mb = document.createElement("tbody");
+  if (!mrows.length) mb.innerHTML = '<tr><td colspan="2" style="color:var(--muted)">No males match.</td></tr>';
+  mrows.forEach((r) => {
+    const tr = document.createElement("tr");
+    [r.m.name || "Student", r.names.join(", ") || "—"].forEach((t) => {
+      const c = document.createElement("td"); c.textContent = t; tr.appendChild(c);
+    });
+    mb.appendChild(tr);
+  });
+  mt.appendChild(mb);
 }
 
 async function saveAssign(female, primaryUid, backupUid, mode) {
@@ -5783,13 +5855,14 @@ async function saveAssign(female, primaryUid, backupUid, mode) {
   const byUid = (u) => going.find((g) => g.uid === u);
   if (primaryUid && primaryUid === backupUid) {
     showAssignMsg(false, "First and second choice must be different people.");
-    renderAssignList();
+    renderAssignTables();
     return;
   }
   const prev = assigns[female.uid] || {};
   let active = prev.activeMaleUid || "";
   if (mode === "primary") active = primaryUid;                     // new first choice becomes active
   if (mode === "switch") active = backupUid;
+  if (mode === "first") active = primaryUid;
   if (mode === "backup" && !active) active = "";                    // backup alone never activates
   if (active && active !== primaryUid && active !== backupUid) active = primaryUid || "";
   try {
@@ -5800,7 +5873,7 @@ async function saveAssign(female, primaryUid, backupUid, mode) {
     } else {
       const data = {
         femaleUid: female.uid, femaleName: female.name || "",
-        femaleStatus: female.residentialStatus || "",
+        femaleStatus: canonResidence(female.residentialStatus) || "",
         primaryMaleUid: primaryUid || "", primaryMaleName: primaryUid ? (byUid(primaryUid)?.name || "") : "",
         backupMaleUid: backupUid || "", backupMaleName: backupUid ? (byUid(backupUid)?.name || "") : "",
         activeMaleUid: active || "",
@@ -5813,7 +5886,7 @@ async function saveAssign(female, primaryUid, backupUid, mode) {
   } catch (err) {
     showAssignMsg(false, "Could not save. Please try again.");
   }
-  renderAssignList();
+  renderAssignTables();
 }
 
 async function openEventEditModal(ev) {
@@ -8260,7 +8333,6 @@ async function refreshEventGoing() {
   const msg = document.getElementById("event-going-msg");
   const sec = document.getElementById("event-assign-section");
   const list = document.getElementById("event-assign-list");
-  const label = document.getElementById("event-assign-label");
   if (!id || !btn) return;
   btn.disabled = true;
   sec.hidden = true;
@@ -8269,6 +8341,12 @@ async function refreshEventGoing() {
     const me = await getMyEventProfile();
     const goingSnap = await getDoc(doc(db, "events", id, "going", me.uid));
     const going = goingSnap.exists();
+    if (going) {
+      const gd = goingSnap.data();
+      if (gd.residentialStatus !== me.residentialStatus || gd.name !== me.name) {
+        try { await updateDoc(doc(db, "events", id, "going", me.uid), { name: me.name, residentialStatus: me.residentialStatus }); } catch (e) {}
+      }
+    }
     btn.textContent = going ? "✓ You're going (tap to cancel)" : "I'm going";
     btn.dataset.going = going ? "1" : "";
     msg.hidden = !!me.gender;
@@ -8278,17 +8356,21 @@ async function refreshEventGoing() {
     const aSnap = await getDocs(collection(db, "events", id, "assignments"));
     const all = [];
     aSnap.forEach((d) => all.push(d.data()));
+    const main = document.getElementById("event-assign-main");
+    const sub = document.getElementById("event-assign-sub");
+    main.textContent = ""; sub.textContent = "";
     if (me.gender === "female") {
       const mine = all.find((a) => a.femaleUid === me.uid);
       if (mine && mine.activeMaleUid) {
         const name = mine.activeMaleUid === mine.backupMaleUid ? mine.backupMaleName : mine.primaryMaleName;
-        label.textContent = "Your safe-travel group (he walks you back at night)";
-        const li = document.createElement("li");
-        li.textContent = `${name || "Assigned"} — your partner`;
-        list.appendChild(li);
-        all.filter((a) => a.activeMaleUid === mine.activeMaleUid && a.femaleUid !== me.uid).forEach((a) => {
+        const where = me.residentialStatus || mine.femaleStatus || "residence";
+        main.textContent = `You are assigned to "${name || "a male student"}" for safely travel back to your ${where}.`;
+        sub.textContent = "Others who are assigned with you:";
+        const others = all.filter((a) => a.activeMaleUid === mine.activeMaleUid && a.femaleUid !== me.uid);
+        if (!others.length) emptyPill(list, "No one else yet.");
+        others.forEach((a) => {
           const g = document.createElement("li");
-          g.textContent = `${a.femaleName || "Student"} — in your group`;
+          g.textContent = a.femaleName || "Student";
           list.appendChild(g);
         });
         sec.hidden = false;
@@ -8296,7 +8378,7 @@ async function refreshEventGoing() {
     } else if (me.gender === "male") {
       const mine = all.filter((a) => a.activeMaleUid === me.uid);
       if (mine.length) {
-        label.textContent = "You're assigned to look after";
+        main.textContent = "You were assigned to:";
         mine.forEach((a) => {
           const li = document.createElement("li");
           li.textContent = a.femaleName || "Student";
@@ -8324,11 +8406,23 @@ async function toggleEventGoing() {
       await deleteDoc(ref);
       if (me.gender === "female") {
         try { await deleteDoc(doc(db, "events", id, "assignments", me.uid)); } catch (e) {}
+      } else if (me.gender === "male") {
+        // Not coming any more: hand his females to their second-choice male.
+        try {
+          const aSnap = await getDocs(collection(db, "events", id, "assignments"));
+          for (const d of aSnap.docs) {
+            const a = d.data();
+            if (a.activeMaleUid === me.uid && a.primaryMaleUid === me.uid && a.backupMaleUid) {
+              await updateDoc(d.ref, { activeMaleUid: a.backupMaleUid });
+            }
+          }
+        } catch (e) {}
       }
     } else {
       await setDoc(ref, {
         uid: me.uid, name: me.name, gender: me.gender,
-        residentialStatus: me.residentialStatus, joinedAt: serverTimestamp()
+        residentialStatus: me.residentialStatus,
+        joinedAt: serverTimestamp()
       });
     }
   } catch (err) {
