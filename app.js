@@ -308,7 +308,7 @@ if (loginForm) {
 
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      window.location.href = "home.html";
+      window.location.href = postLoginTarget();
     } catch (err) {
       errorMsg.textContent = "Sign-in failed. Check your email and password.";
       errorMsg.hidden = false;
@@ -319,8 +319,15 @@ if (loginForm) {
 
   // If already signed in, skip straight to the home page.
   onAuthStateChanged(auth, (user) => {
-    if (user) window.location.href = "home.html";
+    if (user) window.location.href = postLoginTarget();
   });
+}
+
+// After sign-in, return to the page the person came from (e.g. an event
+// deep link) — only simple same-site "page.html?query" targets are allowed.
+function postLoginTarget() {
+  const next = new URLSearchParams(location.search).get("next") || "";
+  return /^[\w-]+\.html(\?[\w=&%.-]*)?$/.test(next) ? next : "home.html";
 }
 
 // ── Shared logic for every page that has the sidebar ────────────
@@ -367,7 +374,7 @@ function closeMenu() {
 
   onAuthStateChanged(auth, async (user) => {
     if (!user) {
-      window.location.href = "index.html";
+      window.location.href = "index.html?next=" + encodeURIComponent(location.pathname.split("/").pop() + location.search);
       return;
     }
     if (userEmailEl) userEmailEl.textContent = user.email;
@@ -1545,25 +1552,12 @@ async function initDashboardPage(user) {
 // schema instead of a fixed list — see the "Directory & Dashboard
 // field schema" block above. Re-run on every renderRecord() call, so
 // it first clears out whatever it inserted last time.
-// "Roles" is no longer its own dashboard card: it is shown as a field
-// inside the Campus Details group (key "roles", rendered as pills). If the
-// saved schema doesn't already place "roles" in some group, it's appended
-// to the group with id "campus" (or the first group) at render time.
-function withRolesField(groups) {
-  const list = (groups || []).map((g) => ({ ...g, fields: [...(g.fields || [])] }));
-  if (!list.length || list.some((g) => g.fields.some((f) => f.key === "roles"))) return list;
-  const target = list.find((g) => g.id === "campus") || list[0];
-  const maxOrder = target.fields.reduce((m, f) => Math.max(m, f.order || 0), -1);
-  target.fields.push({ key: "roles", label: "Roles", order: maxOrder + 1, public: false });
-  return list;
-}
-
 function renderDynamicFieldGroups(d, groups) {
   const anchor = document.getElementById("dynamic-field-groups-anchor");
   if (!anchor) return;
   document.querySelectorAll(".dyn-field-card").forEach((el) => el.remove());
 
-  const sortedGroups = withRolesField(groups).sort((a, b) => (a.order || 0) - (b.order || 0));
+  const sortedGroups = [...groups].sort((a, b) => (a.order || 0) - (b.order || 0));
   let lastInserted = anchor;
 
   sortedGroups.forEach((g, gi) => {
@@ -1581,31 +1575,6 @@ function renderDynamicFieldGroups(d, groups) {
     const fields = [...(g.fields || [])].sort((a, b) => (a.order || 0) - (b.order || 0));
     fields.forEach((f) => {
       const raw = d[f.key];
-      if (f.key === "roles") {
-        const rrow = fieldRow(f.label || "Roles", "");
-        rrow.dataset.item = "roles";
-        const list = Array.isArray(raw) ? raw : (raw ? [raw] : []);
-        rrow.lastChild.remove();
-        const ul = document.createElement("ul");
-        ul.className = "pill-list";
-        if (!list.length) {
-          const none = document.createElement("span");
-          none.textContent = "—";
-          none.style.fontSize = "14px";
-          rrow.appendChild(none);
-        } else {
-          list.forEach((r) => {
-            const li = document.createElement("li");
-            li.textContent = r;
-            const c = colorForRole(r);
-            li.style.background = c.bg; li.style.borderColor = c.border; li.style.color = c.text;
-            ul.appendChild(li);
-          });
-          rrow.appendChild(ul);
-        }
-        rowsWrap.appendChild(rrow);
-        return;
-      }
       const value = Array.isArray(raw) ? raw.join(", ") : raw;
       const row = fieldRow(f.label || f.key, value);
       row.dataset.item = f.key;
@@ -2562,6 +2531,9 @@ async function initHomePage(user) {
 
     wireNoticeModal();
     wireEventModal();
+    // Deep link: home.html?event=<id> opens that event's popup directly.
+    const deepId = new URLSearchParams(location.search).get("event");
+    if (deepId && homeEventsById[deepId]) openEventModal(homeEventsById[deepId]);
     wireBatchmateModal();
     wireLabelModal();
     wireGroupModal();
@@ -5627,9 +5599,221 @@ async function renderAdminActiveEvents() {
     meta.textContent = formatEventDate(ev.date) || "No date set";
     box.appendChild(name);
     box.appendChild(meta);
+    const assignBtn = document.createElement("button");
+    assignBtn.type = "button";
+    assignBtn.className = "ghost-btn";
+    assignBtn.style.cssText = "margin-top:8px; padding:6px 12px; font-size:12px;";
+    assignBtn.textContent = "Assign females to males";
+    assignBtn.addEventListener("click", (e) => { e.stopPropagation(); openEventAssignModal(ev); });
+    const linkBtn = document.createElement("button");
+    linkBtn.type = "button";
+    linkBtn.className = "ghost-btn";
+    linkBtn.style.cssText = "margin:8px 0 0 8px; padding:6px 12px; font-size:12px;";
+    linkBtn.textContent = "Copy event link";
+    linkBtn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const url = new URL("home.html", location.href);
+      url.search = "?event=" + encodeURIComponent(ev.id);
+      try { await navigator.clipboard.writeText(url.href); linkBtn.textContent = "Link copied ✓"; }
+      catch (err) { window.prompt("Copy this link:", url.href); }
+      setTimeout(() => { linkBtn.textContent = "Copy event link"; }, 2000);
+    });
+    box.appendChild(assignBtn);
+    box.appendChild(linkBtn);
     box.addEventListener("click", () => openEventEditModal(ev));
     container.appendChild(box);
   });
+}
+
+// ── Admin: assign going females to going males ──
+let assignState = { eventId: null, going: [], assigns: {} };
+
+async function openEventAssignModal(ev) {
+  if (!guardPerm('events', 'Assign Event Pairings')) return;
+  document.getElementById("assign-title").textContent = `Assign: ${ev.name || "Event"}`;
+  document.getElementById("assign-event-id").value = ev.id;
+  document.getElementById("modal-event-assign").hidden = false;
+  await loadAssignData(ev.id);
+}
+
+async function loadAssignData(eventId) {
+  const listEl = document.getElementById("assign-list");
+  listEl.innerHTML = skeletonHTML("list");
+  const [gSnap, aSnap] = await Promise.all([
+    getDocs(collection(db, "events", eventId, "going")),
+    getDocs(collection(db, "events", eventId, "assignments"))
+  ]);
+  const going = [];
+  gSnap.forEach((d) => going.push(d.data()));
+  const assigns = {};
+  aSnap.forEach((d) => { assigns[d.id] = d.data(); });
+  assignState = { eventId, going, assigns };
+  renderAssignList();
+}
+
+function statusKey(s) { return canonResidence(s); }
+function showAssignMsg(ok, text) {
+  const err = document.getElementById("assign-error");
+  const suc = document.getElementById("assign-success");
+  err.hidden = ok; suc.hidden = !ok;
+  (ok ? suc : err).textContent = text;
+}
+
+function renderAssignList() {
+  const listEl = document.getElementById("assign-list");
+  listEl.innerHTML = "";
+  const { going, assigns } = assignState;
+  const females = going.filter((g) => normGender(g.gender) === "female");
+  const males = going.filter((g) => normGender(g.gender) === "male");
+  const maleUids = new Set(males.map((m) => m.uid));
+
+  if (!females.length) {
+    listEl.innerHTML = '<p class="info-text" style="color:var(--muted)">No females have said they are going yet.</p>';
+    return;
+  }
+
+  // Group females by residential state (Hostel / Boarding / From home ...)
+  const groups = {};
+  females.forEach((f) => {
+    const k = canonResidence(f.residentialStatus) || "(not set)";
+    (groups[k] = groups[k] || []).push(f);
+  });
+
+  const order = [...RESIDENCE_STATES, "(not set)"];
+  Object.keys(groups).sort((a, b) => order.indexOf(a) - order.indexOf(b)).forEach((k) => {
+    const h = document.createElement("div");
+    h.className = "assign-group";
+    h.textContent = `${k === "(not set)" ? "Residential state not set" : k} (${groups[k].length})`;
+    listEl.appendChild(h);
+
+    groups[k].forEach((f) => {
+      const a = assigns[f.uid] || {};
+      const row = document.createElement("div");
+      row.className = "assign-row";
+      const nm = document.createElement("div");
+      nm.className = "assign-name";
+      nm.textContent = f.name || "Student";
+      row.appendChild(nm);
+
+      const sub = document.createElement("div");
+      sub.className = "assign-sub";
+      const activeName = a.activeMaleUid === a.backupMaleUid && a.backupMaleUid ? a.backupMaleName : a.primaryMaleName;
+      sub.textContent = a.activeMaleUid ? `Active: ${activeName}${a.activeMaleUid === a.backupMaleUid ? " (backup)" : ""}` : "Not assigned";
+      row.appendChild(sub);
+
+      if (a.activeMaleUid && !maleUids.has(a.activeMaleUid)) {
+        const w = document.createElement("div");
+        w.className = "assign-warn";
+        w.textContent = `⚠ ${activeName} is no longer going.${a.backupMaleUid && maleUids.has(a.backupMaleUid) && a.activeMaleUid !== a.backupMaleUid ? " Switch to backup." : " Pick another male."}`;
+        row.appendChild(w);
+      }
+
+      const mkSelect = (selectedUid, placeholder) => {
+        const sel = document.createElement("select");
+        const none = document.createElement("option");
+        none.value = ""; none.textContent = placeholder;
+        sel.appendChild(none);
+        const fk = statusKey(f.residentialStatus);
+        const same = males.filter((m) => fk && statusKey(m.residentialStatus) === fk);
+        const other = males.filter((m) => !same.includes(m));
+        const addGroup = (title, arr) => {
+          if (!arr.length) return;
+          const og = document.createElement("optgroup");
+          og.label = title;
+          arr.forEach((m) => {
+            const o = document.createElement("option");
+            o.value = m.uid;
+            o.textContent = `${m.name || "Student"} — ${canonResidence(m.residentialStatus) || "not set"}`;
+            og.appendChild(o);
+          });
+          sel.appendChild(og);
+        };
+        addGroup("Same residential state", same);
+        addGroup("Other residential states", other);
+        sel.value = selectedUid || "";
+        return sel;
+      };
+
+      const prim = mkSelect(a.primaryMaleUid, "First choice: none");
+      const back = mkSelect(a.backupMaleUid, "Second choice (backup): none");
+      prim.addEventListener("change", () => saveAssign(f, prim.value, back.value, "primary"));
+      back.addEventListener("change", () => saveAssign(f, prim.value, back.value, "backup"));
+      row.appendChild(prim);
+      row.appendChild(back);
+
+      if (a.backupMaleUid && a.activeMaleUid !== a.backupMaleUid) {
+        const sw = document.createElement("button");
+        sw.type = "button";
+        sw.className = "ghost-btn";
+        sw.style.cssText = "margin-top:8px; padding:6px 12px; font-size:12px;";
+        sw.textContent = "Switch to backup";
+        sw.addEventListener("click", () => saveAssign(f, prim.value, back.value, "switch"));
+        row.appendChild(sw);
+      }
+      listEl.appendChild(row);
+    });
+  });
+
+  // Per-male summary (a female appears under exactly one male: her active one)
+  const sum = document.createElement("div");
+  sum.className = "assign-group";
+  sum.textContent = "Per male (active assignments)";
+  listEl.appendChild(sum);
+  let any = false;
+  males.forEach((m) => {
+    const fs = Object.values(assigns).filter((x) => x.activeMaleUid === m.uid).map((x) => x.femaleName);
+    if (!fs.length) return;
+    any = true;
+    const p = document.createElement("div");
+    p.className = "assign-sub";
+    p.textContent = `${m.name}: ${fs.join(", ")}`;
+    listEl.appendChild(p);
+  });
+  if (!any) {
+    const p = document.createElement("div");
+    p.className = "assign-sub";
+    p.textContent = "No assignments yet.";
+    listEl.appendChild(p);
+  }
+}
+
+async function saveAssign(female, primaryUid, backupUid, mode) {
+  if (!guardPerm('events', 'Assign Event Pairings')) return;
+  const { eventId, going, assigns } = assignState;
+  const byUid = (u) => going.find((g) => g.uid === u);
+  if (primaryUid && primaryUid === backupUid) {
+    showAssignMsg(false, "First and second choice must be different people.");
+    renderAssignList();
+    return;
+  }
+  const prev = assigns[female.uid] || {};
+  let active = prev.activeMaleUid || "";
+  if (mode === "primary") active = primaryUid;                     // new first choice becomes active
+  if (mode === "switch") active = backupUid;
+  if (mode === "backup" && !active) active = "";                    // backup alone never activates
+  if (active && active !== primaryUid && active !== backupUid) active = primaryUid || "";
+  try {
+    const ref = doc(db, "events", eventId, "assignments", female.uid);
+    if (!primaryUid && !backupUid) {
+      await deleteDoc(ref);
+      delete assigns[female.uid];
+    } else {
+      const data = {
+        femaleUid: female.uid, femaleName: female.name || "",
+        femaleStatus: female.residentialStatus || "",
+        primaryMaleUid: primaryUid || "", primaryMaleName: primaryUid ? (byUid(primaryUid)?.name || "") : "",
+        backupMaleUid: backupUid || "", backupMaleName: backupUid ? (byUid(backupUid)?.name || "") : "",
+        activeMaleUid: active || "",
+        updatedAt: serverTimestamp()
+      };
+      await setDoc(ref, data);
+      assigns[female.uid] = data;
+    }
+    showAssignMsg(true, "Saved.");
+  } catch (err) {
+    showAssignMsg(false, "Could not save. Please try again.");
+  }
+  renderAssignList();
 }
 
 async function openEventEditModal(ev) {
@@ -7954,6 +8138,7 @@ function formatEventDate(dateStr) {
   return d.toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
 }
 
+let homeEventsById = {};
 async function renderEvents() {
   const grid = document.getElementById("events-grid");
   grid.innerHTML = "";
@@ -7965,7 +8150,10 @@ async function renderEvents() {
   snap.forEach((docSnap) => {
     const e = docSnap.data();
     const eventDate = e.date ? new Date(e.date) : null;
-    if (eventDate && !isNaN(eventDate) && eventDate >= now) upcoming.push(e);
+    // Keep the card on Home until the event's whole day is over.
+    const dayEnd = eventDate ? new Date(eventDate.getFullYear(), eventDate.getMonth(), eventDate.getDate(), 23, 59, 59, 999) : null;
+    if (dayEnd && !isNaN(dayEnd) && dayEnd >= now) upcoming.push({ id: docSnap.id, ...e });
+    homeEventsById[docSnap.id] = { id: docSnap.id, ...e };
   });
   upcoming.sort((a, b) => new Date(a.date) - new Date(b.date));
 
@@ -8005,11 +8193,150 @@ async function renderEvents() {
 
     card.appendChild(name);
     card.appendChild(meta);
+    if (eventDateObj && !isNaN(eventDateObj)) {
+      const left = document.createElement("p");
+      left.className = "event-card-left";
+      left.textContent = applyEventUrgency(card, eventDateObj);
+      card.appendChild(left);
+    }
     card.appendChild(desc);
     // Clicking the card still opens the same event details popup as before.
     card.addEventListener("click", () => openEventModal(e));
     grid.appendChild(card);
   });
+}
+
+// Colours the card by time remaining: far away = faint blue wash, within
+// 1 day = strong, all in the active theme colour. Returns a short "time left" label.
+function applyEventUrgency(card, date) {
+  const days = (date - new Date()) / 86400000;
+  const s = Math.max(0, Math.min(1, 1 - (days - 1) / 13)); // <=1 day -> 1, >=14 days -> 0
+  card.dataset.urgent = "1";
+  card.style.setProperty("--ev-color", "var(--blue)");
+  card.style.setProperty("--ev-wash", (0.1 + 0.5 * s).toFixed(2));
+  card.style.setProperty("--ev-mix", Math.round(15 + 75 * s) + "%");
+  card.style.setProperty("--ev-glow", Math.round(22 * s * s) + "px");
+  if (days <= 0) return "Today";
+  if (days <= 1) return "Within 1 day";
+  return `In ${Math.ceil(days)} days`;
+}
+
+// ── "I'm going" + female→male safe-travel pairing ──
+// events/{id}/going/{uid}       self-written: { uid, name, gender, residentialStatus }
+// events/{id}/assignments/{femaleUid}  admin-written: primary/backup/active male
+let currentEventId = null;
+let myEventProfile = null;
+function normGender(g) {
+  const x = String(g || "").trim().toLowerCase();
+  return x.startsWith("f") ? "female" : x.startsWith("m") ? "male" : "";
+}
+// Maps whatever is stored to one of the three residential states.
+const RESIDENCE_STATES = ["University Hostel", "Private Boarding", "From home"];
+function canonResidence(raw) {
+  const x = String(raw || "").trim().toLowerCase();
+  if (!x) return "";
+  if (x.includes("hostel")) return "University Hostel";
+  if (x.includes("board")) return "Private Boarding";
+  if (x.includes("home")) return "From home";
+  return "";
+}
+async function getMyEventProfile() {
+  if (myEventProfile) return myEventProfile;
+  const u = auth.currentUser;
+  const snap = await getDoc(doc(db, "batchmates", u.uid));
+  const d = snap.exists() ? snap.data() : {};
+  myEventProfile = {
+    uid: u.uid,
+    name: d.shortName || d.fullName || u.email || "Student",
+    gender: normGender(d.gender),
+    residentialStatus: canonResidence(d.residentialStatus)
+  };
+  return myEventProfile;
+}
+
+async function refreshEventGoing() {
+  const id = currentEventId;
+  const btn = document.getElementById("event-going-btn");
+  const msg = document.getElementById("event-going-msg");
+  const sec = document.getElementById("event-assign-section");
+  const list = document.getElementById("event-assign-list");
+  const label = document.getElementById("event-assign-label");
+  if (!id || !btn) return;
+  btn.disabled = true;
+  sec.hidden = true;
+  list.innerHTML = "";
+  try {
+    const me = await getMyEventProfile();
+    const goingSnap = await getDoc(doc(db, "events", id, "going", me.uid));
+    const going = goingSnap.exists();
+    btn.textContent = going ? "✓ You're going (tap to cancel)" : "I'm going";
+    btn.dataset.going = going ? "1" : "";
+    msg.hidden = !!me.gender;
+    msg.textContent = me.gender ? "" : "Your gender isn't set on your profile, so pairing can't be done.";
+    btn.disabled = !me.gender;
+
+    const aSnap = await getDocs(collection(db, "events", id, "assignments"));
+    const all = [];
+    aSnap.forEach((d) => all.push(d.data()));
+    if (me.gender === "female") {
+      const mine = all.find((a) => a.femaleUid === me.uid);
+      if (mine && mine.activeMaleUid) {
+        const name = mine.activeMaleUid === mine.backupMaleUid ? mine.backupMaleName : mine.primaryMaleName;
+        label.textContent = "Your safe-travel group (he walks you back at night)";
+        const li = document.createElement("li");
+        li.textContent = `${name || "Assigned"} — your partner`;
+        list.appendChild(li);
+        all.filter((a) => a.activeMaleUid === mine.activeMaleUid && a.femaleUid !== me.uid).forEach((a) => {
+          const g = document.createElement("li");
+          g.textContent = `${a.femaleName || "Student"} — in your group`;
+          list.appendChild(g);
+        });
+        sec.hidden = false;
+      }
+    } else if (me.gender === "male") {
+      const mine = all.filter((a) => a.activeMaleUid === me.uid);
+      if (mine.length) {
+        label.textContent = "You're assigned to look after";
+        mine.forEach((a) => {
+          const li = document.createElement("li");
+          li.textContent = a.femaleName || "Student";
+          list.appendChild(li);
+        });
+        sec.hidden = false;
+      }
+    }
+  } catch (err) {
+    msg.hidden = false;
+    msg.textContent = "Could not load going status. Please try again.";
+    btn.disabled = false;
+  }
+}
+
+async function toggleEventGoing() {
+  const id = currentEventId;
+  const btn = document.getElementById("event-going-btn");
+  if (!id) return;
+  btn.disabled = true;
+  try {
+    const me = await getMyEventProfile();
+    const ref = doc(db, "events", id, "going", me.uid);
+    if (btn.dataset.going) {
+      await deleteDoc(ref);
+      if (me.gender === "female") {
+        try { await deleteDoc(doc(db, "events", id, "assignments", me.uid)); } catch (e) {}
+      }
+    } else {
+      await setDoc(ref, {
+        uid: me.uid, name: me.name, gender: me.gender,
+        residentialStatus: me.residentialStatus, joinedAt: serverTimestamp()
+      });
+    }
+  } catch (err) {
+    const msg = document.getElementById("event-going-msg");
+    msg.hidden = false;
+    msg.textContent = "Could not update. Please try again.";
+  }
+  await refreshEventGoing();
 }
 
 let countdownInterval = null;
@@ -8086,7 +8413,12 @@ async function openEventModal(e) {
   }
 
   startCountdown(e.date);
+  currentEventId = e.id || null;
+  document.getElementById("event-assign-section").hidden = true;
+  document.getElementById("event-going-btn").dataset.going = "";
+  document.getElementById("event-going-btn").textContent = "I'm going";
   document.getElementById("event-modal-overlay").hidden = false;
+  refreshEventGoing();
 }
 
 // Small popup shown when a label pill is tapped — replaces the browser's
@@ -8126,6 +8458,7 @@ function wireEventModal() {
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !overlay.hidden) closeModal();
   });
+  document.getElementById("event-going-btn").addEventListener("click", toggleEventGoing);
 }
 
 // ── Batchmate Directory ──────────────────────────────────────────
@@ -8579,7 +8912,7 @@ function ttOccurrencesToDate(slot, overrides) {
 // Aggregates attendance by module name (a module can have more than
 // one weekly slot — e.g. lecture + lab — and both should count toward
 // the same module's percentage).
-function renderMyAttendance(slots, overrides, myAbsences) {
+function renderMyAttendance(slots, overrides, myAttendance) {
   const overallEl = document.getElementById("attend-overall-pct");
   const overallSubEl = document.getElementById("attend-overall-sub");
   const listEl = document.getElementById("attend-module-list");
@@ -8592,7 +8925,7 @@ function renderMyAttendance(slots, overrides, myAbsences) {
     if (!byModule.has(key)) byModule.set(key, { attended: 0, total: 0, color: slot.color || "#4C8DFF" });
     const entry = byModule.get(key);
     entry.total += occ.length;
-    occ.forEach((o) => { if (!myAbsences.has(`${o.slotId}_${o.date}`)) entry.attended += 1; });  // attended unless marked absent
+    occ.forEach((o) => { if (myAttendance.has(`${o.slotId}_${o.date}`)) entry.attended += 1; });
   });
 
   let grandAttended = 0, grandTotal = 0;
@@ -8670,21 +9003,21 @@ async function initTimetablePage(user) {
       tSnap.forEach((d) => todos.push({ id: d.id, ...d.data() }));
     } catch (e) { plannerError = true; }
 
-    const myAbsences = new Set();
+    const myAttendance = new Set();
     try {
-      const attendSnap = await getDocs(query(collection(db, "absences"), where("uid", "==", user.uid)));
-      attendSnap.forEach((d) => myAbsences.add(`${d.data().slotId}_${d.data().date}`));
+      const attendSnap = await getDocs(query(collection(db, "attendance"), where("uid", "==", user.uid)));
+      attendSnap.forEach((d) => myAttendance.add(`${d.data().slotId}_${d.data().date}`));
     } catch (e) { /* attendance unavailable — page still works */ }
 
     const [ty, tm] = today.split("-").map(Number);
-    ttState = { slots, overrides, myAbsences, notes, todos, uid: user.uid, today, plannerError, calY: ty, calM: tm - 1, noteCtx: null };
+    ttState = { slots, overrides, myAttendance, notes, todos, uid: user.uid, today, plannerError, calY: ty, calM: tm - 1, noteCtx: null };
 
     renderTtCalendar(0);
     renderTtToday();
     wireTtMainTabs();
     wireTtDayBar();
     wireTtScheduleTabs();
-    renderMyAttendance(slots, overrides, myAbsences);
+    renderMyAttendance(slots, overrides, myAttendance);
     wireTtNotesTabs();
     wireTtModals();
     renderTtNotes();
@@ -8874,30 +9207,30 @@ function buildTtCard(o, markable) {
     body.appendChild(note);
   }
   if (markable && !o.cancelled) {
-    const { myAbsences, uid } = ttState;
+    const { myAttendance, uid } = ttState;
     const key = `${o.slotId}_${o.date}`;
     const attendBtn = document.createElement("button");
     attendBtn.type = "button";
-    attendBtn.className = "tt-attend-btn" + (myAbsences.has(key) ? " marked" : "");
-    attendBtn.textContent = myAbsences.has(key) ? "✗ Absent" : "Mark as absent";
+    attendBtn.className = "tt-attend-btn" + (myAttendance.has(key) ? " marked" : "");
+    attendBtn.textContent = myAttendance.has(key) ? "✓ Attended" : "Mark attendance";
     attendBtn.addEventListener("click", async () => {
       attendBtn.disabled = true;
       try {
-        if (myAbsences.has(key)) {
-          await deleteDoc(doc(db, "absences", `${uid}_${key}`));
-          myAbsences.delete(key);
+        if (myAttendance.has(key)) {
+          await deleteDoc(doc(db, "attendance", `${uid}_${key}`));
+          myAttendance.delete(key);
           attendBtn.classList.remove("marked");
-          attendBtn.textContent = "Mark as absent";
+          attendBtn.textContent = "Mark attendance";
         } else {
-          await setDoc(doc(db, "absences", `${uid}_${key}`), {
+          await setDoc(doc(db, "attendance", `${uid}_${key}`), {
             uid, slotId: o.slotId, date: o.date, module: o.module || "",
             markedAt: serverTimestamp()
           });
-          myAbsences.add(key);
+          myAttendance.add(key);
           attendBtn.classList.add("marked");
-          attendBtn.textContent = "✗ Absent";
+          attendBtn.textContent = "✓ Attended";
         }
-        renderMyAttendance(ttState.slots, ttState.overrides, myAbsences);
+        renderMyAttendance(ttState.slots, ttState.overrides, myAttendance);
       } catch (err) {
         // leave state as-is; the button re-enables so they can retry
       } finally {
@@ -9464,7 +9797,7 @@ const DB_STORAGE_COLLECTIONS = [
   "announcements", "groupProjects", "wallOfFame",
   "events", "eventLabels", "badges", "badgeAssignments", "tasks",
   "directoryPrivacy", "pushSubscriptions", "prestigeLog", "groupProjectRatings",
-  "config", "timetableSlots", "timetableOverrides", "attendance", "absences"
+  "config", "timetableSlots", "timetableOverrides", "attendance"
 ];
 
 const dbTextEncoder = new TextEncoder();
@@ -9990,7 +10323,8 @@ const DASHBOARD_LAYOUT_DOC_PATH = ["config", "dashboardLayout"];
 const DASH_SRC_TOP = [
   { key: "activeTasks", label: "Active Tasks", items: [] },
   { key: "prestige", label: "Prestige Points", items: [] },
-  { key: "fund", label: "My Fund Donations", items: [] }
+  { key: "fund", label: "My Fund Donations", items: [] },
+  { key: "roles", label: "Roles", items: [] }
 ];
 const DASH_SRC_BOTTOM = [
   { key: "extra", label: "Extracurricular Details", items: [["sports", "Sports"], ["clubs", "Clubs"], ["skills", "Skills"]] },
@@ -10002,7 +10336,7 @@ function dashGroupKey(g, i) { return "group:" + (g.id || ("g" + i)); }
 
 // Every data section that can be placed, in the original page's order.
 function dashSourceList(schema) {
-  const groups = withRolesField(schema || DEFAULT_DIRECTORY_FIELD_GROUPS).sort((a, b) => (a.order || 0) - (b.order || 0));
+  const groups = [...(schema || DEFAULT_DIRECTORY_FIELD_GROUPS)].sort((a, b) => (a.order || 0) - (b.order || 0));
   const mid = groups.map((g, i) => ({
     key: dashGroupKey(g, i),
     label: g.title || "Details",

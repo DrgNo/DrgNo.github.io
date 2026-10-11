@@ -945,6 +945,18 @@ html.page-exit .content-area, html.page-exit .page-center {
   transition: border-color .3s ease, transform 2s ease, box-shadow 3s ease;
 }
 .event-card:hover { transform: translateY(-1px); }
+/* Urgency colour (set from JS): the closer the event, the stronger the tint. */
+.event-card[data-urgent] {
+  border-color: color-mix(in srgb, var(--ev-color) var(--ev-mix, 20%), var(--panel-border));
+  box-shadow: 0 0 var(--ev-glow, 0px) color-mix(in srgb, var(--ev-color) 2%, transparent);
+}
+.event-card-left { font-size: 11.5px; font-weight: 600; margin: 0 0 6px; color: var(--ev-color, var(--muted)); }
+.assign-row { border: 1px solid var(--panel-border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--surface); }
+.assign-row select { width: 100%; margin-top: 6px; }
+.assign-row .assign-name { font-size: 13px; font-weight: 600; }
+.assign-row .assign-sub { font-size: 11.5px; color: var(--muted); }
+.assign-warn { color: var(--danger); font-size: 11.5px; }
+.assign-group { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 12px 0 6px; }
 
 /* Slow-drifting, low-opacity colour wash behind the glass — position
    shifts over time via background-position, staying subtle and tied
@@ -956,13 +968,13 @@ html.page-exit .content-area, html.page-exit .page-center {
   inset: -60% -30%;
   z-index: -1;
   background: linear-gradient(120deg,
-    var(--blue-dim) 0%,
-    var(--blue) 25%,
+    var(--ev-color, var(--blue-dim)) 0%,
+    var(--ev-color, var(--blue)) 25%,
     transparent 50%,
-    var(--blue-dim) 75%,
-    var(--blue) 100%);
+    var(--ev-color, var(--blue-dim)) 75%,
+    var(--ev-color, var(--blue)) 100%);
   background-size: 240% 240%;
-  opacity: .16;
+  opacity: var(--ev-wash, .16);
   filter: blur(22px);
   animation: event-card-drift 16s ease-in-out infinite;
 }

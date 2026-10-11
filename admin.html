@@ -1033,6 +1033,20 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="modal-event-assign" hidden>
+    <div class="modal-box">
+      <button class="modal-close" data-close-modal="modal-event-assign" aria-label="Close">✕</button>
+      <div class="admin-modal-body">
+        <p class="section-label" id="assign-title">Assign Females to Males</p>
+        <p class="fine-print" style="text-align:left;">Only students who tapped "I'm going" appear. Same residential state is listed first. Each female has one active male; the backup takes over only when you tap "Switch to backup".</p>
+        <input type="hidden" id="assign-event-id">
+        <div id="assign-list" class="admin-scroll-list"></div>
+        <p class="error-msg" id="assign-error" hidden></p>
+        <p class="success-msg" id="assign-success" hidden></p>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="modal-event-edit" hidden>
     <div class="modal-box">
       <button class="modal-close" data-close-modal="modal-event-edit" aria-label="Close">✕</button>
