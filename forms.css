@@ -408,3 +408,10 @@ a.fm-ans { color: var(--blue); text-decoration: underline; }
 .fm-signup-panel { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 4px; padding: 12px; border: 1px dashed var(--accent-soft-border); border-radius: 12px; background: var(--accent-soft-bg); }
 .fm-signup-panel[hidden] { display: none; }
 .fm-signup-panel input { margin: 0; min-width: 0; }
+
+/* Batchmate field: members / optional leader sub-sections */
+.fm-bm-switch { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.fm-bm .fm-bm-leader[hidden] { display: none; }
+.fm-bm-sub { font-weight: 600; font-size: 13px; margin: 14px 0 6px; }
+.fm-bm-sub small { font-weight: 400; color: var(--muted); }
+.fm-bm .member-check-row.fm-dim { opacity: .45; cursor: not-allowed; }

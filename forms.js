@@ -376,43 +376,102 @@ async function initHome() {
   if (id) openFill(id, load);
 }
 
-function batchmatePicker(f, val, ctx) {
+function batchmatePicker(f, val, ctx, leaderVal) {
   const sel = new Map((Array.isArray(val) ? val : []).map((m) => [m.uid, m]));
-  // Pool = everyone except me and anyone already in another group.
-  const pool = ctx.roster.filter((b) => b.uid !== ctx.me.uid && (sel.has(b.uid) || !ctx.claims.has(b.uid)));
+  // Filler-side toggle. On (default): the filler is the leader. Off: filler is a normal member + optional leader field.
+  let iAmLeader = !(leaderVal && leaderVal.self === false);
+  let leader = !iAmLeader && leaderVal.uid ? { uid: leaderVal.uid, name: leaderVal.name, index: leaderVal.index } : null;
+  const effLeader = () => (iAmLeader ? null : leader);
+  // Pool = everyone except me and anyone already in another group (people I claimed earlier stay available).
+  const free = (uid) => !ctx.claims.has(uid) || ctx.claims.get(uid)?.leaderUid === ctx.me.uid;
+  const pool = ctx.roster.filter((b) => b.uid !== ctx.me.uid && (sel.has(b.uid) || leader?.uid === b.uid || free(b.uid)));
   const max = Number(f.max) || 0;
   const chips = el("ul", { class: "pill-list" });
   const count = el("small", { class: "fm-bm-count" });
   const search = el("input", { type: "text", placeholder: "Search batchmates by name or index…" });
   const list = el("div", { class: "member-checklist" });
   const rows = [];
+  // Leader picker (only when the form says the filler is NOT automatically the leader): same list design, pick one, optional.
+  const lChip = el("ul", { class: "pill-list" });
+  const lSearch = el("input", { type: "text", placeholder: "Search for a leader by name or index…" });
+  const lList = el("div", { class: "member-checklist" });
+  const lRows = [];
+  const lName = "fmLeader-" + f.id;
   function sync() {
     chips.innerHTML = "";
     sel.forEach((m) => chips.append(el("li", {}, m.name, el("button", { type: "button", "aria-label": "Remove", text: "✕", onclick: () => { sel.delete(m.uid); sync(); } }))));
     count.textContent = `${sel.size} selected` + (max ? ` (max ${max})` : "") + (Number(f.min) ? ` · min ${f.min}` : "");
-    rows.forEach(({ c, b }) => { c.checked = sel.has(b.uid); c.disabled = !!max && !c.checked && sel.size >= max; });
+    rows.forEach(({ c, b, row }) => {
+      const isLead = effLeader()?.uid === b.uid;
+      c.checked = sel.has(b.uid); c.disabled = isLead || (!!max && !c.checked && sel.size >= max);
+      row.classList.toggle("fm-dim", isLead); row.title = isLead ? "Already picked as the leader" : "";
+    });
+    {
+      lChip.innerHTML = "";
+      if (leader) lChip.append(el("li", {}, leader.name + (leader.uid === ctx.me.uid ? " (You)" : ""), el("button", { type: "button", "aria-label": "Remove leader", text: "✕", onclick: () => { leader = null; sync(); } })));
+      lRows.forEach(({ c, b, row }) => {
+        const isMember = sel.has(b.uid);
+        c.checked = leader?.uid === b.uid; c.disabled = isMember;
+        row.classList.toggle("fm-dim", isMember); row.title = isMember ? "Already picked as a member" : "";
+      });
+    }
   }
   pool.forEach((b) => {
     const c = el("input", { type: "checkbox" });
     c.addEventListener("change", () => { if (c.checked) sel.set(b.uid, { uid: b.uid, name: b.name, index: b.index }); else sel.delete(b.uid); sync(); });
-    rows.push({ c, b });
-    list.append(el("label", { class: "member-check-row", "data-name": (b.name + " " + b.index).toLowerCase() }, c, el("span", { text: `${b.name}${b.index ? " — " + b.index : ""}` })));
+    const row = el("label", { class: "member-check-row", "data-name": (b.name + " " + b.index).toLowerCase() }, c, el("span", { text: `${b.name}${b.index ? " — " + b.index : ""}` }));
+    rows.push({ c, b, row });
+    list.append(row);
   });
   if (!pool.length) list.append(el("p", { class: "fine-print", text: "No batchmates left to select." }));
   search.addEventListener("input", () => {
     const t = search.value.trim().toLowerCase();
     list.querySelectorAll(".member-check-row").forEach((r) => { r.hidden = !!t && !r.dataset.name.includes(t); });
   });
-  sync();
+  let leaderBlock = null;
+  {
+    // Candidates: me first, then everyone in the pool.
+    const cands = [{ uid: ctx.me.uid, name: ctx.me.name, index: ctx.me.index, me: true }, ...pool];
+    cands.forEach((b) => {
+      const c = el("input", { type: "radio", name: lName });
+      c.addEventListener("change", () => { if (c.checked) { leader = { uid: b.uid, name: b.name, index: b.index }; sync(); } });
+      const row = el("label", { class: "member-check-row", "data-name": (b.name + " " + b.index).toLowerCase() }, c, el("span", { text: `${b.name}${b.index ? " — " + b.index : ""}${b.me ? " (You)" : ""}` }));
+      lRows.push({ c, b, row });
+      lList.append(row);
+    });
+    lSearch.addEventListener("input", () => {
+      const t = lSearch.value.trim().toLowerCase();
+      lList.querySelectorAll(".member-check-row").forEach((r) => { r.hidden = !!t && !r.dataset.name.includes(t); });
+    });
+    leaderBlock = el("div", { class: "fm-bm-leader" },
+      el("div", { class: "fm-bm-sub" }, "Group leader ", el("small", { text: "(optional — skip it if your team has no leader)" })),
+      lChip, lSearch, lList);
+  }
+  // the "I'm the group leader" switch
+  const cb = el("input", { type: "checkbox" }); cb.checked = iAmLeader;
+  const lbl = el("span", { text: iAmLeader ? "On" : "Off" });
+  const noteEl = el("div", { class: "fm-edit-note" });
+  const paintMode = () => {
+    lbl.textContent = iAmLeader ? "On" : "Off";
+    noteEl.textContent = iAmLeader
+      ? `You (${ctx.me.name}) are the group leader and are added automatically. Batchmates already in another group aren't listed.`
+      : `You (${ctx.me.name}) are added to the group as a member. Pick the other members below, and choose a leader if your team has one. Batchmates already in another group aren't listed.`;
+    leaderBlock.hidden = iAmLeader;
+    sync();
+  };
+  cb.addEventListener("change", () => { iAmLeader = cb.checked; paintMode(); });
+  paintMode();
   return {
     node: el("div", { class: "fm-bm" },
-      el("div", { class: "fm-edit-note", text: `You (${ctx.me.name}) are the group leader and are added automatically. Batchmates already in another group aren't listed.` }),
-      chips, count, search, list),
-    get: () => (sel.size ? [...sel.values()] : "")
+      el("div", { class: "fm-brow fm-bm-switch" }, el("b", { text: "I'm the group leader", style: "font-size:13px" }), el("label", { class: "fm-switch", style: "margin-left:0" }, cb, el("i"), lbl)),
+      noteEl, chips, count, search, list, leaderBlock),
+    get: () => (sel.size ? [...sel.values()] : ""),
+    // "" when the filler is the leader; otherwise {self:false, ...chosen leader (optional)}
+    getLeader: () => (iAmLeader ? "" : { self: false, ...(leader || {}) })
   };
 }
 
-function fieldInput(f, val, ctx) {
+function fieldInput(f, val, ctx, extraVal) {
   const t = f.type, opts = f.options || [];
   if (t === "rating") {
     const max = ratingMax(f), style = RATING_STYLES[f.style] ? f.style : "stars";
@@ -550,7 +609,7 @@ function fieldInput(f, val, ctx) {
       incomplete: () => lines.some((l) => !cur[l].size)
     };
   }
-  if (t === "batchmates") return batchmatePicker(f, val, ctx);
+  if (t === "batchmates") return batchmatePicker(f, val, ctx, extraVal);
 
   let input, node;
   if (f.type === "long") input = el("textarea", { rows: 4 });
@@ -649,7 +708,7 @@ async function openFill(formId, onDone, skipDraft = false) {
     if (p.section && (p.section.label || p.section.help)) pg.append(el("div", { class: "fm-page-head" },
       p.section.label ? el("h3", { text: p.section.label }) : null, p.section.help ? el("p", { text: p.section.help }) : null));
     p.fields.forEach((fd) => {
-      const inp = fieldInput(fd, seed[fd.id], ctx);
+      const inp = fieldInput(fd, seed[fd.id], ctx, seed[fd.id + "__leader"]);
       const wrap = el("div", { class: "fm-field" },
         el("label", {}, fd.label, fd.required ? el("span", { class: "fm-req", text: " *" }) : null),
         fd.help ? el("small", { text: fd.help }) : null, inp.node);
@@ -756,7 +815,7 @@ async function openFill(formId, onDone, skipDraft = false) {
 
   // ── autosave ──
   const draftTag = el("span", { class: "fm-saved" });
-  const snapAnswers = () => { const a = {}; inputs.forEach(({ inp }, id) => { a[id] = inp.get(); }); return a; };
+  const snapAnswers = () => { const a = {}; inputs.forEach(({ inp }, id) => { a[id] = inp.get(); if (inp.getLeader) a[id + "__leader"] = inp.getLeader(); }); return a; };
   let lastSig = JSON.stringify(snapAnswers()) + "|" + cur, tLocal = null, tCloud = null, tTag = null, closed = false;
   const flashSaved = (t) => { draftTag.textContent = t; draftTag.classList.add("show"); clearTimeout(tTag); tTag = setTimeout(() => draftTag.classList.remove("show"), 2600); };
   function saveDraftLocal() {
@@ -803,7 +862,11 @@ async function openFill(formId, onDone, skipDraft = false) {
     }
     // Only questions that were actually shown are saved; hidden ones are stored empty.
     const answers = {};
-    (f.fields || []).filter(isQ).forEach((fd) => { answers[fd.id] = F.vis.get(fd.id) === true ? inputs.get(fd.id).inp.get() : ""; });
+    (f.fields || []).filter(isQ).forEach((fd) => {
+      const shownQ = F.vis.get(fd.id) === true, inp = inputs.get(fd.id).inp;
+      answers[fd.id] = shownQ ? inp.get() : "";
+      if (inp.getLeader) answers[fd.id + "__leader"] = shownQ ? inp.getLeader() : ""; // "" = filler is the leader
+    });
     submitBtn.disabled = true; submitBtn.textContent = "Saving…";
     try {
       const m = await getMe();
@@ -818,7 +881,8 @@ async function openFill(formId, onDone, skipDraft = false) {
       if (bmField) {
         const shown = F.vis.get(bmField.id) === true; // a hidden group field means no group is claimed
         const members = shown && Array.isArray(answers[bmField.id]) ? answers[bmField.id] : [];
-        const keep = shown ? new Set([m.uid, ...members.map((x) => x.uid)]) : new Set();
+        const lead = shown ? answers[bmField.id + "__leader"] : null; // chosen leader must be claimed too
+        const keep = shown ? new Set([m.uid, ...members.map((x) => x.uid), ...(lead?.uid ? [lead.uid] : [])]) : new Set();
         keep.forEach((uid) => wb.set(doc(db, "forms", f.id, "claims", uid), { leaderUid: m.uid, leaderName: m.name, fieldId: bmField.id }));
         ctx.claims.forEach((c, uid) => { if (c.leaderUid === m.uid && !keep.has(uid)) wb.delete(doc(db, "forms", f.id, "claims", uid)); });
       }
@@ -1390,14 +1454,17 @@ let R = null;
 const rvCols = () => R.mode === "pending"
   ? [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" }, ...(R.pcols || []).map((p) => ({ k: "_p:" + p.key, l: p.label }))]
   : [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" },
-     ...(R.form.fields || []).filter(isQ).flatMap((f) => f.type === "batchmates" ? [{ k: "_leader", l: "Leader" }, { k: f.id, l: f.label }] : [{ k: f.id, l: f.label }]),
+     ...(R.form.fields || []).filter(isQ).flatMap((f) => f.type === "batchmates" ? [{ k: "_leader:" + f.id, l: "Leader" }, { k: f.id, l: f.label }] : [{ k: f.id, l: f.label }]),
      { k: "_at", l: "Responded At" },
      ...(R.pcols || []).map((p) => ({ k: "_p:" + p.key, l: p.label }))];
 function rvVal(r, k) {
   if (k.startsWith("_p:")) return fmtProfileVal(PROFILE_ROWS?.get(r.uid)?.[k.slice(3)]); // profile column
   if (k === "_name") return r.name || "";
   if (k === "_index") return r.index || "";
-  if (k === "_leader") return r.name || ""; // the person who filled the form is the group leader
+  if (k.startsWith("_leader:")) { // the filler is the leader, unless they switched "I'm the group leader" off
+    const L = r.answers?.[k.slice(8) + "__leader"];
+    return L && L.self === false ? (L.name || "") : r.name || "";
+  }
   if (k === "_at") return r.respondedAt ? fmtDate(toDate(r.respondedAt)) : "";
   return fmtAnswer((R.form.fields || []).find((f) => f.id === k), r.answers?.[k]);
 }
@@ -1506,7 +1573,9 @@ function openResponseView(r) {
       if (fd.type === "batchmates") {
         const ms = Array.isArray(v) ? v : [];
         node = el("div", { class: "fm-bm" },
-          el("p", { class: "fine-print", style: "text-align:left;margin:0;", text: `Leader: ${r.name || "—"}${r.index ? " (" + r.index + ")" : ""}` }),
+          el("p", { class: "fine-print", style: "text-align:left;margin:0;", text: r.answers?.[fd.id + "__leader"]?.self === false
+            ? `Filled by: ${r.name || "—"}${r.index ? " (" + r.index + ")" : ""} · Leader: ${(() => { const L = r.answers[fd.id + "__leader"]; return L?.name ? L.name + (L.index ? " (" + L.index + ")" : "") : "none chosen"; })()}`
+            : `Leader: ${r.name || "—"}${r.index ? " (" + r.index + ")" : ""}` }),
           ms.length ? el("ul", { class: "pill-list" }, ...ms.map((m) => el("li", { text: m.name + (m.index ? " — " + m.index : "") }))) : el("p", { class: "fine-print", style: "text-align:left;", text: "No members selected." }));
       } else if (!["yesno", "toggle", "select", "multi", "priority", "table", "rating"].includes(fd.type)) {
         // Text-like answers: plain wrapped text so long answers show in full.
