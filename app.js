@@ -1109,7 +1109,7 @@ const FUND_LKR_PER_POINT = 100; // every Rs. 100 a student personally donates = 
 // LEVEL_NAME is just the display word used in front of the number
 // (Home directory popup shows "<LEVEL_NAME> • <n>") — rename it here
 // if you want different wording; nothing else needs to change.
-const PRESTIGE_POINTS_PER_LEVEL = 1000;
+const PRESTIGE_POINTS_PER_LEVEL = 100;
 const LEVEL_NAME = "Prestige Rank";
 
 function levelForPoints(points) {
