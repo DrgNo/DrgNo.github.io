@@ -30,7 +30,8 @@ import {
   serverTimestamp,
   writeBatch,
   deleteField,
-  increment
+  increment,
+  onSnapshot
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -384,6 +385,7 @@ function closeMenu() {
     ensurePushSubscription(user);
 
     const isAdmin = await checkIsAdmin(user.uid);
+    initMaintenanceGate(isAdmin);
     const adminNavLink = document.getElementById("admin-nav-link");
     if (adminNavLink) adminNavLink.hidden = !isAdmin;
 
@@ -4031,6 +4033,9 @@ async function initAdminPage(isAdmin) {
     const manageBtn = document.getElementById("manage-admins-btn");
     if (manageBtn) manageBtn.hidden = false;
     initManageAdminsPanel();
+    const mBtn = document.getElementById("maintenance-btn");
+    if (mBtn) mBtn.hidden = false;
+    initMaintenanceToggle();
   }
 
 }
@@ -11249,5 +11254,101 @@ function initCsvImport() {
   openBtn.addEventListener("click", async () => {
     if (!hasAdminPerm("csvImport")) return;
     try { await start(); } catch (e) { root.innerHTML = ""; root.append(msg("error-msg", "Could not load batchmates. Please close and try again.")); }
+  });
+}
+
+
+// ── Construction mode (maintenance overlay) ────────────────────────
+// State lives in ONE doc: /config/maintenance { enabled: bool }. Every
+// signed-in page listens to it (single-doc listener = 1 read per change
+// per user). Non-admins get a blurred full-screen construction overlay;
+// admins only see a small banner so they can keep testing. Writing the
+// doc falls under the super-admin rule for /config/*.
+let _maintOn = false, _maintStarted = false;
+function initMaintenanceGate(isAdmin) {
+  if (_maintStarted) return;
+  _maintStarted = true;
+  onSnapshot(doc(db, "config", "maintenance"), (snap) => {
+    _maintOn = !!(snap.exists() && snap.data().enabled === true);
+    const btn = document.getElementById("maintenance-btn");
+    if (btn) {
+      btn.textContent = _maintOn ? "Construction Mode: ON (tap to turn off)" : "Construction Mode: OFF (tap to turn on)";
+      btn.classList.toggle("maint-on", _maintOn);
+    }
+    renderMaintenance(isAdmin);
+  }, () => {});
+}
+
+function renderMaintenance(isAdmin) {
+  let ov = document.getElementById("maint-overlay");
+  let bar = document.getElementById("maint-admin-bar");
+  if (!_maintOn) {
+    if (ov) ov.remove();
+    if (bar) bar.remove();
+    document.documentElement.classList.remove("maint-lock");
+    return;
+  }
+  if (isAdmin) {
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "maint-admin-bar";
+      bar.textContent = "🚧 Construction mode is ON — users are blocked";
+      document.body.appendChild(bar);
+    }
+    return;
+  }
+  if (ov) return;
+  const code = [
+    ["kw", "const ", "fn", "site", "", " = ", "fn", "build", "", "();"],
+    ["cm", "// pouring foundations…"],
+    ["kw", "await ", "fn", "db.migrate", "", "({ safe: ", "kw", "true", "", " });"],
+    ["kw", "for ", "", "(let i=0; i<walls; i++) ", "fn", "raise", "", "(i);"],
+    ["cm", "// wiring up the new features…"],
+    ["fn", "tests", "", ".run(", "kw", "\"all\"", "", ");"],
+    ["fn", "deploy", "", "(", "kw", "\"soon\"", "", ");"]
+  ];
+  const lines = code.map((parts, i) => {
+    let h = "";
+    for (let j = 0; j < parts.length; j += 2) h += `<span class="${parts[j] || ""}">${parts[j + 1]}</span>`;
+    return `<div class="maint-line" style="--d:${(i * 1.6).toFixed(1)}s"><i>${i + 1}</i><b>${h}</b></div>`;
+  }).join("");
+  ov = document.createElement("div");
+  ov.id = "maint-overlay";
+  ov.setAttribute("role", "alert");
+  ov.innerHTML = `
+    <div class="maint-card">
+      <div class="maint-stripe"></div>
+      <div class="maint-gears"><span class="g g1">⚙</span><span class="g g2">⚙</span><span class="g g3">⚙</span></div>
+      <h2>Under Construction</h2>
+      <p>We're building something new. Back in a little while!</p>
+      <div class="maint-editor">
+        <div class="maint-dots"><u></u><u></u><u></u><em>build.js</em></div>
+        ${lines}
+        <span class="maint-caret"></span>
+      </div>
+      <div class="maint-progress"><div></div></div>
+      <div class="maint-stripe"></div>
+    </div>`;
+  document.body.appendChild(ov);
+  document.documentElement.classList.add("maint-lock");
+}
+
+function initMaintenanceToggle() {
+  const btn = document.getElementById("maintenance-btn");
+  if (!btn || btn.dataset.wired) return;
+  btn.dataset.wired = "1";
+  btn.addEventListener("click", async () => {
+    const next = !_maintOn;
+    const msg = next
+      ? "Turn ON construction mode? All non-admin users will be blocked by an overlay until you turn it off."
+      : "Turn OFF construction mode and let users back in?";
+    if (!confirm(msg)) return;
+    btn.disabled = true;
+    try {
+      await setDoc(doc(db, "config", "maintenance"), { enabled: next, updatedAt: serverTimestamp() });
+    } catch (err) {
+      alert("Couldn't change construction mode: " + (err && err.message ? err.message : err));
+    }
+    btn.disabled = false;
   });
 }
