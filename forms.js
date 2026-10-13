@@ -387,6 +387,11 @@ function batchmatePicker(f, val, ctx, leaderVal) {
   const free = (uid) => !ctx.claims.has(uid) || ctx.claims.get(uid)?.leaderUid === ctx.me.uid;
   const pool = ctx.roster.filter((b) => b.uid !== ctx.me.uid && (sel.has(b.uid) || leader?.uid === b.uid || free(b.uid)));
   const max = Number(f.max) || 0;
+  // "Grouped" flags: a leader who has spoken to a student marks them so other leaders see it BEFORE anyone submits.
+  const marks = ctx.marks || (ctx.marks = new Map());
+  const markErr = el("p", { class: "error-msg", hidden: true });
+  let sortMode = "default";
+  const sortSel = el("select", {}, el("option", { value: "default", text: "Sort: default" }), el("option", { value: "free", text: "Sort: not grouped first" }), el("option", { value: "grouped", text: "Sort: grouped first" }));
   const chips = el("ul", { class: "pill-list" });
   const count = el("small", { class: "fm-bm-count" });
   const search = el("input", { type: "text", placeholder: "Search batchmates by name or index…" });
@@ -420,8 +425,9 @@ function batchmatePicker(f, val, ctx, leaderVal) {
   pool.forEach((b) => {
     const c = el("input", { type: "checkbox" });
     c.addEventListener("change", () => { if (c.checked) sel.set(b.uid, { uid: b.uid, name: b.name, index: b.index }); else sel.delete(b.uid); sync(); });
-    const row = el("label", { class: "member-check-row", "data-name": (b.name + " " + b.index).toLowerCase() }, c, el("span", { text: `${b.name}${b.index ? " — " + b.index : ""}` }));
-    rows.push({ c, b, row });
+    const st = el("span", { class: "fm-free-dot" });
+    const row = el("label", { class: "member-check-row", "data-name": (b.name + " " + b.index).toLowerCase() }, c, st, el("span", { text: `${b.name}${b.index ? " — " + b.index : ""}` }));
+    rows.push({ c, b, row, st });
     list.append(row);
   });
   if (!pool.length) list.append(el("p", { class: "fine-print", text: "No batchmates left to select." }));
@@ -436,8 +442,9 @@ function batchmatePicker(f, val, ctx, leaderVal) {
     cands.forEach((b) => {
       const c = el("input", { type: "radio", name: lName });
       c.addEventListener("change", () => { if (c.checked) { leader = { uid: b.uid, name: b.name, index: b.index }; sync(); } });
-      const row = el("label", { class: "member-check-row", "data-name": (b.name + " " + b.index).toLowerCase() }, c, el("span", { text: `${b.name}${b.index ? " — " + b.index : ""}${b.me ? " (You)" : ""}` }));
-      lRows.push({ c, b, row });
+      const st = b.me ? null : el("span", { class: "fm-free-dot" });
+      const row = el("label", { class: "member-check-row", "data-name": (b.name + " " + b.index).toLowerCase() }, c, st, el("span", { text: `${b.name}${b.index ? " — " + b.index : ""}${b.me ? " (You)" : ""}` }));
+      lRows.push({ c, b, row, st });
       lList.append(row);
     });
     lSearch.addEventListener("input", () => {
@@ -448,6 +455,26 @@ function batchmatePicker(f, val, ctx, leaderVal) {
       el("div", { class: "fm-bm-sub" }, "Group leader ", el("small", { text: "(optional — skip it if your team has no leader)" })),
       lChip, lSearch, lList);
   }
+  function paintMarks() {
+    const paint = (st, uid) => {
+      if (!st) return;
+      const mk = marks.get(uid);
+      st.className = mk ? "fm-grp-tag" : "fm-free-dot";
+      st.textContent = mk ? "grouped" : "";
+      st.title = mk ? "Says they've already agreed to join a group" : "Not grouped yet";
+    };
+    rows.forEach((r) => {
+      paint(r.st, r.b.uid);
+    });
+    selfCb.checked = marks.has(ctx.me.uid); selfLbl.textContent = selfCb.checked ? "Grouped" : "Not yet";
+    lRows.forEach((r) => paint(r.st, r.b.uid));
+    const order = (arr, box) => {
+      const rank = (r) => (r.b.me ? -1 : marks.has(r.b.uid) ? 1 : 0), dir = sortMode === "grouped" ? -1 : 1;
+      arr.map((r, i) => [r, i]).sort((x, y) => (sortMode === "default" ? 0 : (rank(x[0]) === -1 || rank(y[0]) === -1 ? rank(x[0]) - rank(y[0]) : dir * (rank(x[0]) - rank(y[0])))) || x[1] - y[1]).forEach(([r]) => box.append(r.row));
+    };
+    order(rows, list); order(lRows, lList);
+  }
+  sortSel.addEventListener("change", () => { sortMode = sortSel.value; paintMarks(); });
   // the "I'm the group leader" switch
   const cb = el("input", { type: "checkbox" }); cb.checked = iAmLeader;
   const lbl = el("span", { text: iAmLeader ? "On" : "Off" });
@@ -462,10 +489,40 @@ function batchmatePicker(f, val, ctx, leaderVal) {
   };
   cb.addEventListener("change", () => { iAmLeader = cb.checked; paintMode(); });
   paintMode();
+  // Each student can only flag THEMSELVES (enforced in the Firestore rules too).
+  const selfCb = el("input", { type: "checkbox" });
+  const selfLbl = el("span", { text: "Not yet" });
+  selfCb.addEventListener("change", async () => {
+    if (!ctx.formId) return;
+    const ref = doc(db, "forms", ctx.formId, "groupmarks", ctx.me.uid), want = selfCb.checked;
+    selfCb.disabled = true; markErr.hidden = true;
+    try {
+      if (want) await setDoc(ref, { byUid: ctx.me.uid, byName: ctx.me.name, at: serverTimestamp() });
+      else await deleteDoc(ref);
+    } catch (x) { selfCb.checked = !want; markErr.textContent = "Couldn't update your status — the form may have closed. Please try again."; markErr.hidden = false; }
+    selfCb.disabled = false;
+    selfLbl.textContent = selfCb.checked ? "Grouped" : "Not yet";
+  });
+  const legend = el("small", { class: "fm-bm-legend" }, el("span", { class: "fm-free-dot" }), " not grouped yet  ", el("span", { class: "fm-grp-tag", text: "grouped" }), " already agreed to join a group");
+  const node = el("div", { class: "fm-bm" },
+    el("div", { class: "fm-brow fm-bm-switch" }, el("b", { text: "I'm the group leader", style: "font-size:13px" }), el("label", { class: "fm-switch", style: "margin-left:0" }, cb, el("i"), lbl)),
+    noteEl, chips, count,
+    el("div", { class: "fm-bm-ctl" }, sortSel, legend),
+    el("div", { class: "fm-brow fm-bm-switch fm-bm-self" }, el("span", { class: "fm-bm-selftxt" }, el("b", { text: "Already agreed to join a group?", style: "font-size:13px;display:block" }), el("small", { class: "fm-bm-hint", text: "Switch to “Grouped” and other leaders will see a “grouped” label next to your name. Only you can change your own status." })),
+      el("label", { class: "fm-switch", style: "margin-left:0" }, selfCb, el("i"), selfLbl)),
+    markErr, search, list, leaderBlock);
+  // Live updates while this picker is on screen; stops once the popup is closed or rebuilt.
+  if (ctx.formId) {
+    let ready = false, unsub = null; setTimeout(() => { ready = true; }, 1500);
+    unsub = onSnapshot(collection(db, "forms", ctx.formId, "groupmarks"), (snap) => {
+      if (ready && (!node.isConnected || node.closest(".modal-overlay")?.hidden)) { if (unsub) unsub(); return; }
+      marks.clear(); snap.docs.forEach((d) => marks.set(d.id, d.data()));
+      paintMarks();
+    }, () => {});
+  }
+  paintMarks();
   return {
-    node: el("div", { class: "fm-bm" },
-      el("div", { class: "fm-brow fm-bm-switch" }, el("b", { text: "I'm the group leader", style: "font-size:13px" }), el("label", { class: "fm-switch", style: "margin-left:0" }, cb, el("i"), lbl)),
-      noteEl, chips, count, search, list, leaderBlock),
+    node,
     get: () => (sel.size ? [...sel.values()] : ""),
     // "" when the filler is the leader; otherwise {self:false, ...chosen leader (optional)}
     getLeader: () => (iAmLeader ? "" : { self: false, ...(leader || {}) })
@@ -670,7 +727,7 @@ async function openFill(formId, onDone, skipDraft = false) {
   if (f.collecting === false) return msg("Temporarily closed", "The admins have paused responses for now. Please check back later.");
 
   const hasBm = (f.fields || []).some((x) => x.type === "batchmates");
-  const ctx = { me: null, roster: [], claims: new Map() };
+  const ctx = { me: null, roster: [], claims: new Map(), marks: new Map(), formId: f.id }; // marks = live "grouped" flags
   if (hasBm) {
     try {
       const [m, roster, cs] = await Promise.all([getMe(), getRoster(), getDocs(collection(db, "forms", f.id, "claims"))]);
@@ -890,6 +947,7 @@ async function openFill(formId, onDone, skipDraft = false) {
         ctx.claims.forEach((c, uid) => { if (c.leaderUid === m.uid && !keep.has(uid)) wb.delete(doc(db, "forms", f.id, "claims", uid)); });
       }
       await wb.commit();
+      if (bmField && ctx.marks?.get(m.uid)) deleteDoc(doc(db, "forms", f.id, "groupmarks", m.uid)).catch(() => {}); // I'm grouped for real now — drop my own flag
       closed = true; clearTimeout(tLocal); clearTimeout(tCloud); // the draft has served its purpose
       try { localStorage.removeItem(dKey); } catch (e) {}
       deleteDoc(dRef).catch(() => {});
@@ -1406,8 +1464,8 @@ async function saveForm() {
 async function deleteFormAndData(f, done) {
   if (!hasPerm("forms")) return denied();
   let snap;
-  let claims = [], pubs = [];
-  try { snap = await getDocs(collection(db, "forms", f.id, "responses")); claims = (await getDocs(collection(db, "forms", f.id, "claims"))).docs; pubs = (await getDocs(collection(db, "forms", f.id, "public"))).docs; }
+  let claims = [], pubs = [], gmarks = [];
+  try { snap = await getDocs(collection(db, "forms", f.id, "responses")); claims = (await getDocs(collection(db, "forms", f.id, "claims"))).docs; pubs = (await getDocs(collection(db, "forms", f.id, "public"))).docs; gmarks = (await getDocs(collection(db, "forms", f.id, "groupmarks"))).docs; }
   catch (e) { return alert("Couldn't read the responses — please try again."); }
   if (!confirm(`Permanently delete "${f.title}" and its ${snap.size} response(s)? This cannot be undone.`)) return;
   try {
@@ -1417,7 +1475,7 @@ async function deleteFormAndData(f, done) {
     try { roster = await getRoster(); } catch (e) {}
     const draftUids = new Set([...roster.map((b) => b.uid), ...snap.docs.map((d) => d.id), ...claims.map((d) => d.id)]);
     const drafts = [...draftUids].map((uid) => ({ ref: doc(db, "forms", f.id, "drafts", uid) }));
-    const all = [...snap.docs, ...claims, ...pubs, ...drafts];
+    const all = [...snap.docs, ...claims, ...pubs, ...gmarks, ...drafts];
     for (let i = 0; i < all.length; i += 400) {
       const b = writeBatch(db);
       all.slice(i, i + 400).forEach((d) => b.delete(d.ref));

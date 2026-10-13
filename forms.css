@@ -433,3 +433,13 @@ a.fm-ans { color: var(--blue); text-decoration: underline; }
 .fm-pubset-head span:last-child { flex: none; width: 84px; }
 
 .fm-top-btn { --due: var(--blue); margin: 0 0 10px; align-self: flex-start; }
+
+/* Group-member list: "grouped" flags, sorting, legend */
+.fm-grp-tag { font-size: 10.5px; font-weight: 600; line-height: 1.3; padding: 1px 7px; border: 1px solid currentColor; border-radius: 999px; background: none; opacity: .5; flex: none; }
+.fm-free-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 0 3px rgba(34, 197, 94, .2); flex: none; margin: 0 2px; }
+.fm-bm-self { gap: 14px; }
+.fm-bm-selftxt { flex: 1; min-width: 0; }
+.fm-bm-ctl { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.fm-bm-ctl select { width: auto; padding: 5px 8px; font-size: 12px; }
+.fm-bm-legend { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; color: var(--muted); font-size: 11.5px; }
+.fm-bm-hint { color: var(--muted); font-size: 11.5px; }
