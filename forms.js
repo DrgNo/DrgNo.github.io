@@ -5,7 +5,7 @@
 import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField, writeBatch, collection, getDocs, onSnapshot, serverTimestamp
+  getFirestore, doc, getDoc, setDoc, addDoc, updateDoc, deleteDoc, deleteField, writeBatch, runTransaction, collection, getDocs, onSnapshot, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const cfg = {
@@ -387,6 +387,25 @@ function batchmatePicker(f, val, ctx, leaderVal) {
   const free = (uid) => !ctx.claims.has(uid) || ctx.claims.get(uid)?.leaderUid === ctx.me.uid;
   const pool = ctx.roster.filter((b) => b.uid !== ctx.me.uid && (sel.has(b.uid) || leader?.uid === b.uid || free(b.uid)));
   const max = Number(f.max) || 0;
+  // Group-size quotas (live): how many groups of each size are already taken, by other leaders.
+  const quotas = f.quotas || {}, qSizes = Object.keys(quotas).map(Number).filter((n) => Number(quotas[n]) > 0).sort((a, b) => a - b);
+  let groupsMap = {}; // leaderUid -> size
+  const usedOf = (n) => Object.entries(groupsMap).filter(([u, sz]) => u !== ctx.me.uid && Number(sz) === n).length; // my own current group doesn't count against me
+  const leftOf = (n) => Math.max(0, Number(quotas[n]) - usedOf(n));
+  const slotsBox = el("div", { class: "fm-bm-slots" }), slotWarn = el("small", { class: "fm-bm-warn", hidden: true });
+  function quotaProblem(n = sel.size) {
+    if (!(Number(quotas[n]) > 0) || leftOf(n) > 0) return "";
+    const lo = Number(f.min) || 1, hi = Number(f.max) || Number(f.min) || n, open = [];
+    for (let k = lo; k <= hi; k++) if (!(Number(quotas[k]) > 0) || leftOf(k) > 0) open.push(k);
+    return `all ${quotas[n]} slot${quotas[n] > 1 ? "s" : ""} for groups of ${n} members are already taken.` + (open.length ? ` Sizes still open: ${open.join(", ")}.` : " No group slots are left.");
+  }
+  function paintSlots() {
+    if (!qSizes.length) return;
+    slotsBox.innerHTML = "";
+    slotsBox.append(el("small", { text: "Group slots:" }));
+    qSizes.forEach((n) => slotsBox.append(el("span", { class: "fm-slot" + (leftOf(n) ? "" : " full") + (sel.size === n ? " cur" : ""), title: `${usedOf(n)} of ${quotas[n]} groups of ${n} taken`, text: `${n} members · ${leftOf(n) ? leftOf(n) + " of " + quotas[n] + " left" : "full"}` })));
+    const p = quotaProblem(); slotWarn.hidden = !p; slotWarn.textContent = p ? "Can't submit with " + sel.size + " members: " + p : "";
+  }
   // "Grouped" flags: a leader who has spoken to a student marks them so other leaders see it BEFORE anyone submits.
   const marks = ctx.marks || (ctx.marks = new Map());
   const markErr = el("p", { class: "error-msg", hidden: true });
@@ -406,6 +425,7 @@ function batchmatePicker(f, val, ctx, leaderVal) {
   function sync() {
     chips.innerHTML = "";
     sel.forEach((m) => chips.append(el("li", {}, m.name, el("button", { type: "button", "aria-label": "Remove", text: "✕", onclick: () => { sel.delete(m.uid); sync(); } }))));
+    paintSlots();
     count.textContent = `${sel.size} selected` + (max ? ` (max ${max})` : "") + (Number(f.min) ? ` · min ${f.min}` : "");
     rows.forEach(({ c, b, row }) => {
       const isLead = effLeader()?.uid === b.uid;
@@ -515,25 +535,33 @@ function batchmatePicker(f, val, ctx, leaderVal) {
       markErr),
     el("div", { class: "fm-bm-sec" },
       el("div", { class: "fm-bm-sechead" }, el("b", { text: "Members" }), count),
+      qSizes.length ? slotsBox : null, qSizes.length ? slotWarn : null,
       chips,
       el("div", { class: "fm-bm-bar" }, search, sortSel),
       list, legend),
     leaderBlock);
-  // Live updates while this picker is on screen; stops once the popup is closed or rebuilt.
+  // Live updates while this picker is on screen; they stop once the popup is closed or rebuilt.
   if (ctx.formId) {
-    let ready = false, unsub = null; setTimeout(() => { ready = true; }, 1500);
-    unsub = onSnapshot(collection(db, "forms", ctx.formId, "groupmarks"), (snap) => {
-      if (ready && (!node.isConnected || node.closest(".modal-overlay")?.hidden)) { if (unsub) unsub(); return; }
+    let ready = false; const unsubs = []; setTimeout(() => { ready = true; }, 1500);
+    const alive = () => { if (ready && (!node.isConnected || node.closest(".modal-overlay")?.hidden)) { unsubs.forEach((u) => u()); return false; } return true; };
+    unsubs.push(onSnapshot(collection(db, "forms", ctx.formId, "groupmarks"), (snap) => {
+      if (!alive()) return;
       marks.clear(); snap.docs.forEach((d) => marks.set(d.id, d.data()));
       paintMarks();
-    }, () => {});
+    }, () => {}));
+    if (qSizes.length) unsubs.push(onSnapshot(doc(db, "forms", ctx.formId, "meta", "groups"), (snap) => {
+      if (!alive()) return;
+      groupsMap = snap.exists() ? snap.data().groups || {} : {};
+      paintSlots();
+    }, () => {}));
   }
   paintMarks();
   return {
     node,
     get: () => (sel.size ? [...sel.values()] : ""),
     // "" when the filler is the leader; otherwise {self:false, ...chosen leader (optional)}
-    getLeader: () => (iAmLeader ? "" : { self: false, ...(leader || {}) })
+    getLeader: () => (iAmLeader ? "" : { self: false, ...(leader || {}) }),
+    quotaProblem: () => quotaProblem(sel.size)
   };
 }
 
@@ -821,6 +849,8 @@ async function openFill(formId, onDone, skipDraft = false) {
       const n = isEmptyVal(v) ? 0 : v.length;
       if (Number(fd.min) && n < Number(fd.min)) return `"${fd.label}": select at least ${fd.min} batchmate(s).`;
       if (Number(fd.max) && n > Number(fd.max)) return `"${fd.label}": select at most ${fd.max} batchmate(s).`;
+      const qp = n ? inp.quotaProblem?.() : ""; // group-size quota already used up by other groups
+      if (qp) return `"${fd.label}": ${qp}`;
     }
     if (v && fd.type === "link" && !/^https?:\/\/\S+\.\S+/i.test(v)) return `"${fd.label}" needs a valid link starting with http(s)://`;
     if (v && fd.type === "number" && !isFinite(Number(v))) return `"${fd.label}" must be a number.`;
@@ -938,7 +968,7 @@ async function openFill(formId, onDone, skipDraft = false) {
     try {
       const m = await getMe();
       // One atomic batch: the response + the group "claims" that hide chosen students from other groups.
-      const wb = writeBatch(db);
+      const ops = [], wb = { set: (r, d) => ops.push([r, d]), delete: (r) => ops.push([r]) };
       wb.set(doc(db, "forms", f.id, "responses", m.uid), {
         uid: m.uid, name: m.name, index: m.index, answers,
         firstSubmittedAt: resp?.firstSubmittedAt || serverTimestamp(),
@@ -954,7 +984,19 @@ async function openFill(formId, onDone, skipDraft = false) {
         keep.forEach((uid) => wb.set(doc(db, "forms", f.id, "claims", uid), { leaderUid: m.uid, leaderName: m.name, fieldId: bmField.id }));
         ctx.claims.forEach((c, uid) => { if (c.leaderUid === m.uid && !keep.has(uid)) wb.delete(doc(db, "forms", f.id, "claims", uid)); });
       }
-      await wb.commit();
+      const applyOps = (w) => ops.forEach(([r, d]) => (d ? w.set(r, d) : w.delete(r)));
+      if (bmField) {
+        // Group forms: one transaction re-checks the group-size quota against the live counter, then saves everything.
+        const gRef = doc(db, "forms", f.id, "meta", "groups"), inGroup = F.vis.get(bmField.id) === true;
+        const size = inGroup && Array.isArray(answers[bmField.id]) ? answers[bmField.id].length : 0;
+        await runTransaction(db, async (tx) => {
+          const gs = await tx.get(gRef), groups = gs.exists() ? gs.data().groups || {} : {};
+          const q = inGroup ? Number(bmField.quotas?.[size]) || 0 : 0;
+          if (q && Object.entries(groups).filter(([u, n]) => u !== m.uid && Number(n) === size).length >= q) { const e = new Error("quota full"); e.quotaSize = size; throw e; }
+          applyOps(tx);
+          tx.set(gRef, { groups: { [m.uid]: inGroup ? size : deleteField() } }, { merge: true });
+        });
+      } else { const b = writeBatch(db); applyOps(b); await b.commit(); }
       if (bmField && ctx.marks?.get(m.uid)) deleteDoc(doc(db, "forms", f.id, "groupmarks", m.uid)).catch(() => {}); // I'm grouped for real now — drop my own flag
       closed = true; clearTimeout(tLocal); clearTimeout(tCloud); // the draft has served its purpose
       try { localStorage.removeItem(dKey); } catch (e) {}
@@ -964,12 +1006,26 @@ async function openFill(formId, onDone, skipDraft = false) {
         el("button", { class: "btn-primary", type: "button", text: "Done", onclick: () => { ov.hidden = true; } })));
       if (onDone) onDone();
     } catch (x) {
-      err.textContent = hasBm ? "Couldn't save — the form may have closed, or someone you picked was just added to another group. Close and reopen the form to refresh the list." : "Couldn't save — the form may have just closed. Please try again."; err.hidden = false;
+      err.textContent = x?.quotaSize !== undefined ? `Sorry — the last slot for a group of ${x.quotaSize} members was just taken by another group. Change the number of members (see the open sizes) and submit again.` : hasBm ? "Couldn't save — the form may have closed, or someone you picked was just added to another group. Close and reopen the form to refresh the list." : "Couldn't save — the form may have just closed. Please try again."; err.hidden = false;
       submitBtn.disabled = false; submitBtn.textContent = resp ? "Save changes" : "Submit";
     }
   });
   if (progress) box.append(progress);
   box.append(form);
+}
+
+// Group-size quotas: field.quotas = { "7": 3, "8": 2 } = at most 3 groups of 7 members and 2 groups of 8. Missing size = no limit.
+// Counter doc forms/{id}/meta/groups = { groups: { leaderUid: size } } (size = members picked), updated in the same transaction as each submit.
+function cleanQuotas(f) {
+  const lo = Number(f.min) || 1, hi = Number(f.max) || Number(f.min) || 0, out = {};
+  Object.entries(f.quotas || {}).forEach(([k, v]) => { const n = Number(k), q = Math.floor(Number(v)); if (hi && n >= lo && n <= hi && q > 0) out[n] = q; });
+  return out;
+}
+async function syncGroupCounts(formId, fieldId) { // admin: rebuild the counter from the real responses (covers older responses)
+  const snap = await getDocs(collection(db, "forms", formId, "responses"));
+  const groups = {};
+  snap.docs.forEach((d) => { const a = d.data().answers?.[fieldId]; if (Array.isArray(a)) groups[d.id] = a.length; });
+  await setDoc(doc(db, "forms", formId, "meta", "groups"), { groups });
 }
 
 // ═════════════════ ADMIN SIDE (admin.html) ═════════════════
@@ -1285,8 +1341,25 @@ function renderFields() {
       extra = el("div", { class: "fm-bcol" }, el("div", { class: "fm-brow" }, style, max),
         el("div", { class: "fm-brow" }, lbl("lo", "Low label, e.g. Poor"), lbl("hi", "High label, e.g. Excellent")),
         el("small", { text: "Emoji faces always use 5 levels. Users can tap the same rating again to clear it." }));
-    } else if (f.type === "batchmates") extra = el("div", { class: "fm-bcol" }, el("div", { class: "fm-brow" }, num("min", "Min members (optional)"), num("max", "Max members (optional)")),
-      el("small", { text: "Whoever fills the form becomes the group leader. Picked students (and the leader) disappear from other groups' lists." }));
+    } else if (f.type === "batchmates") {
+      const mnI = num("min", "Min members (optional)"), mxI = num("max", "Max members (optional)");
+      const qBox = el("div", { class: "fm-quota" });
+      const paintQ = () => {
+        qBox.innerHTML = "";
+        const lo = Number(f.min) || 1, hi = Number(f.max) || Number(f.min) || 0;
+        if (!hi || hi < lo || hi - lo > 30) { qBox.append(el("small", { text: "Set min and/or max members to limit how many groups of each size can be made." })); return; }
+        f.quotas = f.quotas || {};
+        qBox.append(el("b", { text: "Groups allowed per size" }), el("small", { text: "Leave a size blank for no limit. Size = number of members picked." }));
+        for (let n = lo; n <= hi; n++) {
+          const qi = el("input", { type: "number", min: "1", placeholder: "No limit" }); qi.value = f.quotas[n] || "";
+          qi.addEventListener("input", () => { const v = Math.floor(Number(qi.value)); if (v > 0) f.quotas[n] = v; else delete f.quotas[n]; });
+          qBox.append(el("label", { class: "fm-quota-row" }, el("span", { text: `Groups of ${n} members — max` }), qi));
+        }
+      };
+      mnI.addEventListener("input", paintQ); mxI.addEventListener("input", paintQ); paintQ();
+      extra = el("div", { class: "fm-bcol" }, el("div", { class: "fm-brow" }, mnI, mxI), qBox,
+        el("small", { text: "Min/max count the students picked (not the person filling the form). Picked students disappear from other groups' lists." }));
+    }
     const label = el("input", { type: "text", placeholder: "Question / field name" }); label.value = f.label;
     label.addEventListener("input", () => { f.label = label.value; });
     const help = el("input", { type: "text", placeholder: "Helper text (optional)" }); help.value = f.help || "";
@@ -1436,7 +1509,7 @@ async function saveForm() {
       ...(f.type === "select" || f.type === "multi" || f.type === "priority" ? { options: clean(f.options) } : {}),
       ...(f.type === "priority" ? { min: Number(f.min) || 0, max: Number(f.max) || 0 } : {}),
       ...(f.type === "table" ? { rows: clean(f.rows), cols: clean(f.cols), dir: f.dir === "col" ? "col" : "row", multi: !!f.multi } : {}),
-      ...(f.type === "batchmates" ? { min: Number(f.min) || 0, max: Number(f.max) || 0 } : {}),
+      ...(f.type === "batchmates" ? { min: Number(f.min) || 0, max: Number(f.max) || 0, quotas: cleanQuotas(f) } : {}),
       ...(f.profile?.on && PROFILE_TYPES.has(f.type) ? { profile: { key: f.profile.key, label: (f.profile.label || "").trim(), group: f.profile.group, ...(f.profile.group === "__new" ? { groupTitle: (f.profile.groupTitle || "").trim() } : {}) } } : {}),
       ...(f.type === "rating" ? { style: RATING_STYLES[f.style] ? f.style : "stars", max: ratingMax(f), lo: (f.lo || "").trim(), hi: (f.hi || "").trim() } : {}),
       ...(f.logic?.conds?.length ? { logic: cleanConds(f.logic) } : {}),
@@ -1453,6 +1526,7 @@ async function saveForm() {
     let id;
     if (B.editing) { id = B.editing.id; await updateDoc(doc(db, "forms", id), data); }
     else { const r = await addDoc(collection(db, "forms"), { ...data, collecting: true, createdAt: serverTimestamp(), createdBy: auth.currentUser.uid }); id = r.id; }
+    if (B.editing) { const bm = fields.find((x) => x.type === "batchmates"); if (bm) await syncGroupCounts(id, bm.id).catch((e) => console.warn("group counter sync", e)); }
     await B.push.send({ title: B.editing ? `Form updated: ${title}` : `New form: ${title}`, message: `Due ${fmtDate(due)} — tap to fill`, url: `home.html?form=${id}` });
     const link = formLink(id);
     B.body.hidden = true; B.result.hidden = false; B.result.innerHTML = "";
@@ -1472,8 +1546,8 @@ async function saveForm() {
 async function deleteFormAndData(f, done) {
   if (!hasPerm("forms")) return denied();
   let snap;
-  let claims = [], pubs = [], gmarks = [];
-  try { snap = await getDocs(collection(db, "forms", f.id, "responses")); claims = (await getDocs(collection(db, "forms", f.id, "claims"))).docs; pubs = (await getDocs(collection(db, "forms", f.id, "public"))).docs; gmarks = (await getDocs(collection(db, "forms", f.id, "groupmarks"))).docs; }
+  let claims = [], pubs = [], gmarks = [], metas = [];
+  try { snap = await getDocs(collection(db, "forms", f.id, "responses")); claims = (await getDocs(collection(db, "forms", f.id, "claims"))).docs; pubs = (await getDocs(collection(db, "forms", f.id, "public"))).docs; gmarks = (await getDocs(collection(db, "forms", f.id, "groupmarks"))).docs; metas = (await getDocs(collection(db, "forms", f.id, "meta"))).docs; }
   catch (e) { return alert("Couldn't read the responses — please try again."); }
   if (!confirm(`Permanently delete "${f.title}" and its ${snap.size} response(s)? This cannot be undone.`)) return;
   try {
@@ -1483,7 +1557,7 @@ async function deleteFormAndData(f, done) {
     try { roster = await getRoster(); } catch (e) {}
     const draftUids = new Set([...roster.map((b) => b.uid), ...snap.docs.map((d) => d.id), ...claims.map((d) => d.id)]);
     const drafts = [...draftUids].map((uid) => ({ ref: doc(db, "forms", f.id, "drafts", uid) }));
-    const all = [...snap.docs, ...claims, ...pubs, ...gmarks, ...drafts];
+    const all = [...snap.docs, ...claims, ...pubs, ...gmarks, ...metas, ...drafts];
     for (let i = 0; i < all.length; i += 400) {
       const b = writeBatch(db);
       all.slice(i, i + 400).forEach((d) => b.delete(d.ref));
