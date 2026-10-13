@@ -391,15 +391,15 @@ function batchmatePicker(f, val, ctx, leaderVal) {
   const marks = ctx.marks || (ctx.marks = new Map());
   const markErr = el("p", { class: "error-msg", hidden: true });
   let sortMode = "default";
-  const sortSel = el("select", {}, el("option", { value: "default", text: "Sort: default" }), el("option", { value: "free", text: "Sort: not grouped first" }), el("option", { value: "grouped", text: "Sort: grouped first" }));
+  const sortSel = el("select", {}, el("option", { value: "default", text: "Default order" }), el("option", { value: "free", text: "Not grouped first" }), el("option", { value: "grouped", text: "Grouped first" }));
   const chips = el("ul", { class: "pill-list" });
   const count = el("small", { class: "fm-bm-count" });
-  const search = el("input", { type: "text", placeholder: "Search batchmates by name or index…" });
+  const search = el("input", { type: "text", placeholder: "Search by name or index…" });
   const list = el("div", { class: "member-checklist" });
   const rows = [];
   // Leader picker (only when the form says the filler is NOT automatically the leader): same list design, pick one, optional.
   const lChip = el("ul", { class: "pill-list" });
-  const lSearch = el("input", { type: "text", placeholder: "Search for a leader by name or index…" });
+  const lSearch = el("input", { type: "text", placeholder: "Search by name or index…" });
   const lList = el("div", { class: "member-checklist" });
   const lRows = [];
   const lName = "fmLeader-" + f.id;
@@ -451,8 +451,8 @@ function batchmatePicker(f, val, ctx, leaderVal) {
       const t = lSearch.value.trim().toLowerCase();
       lList.querySelectorAll(".member-check-row").forEach((r) => { r.hidden = !!t && !r.dataset.name.includes(t); });
     });
-    leaderBlock = el("div", { class: "fm-bm-leader" },
-      el("div", { class: "fm-bm-sub" }, "Group leader ", el("small", { text: "(optional — skip it if your team has no leader)" })),
+    leaderBlock = el("div", { class: "fm-bm-sec fm-bm-leader" },
+      el("div", { class: "fm-bm-sechead" }, el("b", { text: "Group leader" }), el("small", { text: "Optional — skip it if your team has no leader" })),
       lChip, lSearch, lList);
   }
   function paintMarks() {
@@ -478,7 +478,7 @@ function batchmatePicker(f, val, ctx, leaderVal) {
   // the "I'm the group leader" switch
   const cb = el("input", { type: "checkbox" }); cb.checked = iAmLeader;
   const lbl = el("span", { text: iAmLeader ? "On" : "Off" });
-  const noteEl = el("div", { class: "fm-edit-note" });
+  const noteEl = el("small", { class: "fm-bm-hint" });
   const paintMode = () => {
     lbl.textContent = iAmLeader ? "On" : "Off";
     noteEl.textContent = iAmLeader
@@ -503,14 +503,22 @@ function batchmatePicker(f, val, ctx, leaderVal) {
     selfCb.disabled = false;
     selfLbl.textContent = selfCb.checked ? "Grouped" : "Not yet";
   });
-  const legend = el("small", { class: "fm-bm-legend" }, el("span", { class: "fm-free-dot" }), " not grouped yet  ", el("span", { class: "fm-grp-tag", text: "grouped" }), " already agreed to join a group");
+  const legend = el("small", { class: "fm-bm-legend" },
+    el("span", { class: "fm-bm-legline" }, el("span", { class: "fm-free-dot" }), "Not grouped"),
+    el("span", { class: "fm-bm-legline" }, el("span", { class: "fm-grp-tag", text: "grouped" }), "Grouped"));
+  // Layout: [You: leader switch + grouped switch] → [Members: header, chips, search + sort, list, legend] → [Leader (optional)]
+  const swRow = (title, hint, ctrl) => el("div", { class: "fm-bm-row" }, el("div", { class: "fm-bm-rowtxt" }, el("b", { text: title }), hint), el("label", { class: "fm-switch", style: "margin-left:0" }, ...ctrl));
   const node = el("div", { class: "fm-bm" },
-    el("div", { class: "fm-brow fm-bm-switch" }, el("b", { text: "I'm the group leader", style: "font-size:13px" }), el("label", { class: "fm-switch", style: "margin-left:0" }, cb, el("i"), lbl)),
-    noteEl, chips, count,
-    el("div", { class: "fm-bm-ctl" }, sortSel, legend),
-    el("div", { class: "fm-brow fm-bm-switch fm-bm-self" }, el("span", { class: "fm-bm-selftxt" }, el("b", { text: "Already agreed to join a group?", style: "font-size:13px;display:block" }), el("small", { class: "fm-bm-hint", text: "Switch to “Grouped” and other leaders will see a “grouped” label next to your name. Only you can change your own status." })),
-      el("label", { class: "fm-switch", style: "margin-left:0" }, selfCb, el("i"), selfLbl)),
-    markErr, search, list, leaderBlock);
+    el("div", { class: "fm-bm-sec" },
+      swRow("I'm the group leader", noteEl, [cb, el("i"), lbl]),
+      swRow("Already agreed to join a group?", el("small", { class: "fm-bm-hint", text: "Other leaders will see a “grouped” label next to your name." }), [selfCb, el("i"), selfLbl]),
+      markErr),
+    el("div", { class: "fm-bm-sec" },
+      el("div", { class: "fm-bm-sechead" }, el("b", { text: "Members" }), count),
+      chips,
+      el("div", { class: "fm-bm-bar" }, search, sortSel),
+      list, legend),
+    leaderBlock);
   // Live updates while this picker is on screen; stops once the popup is closed or rebuilt.
   if (ctx.formId) {
     let ready = false, unsub = null; setTimeout(() => { ready = true; }, 1500);
