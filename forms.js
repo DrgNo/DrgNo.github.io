@@ -368,7 +368,8 @@ async function initHome() {
         el("div", { class: "fm-card-name", text: f.title || "Untitled form" }),
         el("div", { class: "fm-due" }, el("span", { class: "fm-dot" }), el("b", { text: info.label })),
         el("div", { class: "fm-card-sub", text: "Due " + fmtDate(d) }),
-        chips));
+        chips,
+        f.pub?.cols?.length ? el("div", { class: "fm-card-foot" }, el("button", { class: "fm-mini-btn", type: "button", text: "👁 View responses", onclick: (e) => { e.stopPropagation(); openPublicResponses(f); } })) : null));
     });
   }
   await load();
@@ -663,6 +664,7 @@ async function openFill(formId, onDone, skipDraft = false) {
   box.append(closeBtn(ov));
   const d = toDate(f.dueAt);
   const msg = (t, p) => box.append(el("div", { class: "fm-msg" }, el("h3", { text: t }), el("p", { text: p })));
+  if (f.pub?.cols?.length) box.append(el("button", { type: "button", class: "fm-mini-btn fm-top-btn", text: "👁 View responses", onclick: () => openPublicResponses(f) }));
   box.append(el("h2", { class: "fm-title", text: f.title || "Form" }));
   if (!isActive(f)) return msg("This form has closed", `It ended on ${fmtDate(d)}.`);
   if (f.collecting === false) return msg("Temporarily closed", "The admins have paused responses for now. Please check back later.");
@@ -877,6 +879,7 @@ async function openFill(formId, onDone, skipDraft = false) {
         firstSubmittedAt: resp?.firstSubmittedAt || serverTimestamp(),
         respondedAt: serverTimestamp()
       });
+      if (f.pub?.cols?.length) wb.set(doc(db, "forms", f.id, "public", m.uid), { uid: m.uid, vals: pubVals(f, { uid: m.uid, name: m.name, index: m.index, answers, respondedAt: new Date() }), updatedAt: serverTimestamp() });
       const bmField = (f.fields || []).find((x) => x.type === "batchmates");
       if (bmField) {
         const shown = F.vis.get(bmField.id) === true; // a hidden group field means no group is claimed
@@ -1403,8 +1406,8 @@ async function saveForm() {
 async function deleteFormAndData(f, done) {
   if (!hasPerm("forms")) return denied();
   let snap;
-  let claims = [];
-  try { snap = await getDocs(collection(db, "forms", f.id, "responses")); claims = (await getDocs(collection(db, "forms", f.id, "claims"))).docs; }
+  let claims = [], pubs = [];
+  try { snap = await getDocs(collection(db, "forms", f.id, "responses")); claims = (await getDocs(collection(db, "forms", f.id, "claims"))).docs; pubs = (await getDocs(collection(db, "forms", f.id, "public"))).docs; }
   catch (e) { return alert("Couldn't read the responses — please try again."); }
   if (!confirm(`Permanently delete "${f.title}" and its ${snap.size} response(s)? This cannot be undone.`)) return;
   try {
@@ -1414,7 +1417,7 @@ async function deleteFormAndData(f, done) {
     try { roster = await getRoster(); } catch (e) {}
     const draftUids = new Set([...roster.map((b) => b.uid), ...snap.docs.map((d) => d.id), ...claims.map((d) => d.id)]);
     const drafts = [...draftUids].map((uid) => ({ ref: doc(db, "forms", f.id, "drafts", uid) }));
-    const all = [...snap.docs, ...claims, ...drafts];
+    const all = [...snap.docs, ...claims, ...pubs, ...drafts];
     for (let i = 0; i < all.length; i += 400) {
       const b = writeBatch(db);
       all.slice(i, i + 400).forEach((d) => b.delete(d.ref));
@@ -1451,14 +1454,15 @@ function openRepublish(f, done) {
 
 // ── Responses viewer (table like the Data tab) ──
 let R = null;
+// Columns an admin can share with students (profile columns are admin-only and never shared).
+const baseCols = (form) => [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" },
+  ...(form.fields || []).filter(isQ).flatMap((f) => f.type === "batchmates" ? [{ k: "_leader:" + f.id, l: "Leader" }, { k: f.id, l: f.label }] : [{ k: f.id, l: f.label }]),
+  { k: "_at", l: "Responded At" }];
 const rvCols = () => R.mode === "pending"
   ? [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" }, ...(R.pcols || []).map((p) => ({ k: "_p:" + p.key, l: p.label }))]
-  : [{ k: "_name", l: "Name" }, { k: "_index", l: "Index No" },
-     ...(R.form.fields || []).filter(isQ).flatMap((f) => f.type === "batchmates" ? [{ k: "_leader:" + f.id, l: "Leader" }, { k: f.id, l: f.label }] : [{ k: f.id, l: f.label }]),
-     { k: "_at", l: "Responded At" },
-     ...(R.pcols || []).map((p) => ({ k: "_p:" + p.key, l: p.label }))];
-function rvVal(r, k) {
-  if (k.startsWith("_p:")) return fmtProfileVal(PROFILE_ROWS?.get(r.uid)?.[k.slice(3)]); // profile column
+  : [...baseCols(R.form), ...(R.pcols || []).map((p) => ({ k: "_p:" + p.key, l: p.label }))];
+// Plain-text value of one column for one response.
+function respVal(form, r, k) {
   if (k === "_name") return r.name || "";
   if (k === "_index") return r.index || "";
   if (k.startsWith("_leader:")) { // the filler is the leader, unless they switched "I'm the group leader" off
@@ -1466,7 +1470,26 @@ function rvVal(r, k) {
     return L && L.self === false ? (L.name || "") : r.name || "";
   }
   if (k === "_at") return r.respondedAt ? fmtDate(toDate(r.respondedAt)) : "";
-  return fmtAnswer((R.form.fields || []).find((f) => f.id === k), r.answers?.[k]);
+  return fmtAnswer((form.fields || []).find((f) => f.id === k), r.answers?.[k]);
+}
+// Same, but a group's members come back as a list of lines (shown as a bulleted list inside the table cell).
+function respCell(form, r, k) {
+  const fd = (form.fields || []).find((x) => x.id === k), v = r.answers?.[k];
+  if (fd?.type === "batchmates" && Array.isArray(v) && v.length) return v.map((m) => m.name + (m.index ? " (" + m.index + ")" : ""));
+  return respVal(form, r, k);
+}
+function fillCell(node, val) {
+  if (Array.isArray(val) && val.length) node.append(el("ul", { class: "fm-cell-list" }, ...val.map((x) => el("li", { text: x }))));
+  else node.textContent = (Array.isArray(val) ? "" : val) || "—";
+}
+// What students are allowed to see: only the columns the admin picked, copied to forms/{id}/public/{uid}.
+const pubVals = (form, r) => {
+  const ok = new Set(baseCols(form).map((c) => c.k));
+  return (form.pub?.cols || []).filter((k) => ok.has(k)).map((k) => ({ k, v: respCell(form, r, k) }));
+};
+function rvVal(r, k) {
+  if (k.startsWith("_p:")) return fmtProfileVal(PROFILE_ROWS?.get(r.uid)?.[k.slice(3)]); // profile column
+  return respVal(R.form, r, k);
 }
 function rvRows() {
   let rows = R.mode === "pending" ? R.pending : R.responses;
@@ -1522,6 +1545,7 @@ function renderResponses() {
       profileMappings(R.form).length ? el("button", { type: "button", class: "ghost-btn", style: small + "border-color:#8b5cf6;color:#8b5cf6;", text: "👤 Import to profiles", onclick: openProfileImport }) : null,
       el("button", { type: "button", class: "ghost-btn", style: small, text: `➕ Profile columns${R.pcols.length ? " (" + R.pcols.length + ")" : ""}`, onclick: openProfileColumns }),
       R.form.signup ? el("button", { type: "button", class: "ghost-btn", style: small + "border-color:#16a34a;color:#16a34a;", text: "🧾 Trip sheet PDF", onclick: openSignupSheet }) : null,
+      el("button", { type: "button", class: "ghost-btn", style: small + "border-color:#0ea5e9;color:#0ea5e9;", text: `👁 Student view${R.form.pub?.cols?.length ? " ✓" : ""}`, onclick: openPublicSettings }),
       el("button", { type: "button", class: "ghost-btn", style: small, text: "Download Excel", onclick: exportXlsx }),
       el("button", { type: "button", class: "ghost-btn", style: small, text: "Download PDF", onclick: exportPdf }),
       el("button", { type: "button", class: "ghost-btn", style: small, text: "Refresh", onclick: () => openResponses(R.form) })),
@@ -1544,10 +1568,95 @@ function renderTable() {
   $("#fm-count").textContent = `${rows.length} row(s)`;
   if (!rows.length) { tb.append(el("tr", {}, el("td", { colspan: cols.length, text: R.mode === "pending" ? "Everyone has submitted 🎉" : "No responses yet.", style: "text-align:center;color:var(--muted);padding:20px 10px;" }))); return; }
   rows.forEach((r) => {
-    const tr = el("tr", {}, ...cols.map((c) => { const v = String(rvVal(r, c.k)); return el("td", { text: v || "—", title: v }); }));
+    const tr = el("tr", {}, ...cols.map((c) => { const v = String(rvVal(r, c.k)), td = el("td", { title: v }); fillCell(td, R.mode === "responses" && !c.k.startsWith("_p:") ? respCell(R.form, r, c.k) : v); return td; }));
     if (R.mode === "responses") { tr.classList.add("fm-row-click"); tr.title = "Click to view this response"; tr.addEventListener("click", () => openResponseView(r)); }
     tb.append(tr);
   });
+}
+
+
+// ── Student-facing responses table (only the columns the admin shared) ──
+async function openPublicResponses(f) {
+  const ov = $("#fm-pubview") || overlay("fm-pubview", "fm-wide fm-xwide");
+  document.body.appendChild(ov); // move to the end so it stacks above the form popup when opened from inside it
+  ov.hidden = false; ov.innerHTML = "";
+  const inner = el("div", { class: "admin-modal-body" }, skelEl("", "lines"));
+  ov.append(el("div", { class: "modal-box" }, closeBtn(ov), inner));
+  let docs;
+  try { docs = (await getDocs(collection(db, "forms", f.id, "public"))).docs.map((d) => d.data()); }
+  catch (e) { inner.innerHTML = '<p class="error-msg">Couldn\'t load the responses. Please try again.</p>'; return; }
+  const pub = f.pub || {}, all = baseCols(f), w = pub.widths || {}, rh = Number(pub.rowH) || 0;
+  const cols = (pub.cols || []).map((k) => all.find((c) => c.k === k)).filter(Boolean);
+  const rowsAll = docs.map((d) => new Map((d.vals || []).map((x) => [x.k, x.v])));
+  if (cols.some((c) => c.k === "_name")) rowsAll.sort((a, b) => String(a.get("_name") || "").localeCompare(String(b.get("_name") || ""), undefined, { sensitivity: "base" }));
+  const flat = (v) => (Array.isArray(v) ? v.join(" ") : String(v ?? ""));
+  const widthCss = (k) => { const n = Number(w[k]) || 0; return n ? `width:${n}px;min-width:${n}px;max-width:${n}px;` : ""; };
+  const txt = el("input", { type: "text", placeholder: "Search…" });
+  const count = el("p", { class: "fine-print", style: "text-align:left;margin:0 0 10px;" });
+  const head = el("tr"), tb = el("tbody");
+  cols.forEach((c) => head.append(el("th", { text: c.l, style: widthCss(c.k) + "cursor:default;" })));
+  function paint() {
+    tb.innerHTML = "";
+    const t = txt.value.trim().toLowerCase();
+    const rows = t ? rowsAll.filter((m) => cols.some((c) => flat(m.get(c.k)).toLowerCase().includes(t))) : rowsAll;
+    count.textContent = `${rows.length} response(s)`;
+    if (!rows.length) { tb.append(el("tr", {}, el("td", { colspan: cols.length, text: t ? "Nothing matches." : "No responses yet.", style: "text-align:center;color:var(--muted);padding:20px 10px;" }))); return; }
+    rows.forEach((m) => tb.append(el("tr", {}, ...cols.map((c) => {
+      const td = el("td", { class: widthCss(c.k) || rh ? "fm-wrapcell" : "", style: widthCss(c.k) + (rh ? `height:${rh}px;` : "") });
+      const box = el("div", { class: "fm-cell", style: rh ? `max-height:${rh}px;` : "" });
+      fillCell(box, m.get(c.k)); td.append(box); return td;
+    }))));
+  }
+  txt.addEventListener("input", paint);
+  inner.innerHTML = "";
+  inner.append(el("p", { class: "section-label", text: f.title || "Responses" }), txt, count,
+    el("div", { class: "datatable-wrap" }, el("table", { class: "data-table" }, el("thead", {}, head), tb)));
+  paint();
+}
+
+// Admin: pick which columns students can see + row height / column widths of that table.
+function openPublicSettings() {
+  const f = R.form, pub = f.pub || {}, on = new Set(pub.cols || []);
+  const ov = $("#fm-pubset") || overlay("fm-pubset");
+  ov.hidden = false; ov.innerHTML = "";
+  const rowH = el("input", { type: "number", min: "0", step: "10", placeholder: "Auto", value: pub.rowH || "" });
+  const items = baseCols(f).map((c) => {
+    const cb = el("input", { type: "checkbox" }); cb.checked = on.has(c.k);
+    const wi = el("input", { type: "number", min: "0", step: "10", placeholder: "Auto", value: (pub.widths || {})[c.k] || "" });
+    return { c, cb, wi, row: el("label", { class: "fm-pubset-row" }, cb, el("span", { text: c.l }), wi) };
+  });
+  const err = el("p", { class: "error-msg", hidden: true });
+  const save = el("button", { class: "btn-primary", type: "button", text: "Save", onclick: async () => {
+    const cols = items.filter((i) => i.cb.checked).map((i) => i.c.k);
+    const widths = {}; items.forEach((i) => { const n = Math.round(Number(i.wi.value)); if (n > 0) widths[i.c.k] = Math.min(n, 1000); });
+    const h = Math.round(Number(rowH.value)) || 0;
+    const next = { cols, rowH: h > 0 ? Math.min(h, 600) : 0, widths };
+    save.disabled = true; save.textContent = "Saving…"; err.hidden = true;
+    try {
+      await updateDoc(doc(db, "forms", f.id), { pub: next });
+      f.pub = next;
+      // Re-copy the chosen columns of every response to the shared list (and drop stale copies).
+      const existing = (await getDocs(collection(db, "forms", f.id, "public"))).docs.map((d) => d.id);
+      const ops = [];
+      if (cols.length) R.responses.forEach((r) => ops.push({ ref: doc(db, "forms", f.id, "public", r.uid), data: { uid: r.uid, vals: pubVals(f, r), updatedAt: serverTimestamp() } }));
+      const keep = new Set(cols.length ? R.responses.map((r) => r.uid) : []);
+      existing.filter((id) => !keep.has(id)).forEach((id) => ops.push({ ref: doc(db, "forms", f.id, "public", id) }));
+      for (let i = 0; i < ops.length; i += 400) {
+        const b = writeBatch(db);
+        ops.slice(i, i + 400).forEach((o) => (o.data ? b.set(o.ref, o.data) : b.delete(o.ref)));
+        await b.commit();
+      }
+      ov.hidden = true; renderResponses();
+      if (window.__formsRefresh) window.__formsRefresh();
+    } catch (e) { console.warn(e); err.textContent = "Couldn't save — check your permission and try again."; err.hidden = false; save.disabled = false; save.textContent = "Save"; }
+  } });
+  ov.append(el("div", { class: "modal-box" }, closeBtn(ov), el("div", { class: "admin-modal-body" },
+    el("p", { class: "section-label", text: "Student view" }),
+    el("p", { class: "fine-print", style: "text-align:left", text: "Tick the columns every student can see in this form's “View responses” table. Nothing ticked = no button on the form card. Only the ticked columns are copied to a shared list; all other answers stay private. Group members show as a list." }),
+    el("div", { class: "fm-pubset-row fm-pubset-head" }, el("span", { text: "Column" }), el("span", { text: "Width (px)" })),
+    ...items.map((i) => i.row),
+    el("div", { class: "fm-pubset-row" }, el("span", { text: "Row height (px) — long cells scroll inside" }), rowH),
+    err, save)));
 }
 
 // Read-only popup: the form's own layout filled with one person's answers.

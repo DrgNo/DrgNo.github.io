@@ -415,3 +415,21 @@ a.fm-ans { color: var(--blue); text-decoration: underline; }
 .fm-bm-sub { font-weight: 600; font-size: 13px; margin: 14px 0 6px; }
 .fm-bm-sub small { font-weight: 400; color: var(--muted); }
 .fm-bm .member-check-row.fm-dim { opacity: .45; cursor: not-allowed; }
+
+/* Student "View responses" button + shared table */
+.fm-card-foot { margin-top: 10px; }
+.fm-mini-btn { font-size: 11.5px; font-weight: 600; padding: 4px 11px; border-radius: 999px; cursor: pointer; background: transparent; color: var(--due); border: 1px solid color-mix(in srgb, var(--due) 55%, transparent); }
+.fm-mini-btn:hover { background: color-mix(in srgb, var(--due) 14%, transparent); }
+.fm-cell-list { margin: 0; padding-left: 16px; text-align: left; }
+.fm-cell-list li { white-space: normal; overflow-wrap: anywhere; }
+.data-table td.fm-wrapcell { white-space: normal; overflow-wrap: anywhere; text-overflow: clip; vertical-align: top; }
+.fm-cell { overflow: auto; }
+/* Admin: Student view settings */
+.fm-pubset-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; }
+.fm-pubset-row > span { flex: 1; }
+.fm-pubset-row input[type=checkbox] { width: auto; padding: 0; margin: 0; accent-color: var(--blue); }
+.fm-pubset-row input[type=number] { width: 84px; flex: none; }
+.fm-pubset-head { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--muted); padding-left: 26px; border-bottom: 1px solid var(--panel-border); }
+.fm-pubset-head span:last-child { flex: none; width: 84px; }
+
+.fm-top-btn { --due: var(--blue); margin: 0 0 10px; align-self: flex-start; }
